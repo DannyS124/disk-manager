@@ -41,3 +41,7 @@ void backupTests();
 void rescueTests();
 void rescueMapTests();
 void cloneTests();
+void cleanupTests();
+void snapperTests();
+void btrfsTests();
+void optimizeTests();

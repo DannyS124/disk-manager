@@ -46,6 +46,8 @@ add_library(diskforge-core STATIC
     src/clone.cpp src/clone.h
     src/imagebackup.cpp src/imagebackup.h
     src/rescuecopy.cpp src/rescuecopy.h
+    src/cleanup.cpp src/cleanup.h
+    src/snapper.cpp src/snapper.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD)
 target_include_directories(diskforge-core PUBLIC src)
@@ -61,6 +63,8 @@ add_library(diskforge-ui STATIC
     src/blockmapwidget.cpp src/blockmapwidget.h
     src/jobui.cpp src/jobui.h
     src/copydialogs.cpp src/copydialogs.h
+    src/usagedialog.cpp src/usagedialog.h
+    src/systemtools.cpp src/systemtools.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
@@ -86,13 +90,14 @@ if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp tests/testkit.cpp tests/testkit.h
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
-        tests/test_rescue.cpp tests/test_clone.cpp)
+        tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     qt_add_executable(diskforge-preview tests/preview.cpp)
     diskforge_add_data(diskforge-preview)
     target_link_libraries(diskforge-preview PRIVATE diskforge-ui)
+    target_compile_definitions(diskforge-preview PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     qt_add_executable(diskforge-uitest tests/uitest.cpp)
     diskforge_add_data(diskforge-uitest)
@@ -121,3 +126,13 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${APP_ID}.desktop DESTINATION ${CMAKE_
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${APP_ID}.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES data/${APP_ID}.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/diskforge.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+# Disk Cleanup starts these to shrink the journal and the package cache; see the files for why they're units.
+# Off for Flatpak and AppImage builds, which can't add system units.
+option(DISKFORGE_SYSTEMD_UNIT "Install the journal cleanup unit" ON)
+if(DISKFORGE_SYSTEMD_UNIT)
+    pkg_get_variable(SYSTEMD_UNIT_DIR systemd systemd_system_unit_dir)
+    if(NOT SYSTEMD_UNIT_DIR)
+        set(SYSTEMD_UNIT_DIR ${CMAKE_INSTALL_PREFIX}/lib/systemd/system)
+    endif()
+    install(FILES data/diskforge-journal-vacuum.service data/diskforge-paccache-uninstalled.service DESTINATION ${SYSTEMD_UNIT_DIR})
+endif()

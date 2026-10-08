@@ -6,6 +6,9 @@
 #include "about.h"
 #include "addonsdialog.h"
 #include "copydialogs.h"
+#include "snapper.h"
+#include "systemtools.h"
+#include "usagedialog.h"
 #include "dialogs.h"
 #include "tools.h"
 #include "diskmap.h"
@@ -366,6 +369,19 @@ void MainWindow::createActions()
             RescueDialog(m_udisks, d->blockPath, this).exec();
     });
 
+    m_usage = new QAction(themeIcon("view-statistics", "drive-harddisk"), tr("Disk &Usage…"), this);
+    connect(m_usage, &QAction::triggered, this, [this] {
+        const Volume *v = selectedVolume();
+        if (v && !v->mounts().isEmpty())
+            UsageDialog(v->mounts().first(), volumeTitle(*v), this).exec();
+    });
+    m_optimize = new QAction(themeIcon("speedometer", "system-run"), tr("&Optimize Drives…"), this);
+    connect(m_optimize, &QAction::triggered, this, [this] { OptimizeDialog(m_udisks, this).exec(); });
+    m_cleanup = new QAction(themeIcon("edit-clear-history", "edit-clear"), tr("Disk &Cleanup…"), this);
+    connect(m_cleanup, &QAction::triggered, this, [this] { CleanupDialog(m_udisks, this).exec(); });
+    m_snapshots = new QAction(themeIcon("camera-photo", "document-open-recent"), tr("Btrfs &Snapshots…"), this);
+    connect(m_snapshots, &QAction::triggered, this, [this] { SnapshotsDialog(this).exec(); });
+
     auto *quit = new QAction(themeIcon("application-exit", "window-close"), tr("&Quit"), this);
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, qApp, &QApplication::quit);
@@ -395,6 +411,8 @@ void MainWindow::createActions()
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     connect(tools, &QMenu::aboutToShow, this, [this, tools] {
         tools->clear();
+        tools->addActions({m_usage, m_cleanup, m_optimize, m_snapshots});
+        tools->addSection(tr("Add-ons"));
         if (!addAddonActions(tools))
             tools->addAction(tr("No add-on actions for this selection"))->setEnabled(false);
         tools->addSeparator();
@@ -593,6 +611,8 @@ void MainWindow::updateActions()
                          && !(d->isSystem && (!v || v->isSystem || anyMounted)));
     m_restore->setEnabled(changeable && kind != DiskMap::Selection::Kind::Free && (!v || partition));
     m_backup->setText(partition ? tr("&Back Up Partition…") : tr("&Back Up Drive…"));
+    m_usage->setEnabled(mounted);
+    m_snapshots->setEnabled(!snapper::mountedSubvolumes().isEmpty());
     m_restore->setText(partition ? tr("R&estore Partition Backup…") : tr("R&estore Drive Backup…"));
     m_properties->setEnabled(d != nullptr);
 
@@ -645,11 +665,13 @@ void MainWindow::buildContextMenu(QMenu *menu)
 
     if (v) {
         menu->addSection(volumeTitle(*v));
-        add({m_open, m_mount, m_unmount, m_unlock, m_lock});
+        add({m_open, m_usage, m_mount, m_unmount, m_unlock, m_lock});
         menu->addSeparator();
         add({m_format, m_resize, m_rename, m_check, m_startup, m_changePass, m_delete});
         menu->addSeparator();
         add({m_backup, m_restore});
+        if (v->effectiveFsType() == QLatin1String("btrfs"))
+            add({m_snapshots});
     } else if (sel.kind == DiskMap::Selection::Kind::Free) {
         menu->addSection(tr("Unallocated space, %1").arg(formatSize(sel.size)));
         add({m_newPartition});

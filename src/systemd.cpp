@@ -121,6 +121,11 @@ quint64 Systemd::timerLastTrigger(const QString &timer) const
     return unitProperty(timer, QStringLiteral("org.freedesktop.systemd1.Timer"), QStringLiteral("LastTriggerUSec")).toULongLong();
 }
 
+quint64 Systemd::serviceLastRun(const QString &service) const
+{
+    return unitProperty(service, QStringLiteral("org.freedesktop.systemd1.Service"), QStringLiteral("ExecMainExitTimestamp")).toULongLong();
+}
+
 QString Systemd::serviceResult(const QString &service) const
 {
     return unitProperty(service, QStringLiteral("org.freedesktop.systemd1.Service"), QStringLiteral("Result")).toString();

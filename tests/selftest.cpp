@@ -557,6 +557,17 @@ int main(int argc, char *argv[])
         backupTests();
     } else if (args.contains(QStringLiteral("--usage"))) {
         usageTests();
+    } else if (args.contains(QStringLiteral("--cleanup"))) {
+        cleanupTests();
+        snapperTests();
+    } else if (args.contains(QStringLiteral("--btrfs"))) {
+        if (needsRoot("--btrfs"))
+            return 2;
+        btrfsTests();
+    } else if (args.contains(QStringLiteral("--optimize"))) {
+        if (needsRoot("--optimize"))
+            return 2;
+        optimizeTests();
     } else if (args.contains(QStringLiteral("--clone"))) {
         if (needsRoot("--clone"))
             return 2;

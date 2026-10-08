@@ -35,6 +35,7 @@ public:
     QString unitFileState(const QString &unit) const; // "enabled", "disabled", ...
     quint64 timerLastTrigger(const QString &timer) const; // microseconds since the epoch, 0 = never
     QString serviceResult(const QString &service) const; // "success", "exit-code", ...
+    quint64 serviceLastRun(const QString &service) const; // when it last finished, microseconds; 0 = never
 
 private slots:
     void onJobRemoved(uint id, const QDBusObjectPath &job, const QString &unit, const QString &result);

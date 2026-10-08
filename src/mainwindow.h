@@ -91,6 +91,10 @@ private:
     QAction *m_backup = nullptr;
     QAction *m_restore = nullptr;
     QAction *m_rescue = nullptr;
+    QAction *m_usage = nullptr;
+    QAction *m_optimize = nullptr;
+    QAction *m_cleanup = nullptr;
+    QAction *m_snapshots = nullptr;
     QProgressBar *m_progress = nullptr;
     Addons m_addons;
     HelpWindow *m_help = nullptr;

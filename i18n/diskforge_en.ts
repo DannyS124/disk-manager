@@ -40,6 +40,17 @@
     </message>
 </context>
 <context>
+    <name>CleanupDialog</name>
+    <message numerus="yes">
+        <location filename="../src/systemtools.cpp" line="439"/>
+        <source>%n item(s) couldn&apos;t be deleted (first: %1).</source>
+        <translation>
+            <numerusform>%n item couldn't be deleted (first: %1).</numerusform>
+            <numerusform>%n items couldn't be deleted (first: %1).</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>CloneDialog</name>
     <message numerus="yes">
         <location filename="../src/copydialogs.cpp" line="233"/>
@@ -84,6 +95,25 @@
             <numerusform>%n smaller files</numerusform>
         </translation>
     </message>
+    <message numerus="yes">
+        <location filename="../src/usagedialog.cpp" line="48"/>
+        <source>%n file(s)</source>
+        <translation>
+            <numerusform>%n file</numerusform>
+            <numerusform>%n files</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>SnapshotsDialog</name>
+    <message numerus="yes">
+        <location filename="../src/systemtools.cpp" line="533"/>
+        <source>&lt;small&gt;%n snapshot(s). Sizes aren&apos;t shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</source>
+        <translation>
+            <numerusform>&lt;small&gt;%n snapshot. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
+            <numerusform>&lt;small&gt;%n snapshots. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>UDisks</name>
@@ -109,6 +139,17 @@
         <translation>
             <numerusform>%n media error</numerusform>
             <numerusform>%n media errors</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>UsageDialog</name>
+    <message numerus="yes">
+        <location filename="../src/usagedialog.cpp" line="333"/>
+        <source>%n folder(s) couldn&apos;t be opened (they belong to the system or other users), so the total may be a little low.</source>
+        <translation>
+            <numerusform>%n folder couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>
+            <numerusform>%n folders couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>
         </translation>
     </message>
 </context>

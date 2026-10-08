@@ -10,6 +10,8 @@
 #include "../src/copydialogs.h"
 #include "../src/imagebackup.h"
 #include "../src/rescuecopy.h"
+#include "../src/usagedialog.h"
+#include "../src/systemtools.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
@@ -26,6 +28,9 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
+#include <QElapsedTimer>
+#include <QProgressBar>
+#include <QLabel>
 
 void previewTools(UDisks &udisks, const QDir &out);
 void previewCopyTools(UDisks &udisks, const QDir &out);
@@ -156,6 +161,37 @@ void previewTools(UDisks &udisks, const QDir &out)
         break;
     }
     previewCopyTools(udisks, out);
+
+    // Disk usage of this source tree (small and always there), once the scan is done.
+    UsageDialog usage(QStringLiteral(SOURCE_DIR), QStringLiteral("diskforge"));
+    usage.show();
+    if (auto *busy = usage.findChild<QProgressBar *>()) {
+        QElapsedTimer waited;
+        waited.start();
+        while (busy->isVisible() && waited.elapsed() < 30000)
+            QApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    save(usage, out.filePath(QStringLiteral("usage.png")));
+
+    OptimizeDialog optimize(&udisks);
+    save(optimize, out.filePath(QStringLiteral("optimize.png")));
+    SnapshotsDialog snapshots;
+    save(snapshots, out.filePath(QStringLiteral("snapshots.png")));
+    // Cleanup works out its sizes in the background first.
+    CleanupDialog clean(&udisks);
+    clean.show();
+    QElapsedTimer waited;
+    waited.start();
+    auto measuring = [&clean] {
+        for (QLabel *l : clean.findChildren<QLabel *>()) {
+            if (l->text() == QStringLiteral("…"))
+                return true;
+        }
+        return false;
+    };
+    while (measuring() && waited.elapsed() < 60000)
+        QApplication::processEvents(QEventLoop::AllEvents, 50);
+    save(clean, out.filePath(QStringLiteral("cleanup.png")));
 }
 
 // Clone, Back Up, Restore and Rescue Copy, with sample files in a temporary folder.
