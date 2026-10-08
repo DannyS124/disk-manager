@@ -2,10 +2,10 @@
 # Builds the package from this source tree:  cd packaging/arch && makepkg -si
 pkgname=disk-manager
 pkgver=0.3.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Windows-style disk manager for Linux, built on UDisks2'
 arch=('x86_64')
-license=('custom')
+license=('MIT')
 depends=('qt6-base' 'udisks2')
 makedepends=('cmake')
 optdepends=(
@@ -26,4 +26,5 @@ build() {
 
 package() {
   DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$startdir/../../LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

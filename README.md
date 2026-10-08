@@ -46,3 +46,6 @@ root because there is nobody to type a polkit password.
 2. ✅ Mount, unmount and open in the file manager
 3. ✅ Format, create and delete partitions, labels, new partition tables
 4. ✅ Resize: shrink and grow (ext4, Btrfs, NTFS, FAT32; XFS grow with xfsprogs)
+
+## License
+MIT, see [LICENSE](LICENSE).
