@@ -489,7 +489,12 @@ void UDisks::openBlock(const QString &objectPath, OpenMode mode)
         return;
     }
     const bool writes = mode == OpenMode::ReadWrite || mode == OpenMode::ReadWriteDirect || mode == OpenMode::BenchmarkWritable;
-    if (writes && refuseSystem(disk, failure)) {
+    // Reading needs things unmounted too (except for the benchmark), and nothing on the
+    // system disk gets unmounted.
+    bool unmounts = false;
+    for (const Volume &v : affected)
+        unmounts = unmounts || (v.canMount() && !v.mounts().isEmpty()) || (v.encrypted && !v.cleartextPath.isEmpty());
+    if ((writes || (unmounts && mode != OpenMode::Benchmark)) && refuseSystem(disk, failure)) {
         emit deviceOpened(objectPath, -1);
         return;
     }

@@ -4,6 +4,7 @@
 #include "tools.h"
 
 #include "blockmapwidget.h"
+#include "jobui.h"
 
 #include "benchmark.h"
 #include "dialogs.h"
@@ -31,15 +32,6 @@
 #include <QVBoxLayout>
 
 namespace {
-
-QString durationText(double seconds)
-{
-    if (seconds < 90)
-        return QObject::tr("about a minute");
-    if (seconds < 90 * 60)
-        return QObject::tr("about %n minute(s)", nullptr, qRound(seconds / 60));
-    return QObject::tr("about %n hour(s)", nullptr, qRound(seconds / 3600));
-}
 
 QString healthColor(Health::State s)
 {
@@ -70,11 +62,6 @@ QString selftestText(const Health &h)
 QString sectors(qint64 n)
 {
     return QObject::tr("%n sector(s)", nullptr, int(n));
-}
-
-QString diskTitle(const Disk &d)
-{
-    return QStringLiteral("%1 (%2, %3)").arg(d.model, shortDevice(d.device), formatSize(d.size));
 }
 
 } // namespace

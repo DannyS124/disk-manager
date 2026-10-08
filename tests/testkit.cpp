@@ -3,9 +3,19 @@
 
 #include "testkit.h"
 
+#include "../src/udisks.h"
+
+#include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusObjectPath>
+#include <QDBusUnixFileDescriptor>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QProcess>
+#include <QThread>
 
 QTextStream out(stdout);
 int failures = 0;
@@ -45,4 +55,95 @@ QString sha256File(const QString &path, qint64 offset, qint64 length)
         left -= chunk.size();
     }
     return QString::fromLatin1(hash.result().toHex());
+}
+
+bool run(UDisks &udisks, const QString &step, const std::function<void()> &op, QString *message)
+{
+    bool done = false, ok = false;
+    QString text;
+    QEventLoop loop;
+    auto conn = QObject::connect(&udisks, &UDisks::operationFinished, [&](bool success, const QString &m) {
+        done = true;
+        ok = success;
+        text = m;
+        loop.quit();
+    });
+    op();
+    if (!done)
+        loop.exec();
+    QObject::disconnect(conn);
+    if (message)
+        *message = text;
+    else
+        report(ok, step, text);
+    return ok;
+}
+
+QString loopSetup(const QString &path, QString *error)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadWrite)) {
+        *error = file.errorString();
+        return {};
+    }
+    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"),
+        QStringLiteral("/org/freedesktop/UDisks2/Manager"), QStringLiteral("org.freedesktop.UDisks2.Manager"),
+        QStringLiteral("LoopSetup"));
+    call << QVariant::fromValue(QDBusUnixFileDescriptor(file.handle()))
+         << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+    const QDBusMessage reply = QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
+    if (reply.type() != QDBusMessage::ReplyMessage) {
+        *error = reply.errorMessage();
+        return {};
+    }
+    return reply.arguments().value(0).value<QDBusObjectPath>().path();
+}
+
+void loopDelete(const QString &objectPath)
+{
+    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), objectPath,
+        QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
+    call << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+    QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
+}
+
+const Disk *diskWithFile(UDisks &udisks, const QString &file)
+{
+    for (const Disk &d : udisks.disks()) {
+        if (d.isLoop && d.backingFile == file)
+            return &d;
+    }
+    return nullptr;
+}
+
+const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 15000) {
+        udisks.refresh();
+        const Disk *d = diskWithFile(udisks, file);
+        if (d && check(*d))
+            return d;
+        QCoreApplication::processEvents();
+        QThread::msleep(200);
+    }
+    return nullptr;
+}
+
+int openBlockFd(UDisks &udisks, const QString &objectPath, int mode)
+{
+    int fd = -2;
+    QEventLoop loop;
+    auto conn = QObject::connect(&udisks, &UDisks::deviceOpened, [&](const QString &path, int f) {
+        if (path == objectPath) {
+            fd = f;
+            loop.quit();
+        }
+    });
+    udisks.openBlock(objectPath, UDisks::OpenMode(mode));
+    if (fd == -2)
+        loop.exec();
+    QObject::disconnect(conn);
+    return fd;
 }

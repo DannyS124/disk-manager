@@ -41,27 +41,6 @@ namespace {
 
 QString imagePath;
 
-bool run(UDisks &udisks, const QString &step, const std::function<void()> &op, QString *message = nullptr)
-{
-    bool done = false, ok = false;
-    QString text;
-    QEventLoop loop;
-    auto conn = QObject::connect(&udisks, &UDisks::operationFinished, [&](bool success, const QString &m) {
-        done = true;
-        ok = success;
-        text = m;
-        loop.quit();
-    });
-    op();
-    if (!done)
-        loop.exec();
-    QObject::disconnect(conn);
-    if (message)
-        *message = text;
-    else
-        report(ok, step, text);
-    return ok;
-}
 
 const Disk *testDisk(UDisks &udisks)
 {
@@ -89,34 +68,6 @@ bool waitFor(UDisks &udisks, const QString &step, const std::function<bool(const
     }
     report(false, step, QStringLiteral("state never matched"));
     return false;
-}
-
-QString loopSetup(const QString &path, QString *error)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadWrite)) {
-        *error = file.errorString();
-        return {};
-    }
-    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"),
-        QStringLiteral("/org/freedesktop/UDisks2/Manager"), QStringLiteral("org.freedesktop.UDisks2.Manager"),
-        QStringLiteral("LoopSetup"));
-    call << QVariant::fromValue(QDBusUnixFileDescriptor(file.handle()))
-         << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
-    const QDBusMessage reply = QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
-    if (reply.type() != QDBusMessage::ReplyMessage) {
-        *error = reply.errorMessage();
-        return {};
-    }
-    return reply.arguments().value(0).value<QDBusObjectPath>().path();
-}
-
-void loopDelete(const QString &objectPath)
-{
-    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), objectPath,
-        QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
-    call << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
-    QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
 }
 
 Span firstFree(const Disk &d)
@@ -259,14 +210,6 @@ int openFd(UDisks &udisks, const Disk &disk, bool writable, bool benchmark)
     return fd;
 }
 
-const Disk *diskWithFile(UDisks &udisks, const QString &file)
-{
-    for (const Disk &d : udisks.disks()) {
-        if (d.isLoop && d.backingFile == file)
-            return &d;
-    }
-    return nullptr;
-}
 
 bool checkFails(UDisks &udisks, const QString &name, const std::function<void()> &op, const char *expect)
 {
@@ -566,6 +509,26 @@ void guard(UDisks &udisks)
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("startup mount on %1 is refused").arg(name), message);
         const int fd = openFd(udisks, d, true, false);
         report(fd < 0, QStringLiteral("raw write access to %1 is refused").arg(shortDevice(d.device)));
+        // Reading (a backup) would unmount it first, so that's refused as well.
+        // refresh() rebuilds the disk list, so keep copies, not references into it.
+        QString path, mountedName;
+        for (const Volume &mounted : d.volumes) {
+            if (!mounted.mounts().isEmpty()) {
+                path = mounted.objectPath;
+                mountedName = shortDevice(mounted.device);
+                break;
+            }
+        }
+        if (!path.isEmpty()) {
+            const int readFd = openBlockFd(udisks, path, int(UDisks::OpenMode::Read));
+            udisks.refresh();
+            bool stillMounted = false;
+            for (const Disk &now : udisks.disks()) {
+                for (const Volume &v : now.volumes)
+                    stillMounted = stillMounted || (v.objectPath == path && !v.mounts().isEmpty());
+            }
+            report(readFd < 0 && stillMounted, QStringLiteral("backing up mounted %1 is refused and it stays mounted").arg(mountedName));
+        }
         return;
     }
     report(false, QStringLiteral("find the system disk"));
@@ -594,6 +557,10 @@ int main(int argc, char *argv[])
         backupTests();
     } else if (args.contains(QStringLiteral("--usage"))) {
         usageTests();
+    } else if (args.contains(QStringLiteral("--clone"))) {
+        if (needsRoot("--clone"))
+            return 2;
+        cloneTests();
     } else if (args.contains(QStringLiteral("--rescuemap"))) {
         rescueMapTests();
     } else if (args.contains(QStringLiteral("--rescue"))) {

@@ -59,6 +59,7 @@ add_library(diskforge-ui STATIC
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
     src/blockmapwidget.cpp src/blockmapwidget.h
+    src/jobui.cpp src/jobui.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
@@ -84,7 +85,7 @@ if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp tests/testkit.cpp tests/testkit.h
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
-        tests/test_rescue.cpp)
+        tests/test_rescue.cpp tests/test_clone.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

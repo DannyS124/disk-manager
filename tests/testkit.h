@@ -8,6 +8,11 @@
 #include <QStringList>
 #include <QTextStream>
 
+#include <functional>
+
+class UDisks;
+struct Disk;
+
 extern QTextStream out;
 extern int failures;
 
@@ -15,6 +20,17 @@ void report(bool ok, const QString &step, const QString &detail = {});
 // Runs a program and returns its trimmed standard output.
 QString sh(const QString &program, const QStringList &args, int *exitCode = nullptr);
 QString sha256File(const QString &path, qint64 offset = 0, qint64 length = -1);
+
+// UDisks helpers. run() waits for operationFinished and reports it as a step (or hands
+// the message back without reporting).
+bool run(UDisks &udisks, const QString &step, const std::function<void()> &op, QString *message = nullptr);
+QString loopSetup(const QString &path, QString *error);
+void loopDelete(const QString &objectPath);
+const Disk *diskWithFile(UDisks &udisks, const QString &file);
+// Polls UDisks until `check` holds for the loop device backed by `file` (15 s at most).
+const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check);
+// Opens a disk or partition through UDisks and returns the fd (-1 on failure).
+int openBlockFd(UDisks &udisks, const QString &objectPath, int mode);
 
 // Suites in their own files.
 void gptTests();
@@ -24,3 +40,4 @@ void usageTests();
 void backupTests();
 void rescueTests();
 void rescueMapTests();
+void cloneTests();
