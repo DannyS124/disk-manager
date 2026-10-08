@@ -71,6 +71,7 @@ int main(int argc, char *argv[])
                                           QStringLiteral("Start with partition <device> selected."),
                                           QStringLiteral("device"));
     parser.addOptions({dumpOption, screenshotOption, selectOption});
+    parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
 
     UDisks udisks;
@@ -93,6 +94,8 @@ int main(int argc, char *argv[])
     MainWindow window(&udisks);
     window.resize(1280, 800);
     window.show();
+    for (const QString &image : parser.positionalArguments())
+        udisks.openImage(image);
     if (parser.isSet(selectOption) && !window.selectDevice(parser.value(selectOption)))
         QTextStream(stderr) << "No partition " << parser.value(selectOption) << "\n";
 

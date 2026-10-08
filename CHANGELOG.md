@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+- Disk health (SMART): healthy/warning/failing on every disk, temperature, hours, bad sectors, self-tests
+- Write an ISO to a USB stick, with an optional SHA-256 check and verification afterwards
+- Encrypted drives: encrypt when formatting or creating a partition, unlock, lock, change passphrase
+- Wipe a whole disk with zeros
+- Check for errors and repair
+- Mount at startup (adds an /etc/fstab entry under /mnt)
+- Safely remove USB drives
+- Open .iso and .img files as disks
+- Benchmark read speed, access time and write speed
+- Progress bar for long operations
+
 ## 0.4.3
 - Check for Updates says so when there's no release, instead of "Not Found"
 - Includes the 0.4.2 wording changes (0.4.2 was taken down before it was tested)

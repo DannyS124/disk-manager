@@ -28,7 +28,27 @@ partition table first (right-click the disk on the left, New Partition Table).</
 it. exFAT can't be resized, XFS can only grow. Back up anything important first.</p>
 <p><b>Rename:</b> select it and press F2.</p>
 <p><b>Delete:</b> right-click, Delete Partition. The space becomes unallocated.</p>
-<p><b>Wipe a whole disk:</b> right-click the disk on the left, New Partition Table. You have to type
+<p><b>Make a USB stick from an ISO:</b> File → Write Image to USB. Pick the ISO and the stick, type the
+stick's name to confirm. Paste the SHA-256 from the download page if you have it, so a broken download is
+caught before anything is written. Works for Linux ISOs; Windows ISOs need a tool like WoeUSB.</p>
+<p><b>Unplug a USB drive:</b> right-click the disk on the left, Safely Remove. Everything gets unmounted and
+the drive is powered off, so it's safe to pull out.</p>
+<p><b>Check for errors:</b> right-click the partition, Check for Errors. If problems are found, DiskForge
+offers to repair them.</p>
+<p><b>Mount a drive every time the PC starts:</b> right-click the partition and tick Mount at Startup. It
+will show up under /mnt.</p>
+<p><b>Encrypt a drive:</b> tick "Encrypt with a passphrase" when you format or create a partition. To use it
+later, right-click it and Unlock, then Mount. Lock it when you're done.</p>
+<p><b>Open an ISO or disk image:</b> File → Open Disk Image (Ctrl+O). It shows up as a disk you can mount
+and browse. Close it from the disk's right-click menu.</p>
+<p><b>Is my drive OK?</b> The dot on each disk shows its health: green is fine, orange means it's wearing
+out (keep backups), red means back it up now. Right-click the disk, Disk Health for details and self-tests.
+USB sticks don't report health.</p>
+<p><b>How fast is it?</b> Right-click the disk, Benchmark. Reading doesn't change anything; the optional
+write test uses a temporary file.</p>
+<p><b>Wipe a whole disk:</b> right-click the disk on the left, Wipe Disk. Every byte is overwritten with
+zeros. Do this before you sell or give away a drive.</p>
+<p><b>Start a disk over:</b> right-click the disk on the left, New Partition Table. You have to type
 the disk name to confirm. Pick GPT unless it's for a really old computer.</p>
 
 <a name="filesystems"></a>
@@ -54,6 +74,6 @@ and paste the output of <code>diskforge --dump</code>.</p>
 
 <a name="keys"></a>
 <h2>Shortcuts</h2>
-<p>F1 help, F2 rename, F5 refresh, Delete delete partition, Alt+Enter properties, Ctrl+Q quit.</p>
+<p>F1 help, F2 rename, F5 refresh, Ctrl+O open disk image, Delete delete partition, Alt+Enter properties, Ctrl+Q quit.</p>
 </body>
 </html>

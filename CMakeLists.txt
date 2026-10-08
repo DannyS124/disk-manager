@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.21)
 project(diskforge
-    VERSION 0.4.3
+    VERSION 0.5.0
     DESCRIPTION "Disk manager for Linux in the style of Windows Disk Management"
     HOMEPAGE_URL "https://github.com/DannyS124/diskforge"
     LANGUAGES CXX)
@@ -37,6 +37,7 @@ qt_add_executable(diskforge
     src/diskmap.cpp src/diskmap.h
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
+    src/tools.cpp src/tools.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
 )
@@ -60,7 +61,7 @@ if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
 
-    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/about.cpp)
+    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/tools.cpp src/about.cpp)
     qt_add_resources(diskforge-preview "preview_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
     target_link_libraries(diskforge-preview PRIVATE diskforge-core Qt6::Widgets)
     target_compile_definitions(diskforge-preview PRIVATE ${APP_DEFINITIONS})

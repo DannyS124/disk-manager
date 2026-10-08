@@ -74,6 +74,8 @@ QString volumeStatus(const Volume &v, bool brief)
     else
         parts << v.fsType;
 
+    if (!v.fstab.isEmpty() && !v.isSystem)
+        parts << tr("Mounts at startup");
     return parts.join(QStringLiteral(" · "));
 }
 

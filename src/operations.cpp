@@ -63,7 +63,7 @@ QVector<SmartAttribute> decodeAta(const QDBusMessage &reply)
         a.failing = threshold > 0 && value > 0 && value <= threshold;
         switch (unit) {
         case 2: // milliseconds
-            a.raw = UDisks::tr("%L1 hours").arg(pretty / 3600000);
+            a.raw = pretty >= 3600000 ? UDisks::tr("%L1 hours").arg(pretty / 3600000) : UDisks::tr("%L1 ms").arg(pretty);
             break;
         case 3: // sectors
             a.rawValue = sectorCount(pretty);
@@ -144,7 +144,7 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             h.summary = tr("Failing, back up now");
         } else if (h.badSectors > 0) {
             h.state = Health::State::Warning;
-            h.summary = tr("%n bad sector(s)", nullptr, int(h.badSectors));
+            h.summary = h.badSectors == 1 ? tr("1 bad sector") : tr("%1 bad sectors").arg(h.badSectors);
         } else if (ata.value(QStringLiteral("SmartNumAttributesFailedInThePast")).toInt() > 0) {
             h.state = Health::State::Warning;
             h.summary = tr("Had problems in the past");
@@ -198,7 +198,7 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             h.summary = tr("Worn out (%1% used)").arg(h.percentUsed);
         } else if (cache.mediaErrors > 0) {
             h.state = Health::State::Warning;
-            h.summary = tr("%n media error(s)", nullptr, int(cache.mediaErrors));
+            h.summary = cache.mediaErrors == 1 ? tr("1 media error") : tr("%1 media errors").arg(cache.mediaErrors);
         } else {
             h.state = Health::State::Healthy;
             h.summary = tr("Healthy");
@@ -448,7 +448,7 @@ void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark)
 {
     const QString name = shortDevice(disk.device);
     const QString failure = tr("Couldn't open %1").arg(name);
-    if (refuseSystem(&disk, failure)) {
+    if (writable && refuseSystem(&disk, failure)) {
         emit deviceOpened(disk.blockPath, -1);
         return;
     }

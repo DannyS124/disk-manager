@@ -4,6 +4,7 @@
 #include "dialogs.h"
 
 #include "format.h"
+#include "tools.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -47,6 +48,13 @@ QString red(const QString &text)
 }
 
 } // namespace
+
+QString redText(const QString &text) { return red(text); }
+QLabel *wrappingLabel(const QString &html) { return warningLabel(html); }
+QDialogButtonBox *dialogButtons(QDialog *dialog, const QString &actionText, QPushButton **action)
+{
+    return buttons(dialog, actionText, action);
+}
 
 QString describeVolume(const Volume &v)
 {
@@ -107,6 +115,7 @@ FormatDialog::FormatDialog(const Disk &disk, const Volume &volume, const QVector
     , m_fs(new QComboBox)
     , m_label(new QLineEdit(volume.label))
     , m_picker(filesystems, disk, m_fs, m_label)
+    , m_encryption(new EncryptionFields)
 {
     setWindowTitle(tr("Format %1").arg(shortDevice(volume.device)));
 
@@ -123,13 +132,16 @@ FormatDialog::FormatDialog(const Disk &disk, const Volume &volume, const QVector
     QPushButton *action;
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(form);
+    layout->addWidget(m_encryption);
     layout->addWidget(warningLabel(warning));
     layout->addWidget(buttons(this, tr("Format"), &action));
+    connect(m_encryption, &EncryptionFields::changed, this, [this, action] { action->setEnabled(m_encryption->isValid()); });
     resize(520, sizeHint().height());
 }
 
 QString FormatDialog::fsType() const { return m_picker.fsType(); }
 QString FormatDialog::label() const { return m_label->text().trimmed(); }
+QString FormatDialog::passphrase() const { return m_encryption->passphrase(); }
 
 NewPartitionDialog::NewPartitionDialog(const Disk &disk, const Span &free, const QVector<FsType> &filesystems, QWidget *parent)
     : QDialog(parent)
@@ -137,6 +149,7 @@ NewPartitionDialog::NewPartitionDialog(const Disk &disk, const Span &free, const
     , m_fs(new QComboBox)
     , m_label(new QLineEdit)
     , m_picker(filesystems, disk, m_fs, m_label)
+    , m_encryption(new EncryptionFields)
 {
     setWindowTitle(tr("New Partition on %1").arg(shortDevice(disk.device)));
 
@@ -156,15 +169,18 @@ NewPartitionDialog::NewPartitionDialog(const Disk &disk, const Span &free, const
     QPushButton *action;
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(form);
+    layout->addWidget(m_encryption);
     if (!diskWarning(disk).isEmpty())
         layout->addWidget(warningLabel(red(diskWarning(disk))));
     layout->addWidget(buttons(this, tr("Create"), &action));
+    connect(m_encryption, &EncryptionFields::changed, this, [this, action] { action->setEnabled(m_encryption->isValid()); });
     resize(520, sizeHint().height());
 }
 
 quint64 NewPartitionDialog::sizeBytes() const { return quint64(m_size->value()) * kMiB; }
 QString NewPartitionDialog::fsType() const { return m_picker.fsType(); }
 QString NewPartitionDialog::label() const { return m_label->text().trimmed(); }
+QString NewPartitionDialog::passphrase() const { return m_encryption->passphrase(); }
 
 PartitionTableDialog::PartitionTableDialog(const Disk &disk, int diskNumber, QWidget *parent)
     : QDialog(parent)

@@ -5,15 +5,19 @@
 
 #include "../src/about.h"
 #include "../src/dialogs.h"
+#include "../src/tools.h"
 #include "../src/udisks.h"
 
 #include <QApplication>
 #include <QDir>
 #include <QIcon>
+#include <QCheckBox>
 #include <QTabWidget>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QTextStream>
+
+void previewTools(UDisks &udisks, const QDir &out);
 
 namespace {
 
@@ -44,6 +48,7 @@ int main(int argc, char *argv[])
     }
     HelpWindow help;
     save(help, out.filePath(QStringLiteral("handbook.png")));
+    previewTools(udisks, out);
 
     // prefer Ventoy so the warning shows up
     const Disk *disk = nullptr;
@@ -96,4 +101,31 @@ table:
     }
     QTextStream(stdout) << "no resizable volume to preview" << Qt::endl;
     return 0;
+}
+
+// Second pass: the tools dialogs. Called from main before the resize preview returns.
+void previewTools(UDisks &udisks, const QDir &out)
+{
+    for (const Disk &d : udisks.disks()) {
+        if (d.health.state == Health::State::Warning || d.health.state == Health::State::Failing) {
+            HealthDialog health(&udisks, d.blockPath);
+            save(health, out.filePath(QStringLiteral("health.png")));
+            break;
+        }
+    }
+    for (const Disk &d : udisks.disks()) {
+        if (d.isSystem || d.isLoop || d.volumes.isEmpty())
+            continue;
+        BenchmarkDialog bench(&udisks, d);
+        save(bench, out.filePath(QStringLiteral("benchmark.png")));
+        WipeDialog wipe(d, 2);
+        save(wipe, out.filePath(QStringLiteral("wipe.png")));
+        WriteImageDialog write(&udisks, QString());
+        save(write, out.filePath(QStringLiteral("write-image.png")));
+        FormatDialog format(d, d.volumes.first(), udisks.filesystems());
+        if (auto *box = format.findChild<QCheckBox *>())
+            box->setChecked(true);
+        save(format, out.filePath(QStringLiteral("format-encrypted.png")));
+        break;
+    }
 }

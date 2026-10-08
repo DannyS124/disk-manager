@@ -238,6 +238,12 @@ QString DiskMap::toolTipAt(int row, int segment) const
         QStringList lines = {d.model, d.device, tableName(d) + QStringLiteral(" · ") + diskKind(d)};
         if (d.isSystem)
             lines << tr("System disk (%1): read-only in this app").arg(d.systemReason);
+        if (d.health.state != Health::State::Unknown) {
+            QString health = tr("Health: %1").arg(d.health.summary);
+            if (d.health.temperatureC > 0)
+                health += QStringLiteral(", %1 °C").arg(qRound(d.health.temperatureC));
+            lines << health;
+        }
         return lines.join(QLatin1Char('\n'));
     }
     const Span &span = m_rows[row].segments[segment].span;
@@ -296,15 +302,35 @@ void DiskMap::paintHeader(QPainter &p, int row) const
     p.setFont(font());
 
     const QFontMetrics fm = fontMetrics();
+    QString state = d.isSystem ? tr("System disk") : d.isLoop && d.readOnly ? tr("Read-only image") : tr("Online");
+    QColor dot;
+    switch (d.health.state) {
+    case Health::State::Healthy: dot = QColor(0x2e, 0xcc, 0x71); break;
+    case Health::State::Warning: dot = QColor(0xf3, 0x9c, 0x12); break;
+    case Health::State::Failing: dot = QColor(0xe7, 0x4c, 0x3c); break;
+    case Health::State::Unknown: break;
+    }
+    if (dot.isValid())
+        state = d.health.summary;
     const QStringList lines = {
         tableName(d) + QStringLiteral(" · ") + diskKind(d),
         formatSize(d.size),
-        d.isSystem ? tr("System disk") : tr("Online"),
+        state,
     };
     int y = body.top() + 24;
-    for (const QString &line : lines) {
-        p.drawText(QRect(body.left(), y, body.width(), fm.height()), Qt::AlignLeft | Qt::AlignVCenter,
-                   fm.elidedText(line, Qt::ElideRight, body.width()));
+    for (int i = 0; i < lines.size(); ++i) {
+        int x = body.left();
+        if (i == 2 && dot.isValid()) {
+            p.save();
+            p.setRenderHint(QPainter::Antialiasing);
+            p.setPen(Qt::NoPen);
+            p.setBrush(dot);
+            p.drawEllipse(QRectF(x, y + fm.height() / 2.0 - 4, 8, 8));
+            p.restore();
+            x += 12;
+        }
+        p.drawText(QRect(x, y, body.right() - x, fm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                   fm.elidedText(lines[i], Qt::ElideRight, body.right() - x));
         y += fm.height();
     }
 }

@@ -7,6 +7,7 @@
 
 #include <QDialog>
 
+class EncryptionFields;
 class QComboBox;
 class QDialogButtonBox;
 class QLabel;
@@ -15,6 +16,12 @@ class QPushButton;
 class QRadioButton;
 class QSlider;
 class QSpinBox;
+
+// Shared pieces for the dialogs here and in tools.cpp.
+QString redText(const QString &text);
+QLabel *wrappingLabel(const QString &html);
+// Cancel stays the default; *action gets the button that accepts the dialog.
+QDialogButtonBox *dialogButtons(QDialog *dialog, const QString &actionText, QPushButton **action);
 
 // e.g. "RESCUE DISK (sdb1), 32.00 GB vfat"
 QString describeVolume(const Volume &v);
@@ -41,11 +48,13 @@ public:
     FormatDialog(const Disk &disk, const Volume &volume, const QVector<FsType> &filesystems, QWidget *parent = nullptr);
     QString fsType() const;
     QString label() const;
+    QString passphrase() const; // empty = not encrypted
 
 private:
     QComboBox *m_fs;
     QLineEdit *m_label;
     FsPicker m_picker;
+    EncryptionFields *m_encryption;
 };
 
 class NewPartitionDialog : public QDialog
@@ -56,12 +65,14 @@ public:
     quint64 sizeBytes() const;
     QString fsType() const;
     QString label() const;
+    QString passphrase() const; // empty = not encrypted
 
 private:
     QSpinBox *m_size;
     QComboBox *m_fs;
     QLineEdit *m_label;
     FsPicker m_picker;
+    EncryptionFields *m_encryption;
 };
 
 // Asks for the device name before wiping a non-empty disk.

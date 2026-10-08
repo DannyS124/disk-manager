@@ -52,6 +52,12 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.5.0" date="2026-10-08">
+      <description>
+        <p>Disk health, write images to USB, encrypted drives, secure wipe, check and repair, mount at startup,
+        safely remove, disk images, benchmark, and progress bars.</p>
+      </description>
+    </release>
     <release version="0.4.3" date="2026-10-08">
       <description>
         <p>Simpler wording, and Check for Updates handles there being no release.</p>

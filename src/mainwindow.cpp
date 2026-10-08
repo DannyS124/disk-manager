@@ -5,6 +5,7 @@
 
 #include "about.h"
 #include "dialogs.h"
+#include "tools.h"
 #include "diskmap.h"
 #include "format.h"
 #include "updates.h"
@@ -17,8 +18,12 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QFileDialog>
 #include <QHeaderView>
+#include <QProgressBar>
+#include <QSignalBlocker>
 #include <QInputDialog>
+#include <QLineEdit>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
@@ -97,6 +102,11 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
 
     createActions();
 
+    m_progress = new QProgressBar;
+    m_progress->setMaximumWidth(180);
+    m_progress->setTextVisible(false);
+    m_progress->setVisible(false);
+    statusBar()->addPermanentWidget(m_progress);
     statusBar()->addPermanentWidget(legendItem(colorSwatch(DiskMap::freeColor()), tr("Unallocated")));
     statusBar()->addPermanentWidget(legendItem(colorSwatch(DiskMap::partitionColor(palette())), tr("Partition")));
     statusBar()->addPermanentWidget(legendItem(QIcon::fromTheme(QStringLiteral("object-locked")).pixmap(12, 12),
@@ -110,6 +120,21 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
         else {
             statusBar()->clearMessage();
             QMessageBox::warning(this, windowTitle(), message);
+        }
+    });
+    connect(m_udisks, &UDisks::checkFinished, this, [this](const QString &objectPath, bool clean) {
+        if (clean)
+            return;
+        for (const Disk &d : m_udisks->disks()) {
+            for (const Volume &v : d.volumes) {
+                if (v.objectPath != objectPath)
+                    continue;
+                const auto answer = QMessageBox::question(this, tr("Errors Found"),
+                    tr("%1 has file system errors. Repair them now?").arg(volumeTitle(v)));
+                if (answer == QMessageBox::Yes)
+                    m_udisks->repair(v);
+                return;
+            }
         }
     });
     connect(m_table, &QTreeWidget::itemSelectionChanged, this, &MainWindow::onTableSelection);
@@ -180,21 +205,129 @@ void MainWindow::createActions()
     m_newTable = new QAction(themeIcon("document-new", "list-add"), tr("New Partition &Table…"), this);
     connect(m_newTable, &QAction::triggered, this, &MainWindow::newPartitionTable);
 
+    m_safelyRemove = new QAction(themeIcon("media-eject", "media-eject"), tr("&Safely Remove"), this);
+    connect(m_safelyRemove, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk()) {
+            statusBar()->showMessage(tr("Getting %1 ready to unplug…").arg(shortDevice(d->device)));
+            m_udisks->powerOff(*d);
+        }
+    });
+
+    m_check = new QAction(themeIcon("checkmark", "dialog-ok-apply"), tr("Chec&k for Errors…"), this);
+    connect(m_check, &QAction::triggered, this, [this] {
+        const Volume *v = selectedVolume();
+        if (!v)
+            return;
+        if (!v->mounts().isEmpty()
+            && QMessageBox::question(this, tr("Check for Errors"),
+                                     tr("%1 has to be unmounted while it's checked. Continue?").arg(volumeTitle(*v))) != QMessageBox::Yes)
+            return;
+        statusBar()->showMessage(tr("Checking %1…").arg(shortDevice(v->device)));
+        m_udisks->check(*v);
+    });
+
+    m_startup = new QAction(tr("Mount at &Startup"), this);
+    m_startup->setCheckable(true);
+    connect(m_startup, &QAction::triggered, this, [this](bool on) {
+        if (const Volume *v = selectedVolume())
+            m_udisks->setMountAtStartup(*v, on);
+        updateActions();
+    });
+
+    m_unlock = new QAction(themeIcon("object-unlocked", "unlock"), tr("U&nlock…"), this);
+    connect(m_unlock, &QAction::triggered, this, [this] {
+        const Volume *v = selectedVolume();
+        if (!v)
+            return;
+        bool ok = false;
+        const QString pass = QInputDialog::getText(this, tr("Unlock %1").arg(shortDevice(v->device)),
+                                                   tr("Passphrase for %1:").arg(volumeTitle(*v)), QLineEdit::Password, {}, &ok);
+        if (ok && !pass.isEmpty())
+            m_udisks->unlock(*v, pass);
+    });
+
+    m_lock = new QAction(themeIcon("object-locked", "lock"), tr("&Lock"), this);
+    connect(m_lock, &QAction::triggered, this, [this] {
+        if (const Volume *v = selectedVolume())
+            m_udisks->lock(*v);
+    });
+
+    m_changePass = new QAction(themeIcon("document-encrypt", "dialog-password"), tr("Change &Passphrase…"), this);
+    connect(m_changePass, &QAction::triggered, this, [this] {
+        const Volume *v = selectedVolume();
+        if (!v)
+            return;
+        ChangePassphraseDialog dialog(shortDevice(v->device), this);
+        if (dialog.exec() == QDialog::Accepted)
+            m_udisks->changePassphrase(*v, dialog.oldPassphrase(), dialog.newPassphrase());
+    });
+
+    m_openImage = new QAction(themeIcon("document-open", "document-open"), tr("&Open Disk Image…"), this);
+    m_openImage->setShortcut(QKeySequence::Open);
+    connect(m_openImage, &QAction::triggered, this, [this] {
+        const QString file = QFileDialog::getOpenFileName(this, tr("Open Disk Image"), QDir::homePath(),
+                                                          tr("Disk images (*.iso *.img *.raw);;All files (*)"));
+        if (!file.isEmpty())
+            m_udisks->openImage(file);
+    });
+
+    m_detachImage = new QAction(themeIcon("media-eject", "media-eject"), tr("&Close Disk Image"), this);
+    connect(m_detachImage, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            m_udisks->detachImage(*d);
+    });
+
+    m_writeImage = new QAction(themeIcon("media-flash", "document-save"), tr("&Write Image to USB…"), this);
+    connect(m_writeImage, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        WriteImageDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+    });
+
+    m_wipe = new QAction(themeIcon("edit-clear-all", "edit-clear"), tr("&Wipe Disk…"), this);
+    connect(m_wipe, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        if (!d)
+            return;
+        WipeDialog dialog(*d, selectedDiskNumber(), this);
+        if (dialog.exec() == QDialog::Accepted) {
+            statusBar()->showMessage(tr("Wiping %1…").arg(shortDevice(d->device)));
+            m_udisks->wipe(*d);
+        }
+    });
+
+    m_health = new QAction(themeIcon("dialog-information", "help-about"), tr("Disk &Health…"), this);
+    connect(m_health, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            HealthDialog(m_udisks, d->blockPath, this).exec();
+    });
+
+    m_benchmark = new QAction(themeIcon("speedometer", "chronometer"), tr("&Benchmark…"), this);
+    connect(m_benchmark, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            BenchmarkDialog(m_udisks, *d, this).exec();
+    });
+
     auto *quit = new QAction(themeIcon("application-exit", "window-close"), tr("&Quit"), this);
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, qApp, &QApplication::quit);
 
     QMenu *file = menuBar()->addMenu(tr("&File"));
+    file->addActions({m_openImage, m_writeImage});
+    file->addSeparator();
     file->addAction(m_refresh);
     file->addSeparator();
     file->addAction(quit);
 
     QMenu *action = menuBar()->addMenu(tr("&Action"));
-    action->addActions({m_open, m_mount, m_unmount});
+    action->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
     action->addSeparator();
-    action->addActions({m_newPartition, m_format, m_resize, m_rename, m_delete});
+    action->addActions({m_unlock, m_lock, m_changePass});
     action->addSeparator();
-    action->addAction(m_newTable);
+    action->addActions({m_newPartition, m_format, m_resize, m_rename, m_check, m_startup, m_delete});
+    action->addSeparator();
+    action->addActions({m_newTable, m_wipe, m_detachImage});
+    action->addSeparator();
+    action->addActions({m_health, m_benchmark});
     action->addSeparator();
     action->addActions({m_copy, m_properties});
 
@@ -227,7 +360,9 @@ void MainWindow::createActions()
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     toolbar->addActions({m_refresh});
     toolbar->addSeparator();
-    toolbar->addActions({m_open, m_mount, m_unmount, m_properties});
+    toolbar->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
+    toolbar->addSeparator();
+    toolbar->addActions({m_writeImage, m_properties});
 }
 
 void MainWindow::rebuild()
@@ -238,6 +373,7 @@ void MainWindow::rebuild()
     updateActions();
     if (!m_udisks->isAvailable())
         statusBar()->showMessage(tr("UDisks2 is not available: %1").arg(m_udisks->lastError()));
+    updateProgress();
 }
 
 bool MainWindow::selectDevice(const QString &device)
@@ -330,51 +466,105 @@ void MainWindow::updateActions()
     const Disk *d = selectedDisk();
     const Volume *v = selectedVolume();
     const auto kind = m_map->selection().kind;
-    const bool mounted = v && !(v->mountPoints.isEmpty() && v->cleartextMountPoints.isEmpty());
+    const bool mounted = v && !v->mounts().isEmpty();
     const bool busy = m_udisks->isBusy();
     const bool changeable = d && !d->isSystem && !busy;
+    const FsType *fs = v ? m_udisks->filesystem(v->effectiveFsType()) : nullptr;
 
     m_open->setEnabled(mounted);
-    m_mount->setEnabled(v && v->hasFilesystem && v->mountPoints.isEmpty() && !busy);
-    m_unmount->setEnabled(v && v->hasFilesystem && !v->mountPoints.isEmpty() && !v->isSystem && !busy);
+    m_mount->setEnabled(v && v->canMount() && !mounted && !busy);
+    m_unmount->setEnabled(v && v->canMount() && mounted && !v->isSystem && !busy);
+    m_safelyRemove->setEnabled(d && !d->isSystem && !d->isLoop && d->canPowerOff && !busy);
+    m_unlock->setEnabled(v && v->encrypted && v->cleartextPath.isEmpty() && !busy);
+    m_lock->setEnabled(v && v->encrypted && !v->cleartextPath.isEmpty() && !v->isSystem && !busy);
+    m_changePass->setEnabled(changeable && v && v->encrypted);
     m_newPartition->setEnabled(changeable && kind == DiskMap::Selection::Kind::Free && !d->tableType.isEmpty());
     m_format->setEnabled(changeable && v && !v->isContainer);
-    m_rename->setEnabled(changeable && v && v->hasFilesystem);
+    m_rename->setEnabled(changeable && v && v->canMount());
+    m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);
+    m_startup->setEnabled(changeable && v && v->hasFilesystem && !v->encrypted && !v->uuid.isEmpty());
+    {
+        const QSignalBlocker block(m_startup);
+        m_startup->setChecked(v && !v->fstab.isEmpty());
+    }
     m_delete->setEnabled(changeable && v && v->number > 0);
     const ResizeLimits limits = v ? m_udisks->resizeLimits(*v) : ResizeLimits{};
     m_resize->setEnabled(changeable && limits.possible);
     m_newTable->setEnabled(changeable);
+    m_wipe->setEnabled(changeable);
+    m_detachImage->setEnabled(d && d->isLoop && !busy);
+    m_openImage->setEnabled(!busy);
+    m_writeImage->setEnabled(!busy);
+    m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
+    m_benchmark->setEnabled(d && !busy);
     m_copy->setEnabled(d && kind != DiskMap::Selection::Kind::Free);
     m_properties->setEnabled(d != nullptr);
 
     const QString why = d && d->isSystem ? tr("Disk holds the running system (%1)").arg(d->systemReason)
                       : busy             ? tr("Wait for the current operation to finish")
                                          : QString();
-    for (QAction *a : {m_unmount, m_newPartition, m_format, m_rename, m_delete, m_newTable})
+    for (QAction *a : {m_unmount, m_newPartition, m_format, m_rename, m_delete, m_newTable, m_wipe, m_safelyRemove,
+                       m_check, m_startup, m_lock, m_changePass})
         a->setToolTip(why.isEmpty() || a->isEnabled() ? a->text().remove(QLatin1Char('&')) : why);
     m_resize->setToolTip(m_resize->isEnabled() ? tr("Resize") : !why.isEmpty() ? why : limits.reason);
+    if (d && !m_health->isEnabled())
+        m_health->setToolTip(tr("This drive doesn't report health data"));
+    if (v && v->encrypted && !m_startup->isEnabled() && why.isEmpty())
+        m_startup->setToolTip(tr("Encrypted drives can't mount at startup yet"));
+    updateProgress();
+}
+
+void MainWindow::updateProgress()
+{
+    const QVector<Job> &jobs = m_udisks->jobs();
+    const bool working = m_udisks->isBusy() || !jobs.isEmpty();
+    m_progress->setVisible(working);
+    if (!working)
+        return;
+    for (const Job &j : jobs) {
+        if (j.progressValid) {
+            m_progress->setRange(0, 1000);
+            m_progress->setValue(int(j.progress * 1000));
+            m_progress->setToolTip(j.rate ? tr("%1/s").arg(formatSize(j.rate)) : QString());
+            return;
+        }
+    }
+    m_progress->setRange(0, 0); // no percentage from UDisks2: show that it's busy
 }
 
 void MainWindow::showContextMenu(const QPoint &globalPos)
 {
     QMenu menu(this);
+    const Disk *d = selectedDisk();
+    const Volume *v = selectedVolume();
     switch (m_map->selection().kind) {
     case DiskMap::Selection::Kind::Volume:
         menu.addActions({m_open, m_mount, m_unmount});
+        if (v && v->encrypted) {
+            menu.addSeparator();
+            menu.addActions({m_unlock, m_lock, m_changePass});
+        }
         menu.addSeparator();
-        menu.addActions({m_format, m_resize, m_rename, m_delete});
+        menu.addActions({m_format, m_resize, m_rename, m_check, m_startup, m_delete});
         menu.addSeparator();
         menu.addActions({m_copy, m_properties});
         break;
     case DiskMap::Selection::Kind::Free:
         menu.addAction(m_newPartition);
-        if (selectedDisk() && selectedDisk()->tableType.isEmpty())
+        if (d && d->tableType.isEmpty())
             menu.addAction(m_newTable);
         menu.addSeparator();
         menu.addAction(m_properties);
         break;
     case DiskMap::Selection::Kind::Disk:
-        menu.addAction(m_newTable);
+        if (d && d->canPowerOff && !d->isLoop)
+            menu.addAction(m_safelyRemove);
+        if (d && d->isLoop)
+            menu.addAction(m_detachImage);
+        menu.addSeparator();
+        menu.addActions({m_health, m_benchmark, m_writeImage});
+        menu.addSeparator();
+        menu.addActions({m_newTable, m_wipe});
         menu.addSeparator();
         menu.addActions({m_copy, m_properties});
         break;
@@ -395,7 +585,7 @@ void MainWindow::activate()
 void MainWindow::openInFileManager()
 {
     if (const Volume *v = selectedVolume()) {
-        const QString mp = v->mountPoints.value(0, v->cleartextMountPoints.value(0));
+        const QString mp = v->mounts().value(0);
         if (!mp.isEmpty())
             QDesktopServices::openUrl(QUrl::fromLocalFile(mp));
     }
@@ -440,6 +630,10 @@ void MainWindow::showProperties()
             add(tr("Partition number"), QString::number(v->number));
         add(tr("Partition type"), partitionTypeName(v->partType));
         add(tr("Starts at"), bytes(v->offset));
+        if (!v->fstab.isEmpty())
+            add(tr("Mounts at startup"), QString::fromLocal8Bit(v->fstab.value(QStringLiteral("dir")).toByteArray()).remove(QChar(0)));
+        if (v->encrypted)
+            add(tr("Encryption"), v->cleartextPath.isEmpty() ? tr("LUKS, locked") : tr("LUKS, unlocked (%1 inside)").arg(v->cleartextFsType));
         add(tr("Disk"), d->device);
         add(tr("UDisks2 object"), v->objectPath);
     } else if (sel.kind == DiskMap::Selection::Kind::Free) {
@@ -459,6 +653,13 @@ void MainWindow::showProperties()
             add(tr("Rotation rate"), tr("%1 rpm").arg(d->rotationRate));
         add(tr("Image file"), d->backingFile);
         add(tr("Removable"), d->removable ? tr("Yes") : tr("No"));
+        if (d->health.state != Health::State::Unknown) {
+            add(tr("Health"), d->health.summary);
+            if (d->health.temperatureC > 0)
+                add(tr("Temperature"), QStringLiteral("%1 °C").arg(qRound(d->health.temperatureC)));
+            if (d->health.powerOnHours > 0)
+                add(tr("Powered on"), tr("%L1 hours").arg(d->health.powerOnHours));
+        }
         if (d->isSystem)
             add(tr("System disk"), tr("%1. This app won't modify it.").arg(d->systemReason));
         add(tr("UDisks2 object"), d->blockPath);
@@ -500,7 +701,7 @@ void MainWindow::newPartition()
     if (dialog.exec() != QDialog::Accepted)
         return;
     statusBar()->showMessage(tr("Creating a partition on %1…").arg(shortDevice(d->device)));
-    m_udisks->createPartition(*d, sel.offset, dialog.sizeBytes(), dialog.fsType(), dialog.label());
+    m_udisks->createPartition(*d, sel.offset, dialog.sizeBytes(), dialog.fsType(), dialog.label(), dialog.passphrase());
     updateActions();
 }
 
@@ -525,7 +726,7 @@ void MainWindow::formatVolume()
         return;
 
     statusBar()->showMessage(tr("Formatting %1…").arg(shortDevice(v->device)));
-    m_udisks->format(*v, dialog.fsType(), dialog.label());
+    m_udisks->format(*v, dialog.fsType(), dialog.label(), dialog.passphrase());
     updateActions();
 }
 

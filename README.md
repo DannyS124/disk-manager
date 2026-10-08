@@ -6,11 +6,16 @@ a while and wanted something simple for managing drives without going to the ter
 ![DiskForge](docs/screenshot.png)
 
 ## What it does
-- Mount and unmount drives
-- Format (ext4, btrfs, NTFS, FAT32, exFAT)
-- Create, delete and resize partitions
-- Rename volumes
-- Make a new partition table (GPT or MBR)
+- Mount, unmount and safely remove drives
+- Format (ext4, btrfs, NTFS, FAT32, exFAT), with optional encryption
+- Create, delete and resize partitions, rename volumes
+- Make a new partition table (GPT or MBR), or wipe a whole disk
+- Check for errors and repair
+- Make a drive mount at startup
+- Disk health: warns you before a drive dies
+- Write an ISO to a USB stick (Arch install sticks etc.)
+- Open .iso and .img files like a drive
+- Benchmark drive speed
 
 It doesn't run as root. Changes go through udisks2, so you get the normal password prompt, and the
 drive your system is on is locked so you can't format it by accident.
