@@ -56,6 +56,7 @@ case "$cmd" in
     cmake -S . -B build >/dev/null
     cmake --build build -j"$(nproc)" >/dev/null
     ./build/diskforge-selftest --guard | tail -1
+    ./build/diskforge-selftest --addons | tail -1
     sudo ./build/diskforge-selftest | tail -1
 
     # Local tag only. Restaging after a fix moves it to the new commit.
