@@ -1,6 +1,7 @@
 # Contributing
 
-Bug reports, ideas and pull requests are welcome.
+Bug reports, ideas and pull requests are welcome. By contributing, you agree that your changes are
+released under the project's license, GPL-3.0-or-later.
 
 ## Building
 ```bash

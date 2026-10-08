@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='Disk manager and partition editor with a Windows-style layout, built on UDisks2'
 arch=('x86_64')
 url='https://github.com/DannyS124/diskforge'
-license=('MIT')
+license=('GPL-3.0-or-later')
 depends=('qt6-base' 'qt6-svg' 'udisks2')
 makedepends=('cmake')
 conflicts=('disk-manager')
@@ -30,5 +30,4 @@ build() {
 
 package() {
   DESTDIR="$pkgdir" cmake --install build
-  install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

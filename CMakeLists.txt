@@ -1,6 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Danny S
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 cmake_minimum_required(VERSION 3.21)
 project(diskforge
-    VERSION 0.4.0
+    VERSION 0.4.1
     DESCRIPTION "Windows-style disk manager for Linux, built on UDisks2"
     HOMEPAGE_URL "https://github.com/DannyS124/diskforge"
     LANGUAGES CXX)

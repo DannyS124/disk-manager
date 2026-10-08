@@ -1,6 +1,6 @@
 # DiskForge
 
-[![License: MIT](https://img.shields.io/github/license/DannyS124/diskforge)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/github/license/DannyS124/diskforge)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/DannyS124/diskforge)](https://github.com/DannyS124/diskforge/releases)
 
 **A disk manager and partition editor for Linux**, laid out like Windows Disk Management: a volume
@@ -81,4 +81,6 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), and
 Made by **Danny S** ([@DannyS124](https://github.com/DannyS124)).
 
 ## License
-MIT, see [LICENSE](LICENSE).
+GPL-3.0-or-later, see [LICENSE](LICENSE). You're free to use, share and change DiskForge, and to
+distribute copies, as long as copies and modified versions stay under the same license with their
+source code available. Versions 0.3.0 and 0.4.0 were released under MIT.

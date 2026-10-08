@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "about.h"
 
 #include <QApplication>
@@ -58,7 +61,8 @@ AboutDialog::AboutDialog(const QString &udisksVersion, QWidget *parent)
                               "and mount, format, create, delete and resize partitions.</p>"
                               "<p>Every change goes through UDisks2 and polkit, and the disk your system "
                               "runs from is locked so it can't be changed by accident.</p>"
-                              "<p>© 2026 %1<br>Released under the MIT license.</p>"
+                              "<p>© 2026 %1<br>Released under the GNU General Public License, version 3 or later. "
+                              "This program comes with absolutely no warranty.</p>"
                               "<p>%2<br>%3</p>")
                                .arg(QStringLiteral(APP_AUTHOR), link(homepage, tr("Project website")),
                                     link(homepage + QStringLiteral("/issues"), tr("Report a bug")))),

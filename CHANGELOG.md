@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.1 - 2026-10-08
+- License changed from MIT to **GPL-3.0-or-later**. Copies and modified versions have to stay open source.
+
 ## 0.4.0 - 2026-10-08
 - Renamed to **DiskForge**.
 - About window (author, license, versions), built-in handbook (F1), Check for Updates, Report a Bug.

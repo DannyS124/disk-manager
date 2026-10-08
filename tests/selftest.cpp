@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Runs every operation against an image file attached as a loop device.
 // Operations need root (no polkit agent); --guard runs as the user.
 
