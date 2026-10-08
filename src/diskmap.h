@@ -28,6 +28,7 @@ public:
     const QVector<Disk> &disks() const { return m_disks; }
     Selection selection() const { return m_sel; }
     void selectVolume(const QString &objectPath); // doesn't emit selectionChanged
+    void selectDisk(int index);
 
     static QColor partitionColor(const QPalette &palette);
     static QColor freeColor();

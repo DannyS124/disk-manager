@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QIcon>
+#include <QMenu>
 #include <QMessageBox>
 #include <QTextStream>
 #include <QTimer>
@@ -70,7 +71,9 @@ int main(int argc, char *argv[])
     const QCommandLineOption selectOption(QStringLiteral("select"),
                                           QStringLiteral("Start with partition <device> selected."),
                                           QStringLiteral("device"));
-    parser.addOptions({dumpOption, screenshotOption, selectOption});
+    const QCommandLineOption menuOption(QStringLiteral("menu"),
+                                        QStringLiteral("With --screenshot: render the right-click menu of the selection."));
+    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
 
@@ -101,8 +104,17 @@ int main(int argc, char *argv[])
 
     if (parser.isSet(screenshotOption)) {
         const QString file = parser.value(screenshotOption);
-        QTimer::singleShot(500, &app, [&window, file] {
-            window.grab().save(file);
+        const bool menu = parser.isSet(menuOption);
+        QTimer::singleShot(500, &app, [&window, file, menu] {
+            if (menu) {
+                QMenu popup(&window);
+                window.buildContextMenu(&popup);
+                popup.popup(QPoint(0, 0));
+                QApplication::processEvents();
+                popup.grab().save(file);
+            } else {
+                window.grab().save(file);
+            }
             QApplication::quit();
         });
     }

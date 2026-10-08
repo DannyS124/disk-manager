@@ -11,6 +11,7 @@
 - Open .iso and .img files as disks
 - Benchmark read speed, access time and write speed
 - Progress bar for long operations
+- Right-click any partition, free space or drive to get everything you can do with it, partition and drive options together
 - Add-ons: JSON files that add menu actions (Tools → Add-ons), with three examples in examples/addons
 
 ## 0.4.3

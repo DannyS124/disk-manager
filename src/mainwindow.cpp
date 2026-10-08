@@ -154,6 +154,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     connect(m_map, &DiskMap::activated, this, &MainWindow::activate);
 
     rebuild();
+    statusBar()->showMessage(tr("Tip: right-click any drive or partition to see what you can do with it"), 20000);
 }
 
 void MainWindow::createActions()
@@ -392,6 +393,14 @@ void MainWindow::rebuild()
 
 bool MainWindow::selectDevice(const QString &device)
 {
+    for (int i = 0; i < m_map->disks().size(); ++i) {
+        if (m_map->disks()[i].device == device) {
+            m_map->selectDisk(i);
+            syncTableToMap();
+            updateActions();
+            return true;
+        }
+    }
     for (const Disk &d : m_map->disks()) {
         for (const Volume &v : d.volumes) {
             if (v.device == device) {
@@ -546,48 +555,52 @@ void MainWindow::updateProgress()
     m_progress->setRange(0, 0); // no percentage from UDisks2: show that it's busy
 }
 
+void MainWindow::buildContextMenu(QMenu *menu)
+{
+    const Disk *d = selectedDisk();
+    if (!d)
+        return;
+    const Volume *v = selectedVolume();
+    const DiskMap::Selection sel = m_map->selection();
+    // Only what can be done right now, so the menu reads as a list of options.
+    auto add = [menu](std::initializer_list<QAction *> actions) {
+        for (QAction *a : actions) {
+            if (a->isEnabled())
+                menu->addAction(a);
+        }
+    };
+
+    if (v) {
+        menu->addSection(volumeTitle(*v));
+        add({m_open, m_mount, m_unmount, m_unlock, m_lock});
+        menu->addSeparator();
+        add({m_format, m_resize, m_rename, m_check, m_startup, m_changePass, m_delete});
+    } else if (sel.kind == DiskMap::Selection::Kind::Free) {
+        menu->addSection(tr("Unallocated space, %1").arg(formatSize(sel.size)));
+        add({m_newPartition});
+    }
+
+    menu->addSection(tr("Drive: %1").arg(d->model.isEmpty() ? shortDevice(d->device) : d->model));
+    add({m_safelyRemove, m_detachImage, m_health, m_benchmark});
+    if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
+        add({m_writeImage});
+    add({m_newTable, m_wipe});
+
+    const auto addonActions = m_addons.actionsFor(*d, v, sel.kind == DiskMap::Selection::Kind::Free);
+    if (!addonActions.isEmpty()) {
+        menu->addSection(tr("Add-ons"));
+        addAddonActions(menu);
+    }
+    menu->addSeparator();
+    add({m_copy, m_properties});
+}
+
 void MainWindow::showContextMenu(const QPoint &globalPos)
 {
     QMenu menu(this);
-    const Disk *d = selectedDisk();
-    const Volume *v = selectedVolume();
-    switch (m_map->selection().kind) {
-    case DiskMap::Selection::Kind::Volume:
-        menu.addActions({m_open, m_mount, m_unmount});
-        if (v && v->encrypted) {
-            menu.addSeparator();
-            menu.addActions({m_unlock, m_lock, m_changePass});
-        }
-        menu.addSeparator();
-        menu.addActions({m_format, m_resize, m_rename, m_check, m_startup, m_delete});
-        menu.addSeparator();
-        menu.addActions({m_copy, m_properties});
-        break;
-    case DiskMap::Selection::Kind::Free:
-        menu.addAction(m_newPartition);
-        if (d && d->tableType.isEmpty())
-            menu.addAction(m_newTable);
-        menu.addSeparator();
-        menu.addAction(m_properties);
-        break;
-    case DiskMap::Selection::Kind::Disk:
-        if (d && d->canPowerOff && !d->isLoop)
-            menu.addAction(m_safelyRemove);
-        if (d && d->isLoop)
-            menu.addAction(m_detachImage);
-        menu.addSeparator();
-        menu.addActions({m_health, m_benchmark, m_writeImage});
-        menu.addSeparator();
-        menu.addActions({m_newTable, m_wipe});
-        menu.addSeparator();
-        menu.addActions({m_copy, m_properties});
-        break;
-    case DiskMap::Selection::Kind::None:
-        return;
-    }
-    menu.addSeparator();
-    addAddonActions(&menu);
-    menu.exec(globalPos);
+    buildContextMenu(&menu);
+    if (!menu.isEmpty())
+        menu.exec(globalPos);
 }
 
 void MainWindow::activate()

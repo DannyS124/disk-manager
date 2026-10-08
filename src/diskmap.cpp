@@ -104,6 +104,16 @@ void DiskMap::selectVolume(const QString &objectPath)
     update();
 }
 
+void DiskMap::selectDisk(int index)
+{
+    m_sel = {};
+    if (index >= 0 && index < m_disks.size()) {
+        m_sel.kind = Selection::Kind::Disk;
+        m_sel.disk = index;
+    }
+    update();
+}
+
 void DiskMap::relayout()
 {
     m_rows.clear();

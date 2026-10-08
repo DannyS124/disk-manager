@@ -25,7 +25,8 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(UDisks *udisks, QWidget *parent = nullptr);
 
-    bool selectDevice(const QString &device); // e.g. /dev/sdb1
+    bool selectDevice(const QString &device); // e.g. /dev/sdb1, or /dev/sdb for the whole drive
+    void buildContextMenu(QMenu *menu); // the right-click menu for the current selection
 
 private:
     void createActions();
