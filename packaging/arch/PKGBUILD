@@ -1,0 +1,29 @@
+# Maintainer: DannyS124
+# Builds the package from this source tree:  cd packaging/arch && makepkg -si
+pkgname=disk-manager
+pkgver=0.3.0
+pkgrel=1
+pkgdesc='Windows-style disk manager for Linux, built on UDisks2'
+arch=('x86_64')
+license=('custom')
+depends=('qt6-base' 'udisks2')
+makedepends=('cmake')
+optdepends=(
+  'exfatprogs: create exFAT volumes'
+  'dosfstools: create FAT32 volumes'
+  'ntfs-3g: create NTFS volumes'
+  'btrfs-progs: create Btrfs volumes'
+  'xfsprogs: create XFS volumes'
+)
+
+build() {
+  cmake -S "$startdir/../.." -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DDISK_MANAGER_SELFTEST=OFF
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+}

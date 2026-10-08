@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Disk Manager
+GenericName=Disk Management
+Comment=View disks and partitions, mount and unmount drives
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/disk-manager
+Icon=drive-harddisk
+Terminal=false
+Categories=Qt;System;Filesystem;
+Keywords=disk;partition;drive;usb;mount;format;volume;
