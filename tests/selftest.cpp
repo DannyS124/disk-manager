@@ -14,10 +14,18 @@
 #include <QDBusUnixFileDescriptor>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QCryptographicHash>
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QThread>
+
+#include "../src/benchmark.h"
+#include "../src/imagewriter.h"
+
+#include <QFileInfo>
+#include <QRandomGenerator>
 
 #include <functional>
 #include <unistd.h>
@@ -142,6 +150,7 @@ bool step(UDisks &udisks, const QString &name, const std::function<void()> &op,
 }
 
 bool resizing(UDisks &udisks);
+bool extras(UDisks &udisks);
 
 bool operations(UDisks &udisks)
 {
@@ -187,7 +196,8 @@ bool operations(UDisks &udisks)
                 QStringLiteral("MBR partition is FAT32 with type 0x0c"), [](const Disk &d) {
                     return d.volumes.size() == 1 && d.volumes[0].fsType == QLatin1String("vfat") && d.volumes[0].partType == QLatin1String("0x0c");
                 })
-        && resizing(udisks);
+        && resizing(udisks)
+        && extras(udisks);
 }
 
 bool resizing(UDisks &udisks)
@@ -241,6 +251,166 @@ bool resizing(UDisks &udisks)
            }();
 }
 
+// Waits for UDisks::deviceOpened and returns the fd (-1 on failure).
+int openFd(UDisks &udisks, const Disk &disk, bool writable, bool benchmark)
+{
+    int fd = -2;
+    QEventLoop loop;
+    auto conn = QObject::connect(&udisks, &UDisks::deviceOpened, [&](const QString &, int f) { fd = f; loop.quit(); });
+    udisks.openDevice(disk, writable, benchmark);
+    if (fd == -2)
+        loop.exec();
+    QObject::disconnect(conn);
+    return fd;
+}
+
+const Disk *diskWithFile(UDisks &udisks, const QString &file)
+{
+    for (const Disk &d : udisks.disks()) {
+        if (d.isLoop && d.backingFile == file)
+            return &d;
+    }
+    return nullptr;
+}
+
+bool checkFails(UDisks &udisks, const QString &name, const std::function<void()> &op, const char *expect)
+{
+    QString message;
+    const bool ok = run(udisks, {}, op, &message);
+    report(!ok && message.contains(QLatin1String(expect)), name, message);
+    return !ok && message.contains(QLatin1String(expect));
+}
+
+// Check/repair, mount at startup, LUKS, disk images, image writing, benchmark, wipe.
+bool extras(UDisks &udisks)
+{
+    auto disk = [&]() -> const Disk & { return *testDisk(udisks); };
+    auto vol = [&](int i) -> const Volume & { return disk().volumes[i]; };
+    constexpr quint64 MiB = 1024 * 1024;
+
+    QFile fstabFile(QStringLiteral("/etc/fstab"));
+    if (!fstabFile.open(QIODevice::ReadOnly))
+        return false;
+    const QByteArray fstabBefore = fstabFile.readAll();
+    fstabFile.close();
+
+    bool ok = step(udisks, QStringLiteral("new GPT table for the extra tests"),
+                   [&] { udisks.createPartitionTable(disk(), QStringLiteral("gpt")); },
+                   QStringLiteral("disk is GPT and empty"), [](const Disk &d) { return d.tableType == QLatin1String("gpt") && d.volumes.isEmpty(); })
+        && step(udisks, QStringLiteral("create 120 MB ext4 partition"),
+                [&] { udisks.createPartition(disk(), firstFree(disk()).offset, 120 * MiB, QStringLiteral("ext4"), QStringLiteral("CHECKME")); },
+                QStringLiteral("it exists"), [](const Disk &d) { return d.volumes.size() == 1 && d.volumes[0].fsType == QLatin1String("ext4"); })
+        && run(udisks, QStringLiteral("check it"), [&] { udisks.check(vol(0)); })
+        && run(udisks, QStringLiteral("repair it"), [&] { udisks.repair(vol(0)); })
+        && step(udisks, QStringLiteral("make it mount at startup"), [&] { udisks.setMountAtStartup(vol(0), true); },
+                QStringLiteral("fstab entry exists"), [](const Disk &d) { return !d.volumes[0].fstab.isEmpty(); })
+        && step(udisks, QStringLiteral("mount it (uses the fstab entry)"), [&] { udisks.mount(vol(0)); },
+                QStringLiteral("mounted at /mnt/CHECKME"), [](const Disk &d) { return d.volumes[0].mountPoints.contains(QStringLiteral("/mnt/CHECKME")); })
+        && step(udisks, QStringLiteral("unmount it"), [&] { udisks.unmount(vol(0)); },
+                QStringLiteral("unmounted"), [](const Disk &d) { return d.volumes[0].mountPoints.isEmpty(); })
+        && step(udisks, QStringLiteral("stop it mounting at startup"), [&] { udisks.setMountAtStartup(vol(0), false); },
+                QStringLiteral("fstab entry gone"), [](const Disk &d) { return d.volumes[0].fstab.isEmpty(); });
+
+    if (!fstabFile.open(QIODevice::ReadOnly))
+        return false;
+    const QByteArray fstabAfter = fstabFile.readAll();
+    fstabFile.close();
+    report(fstabAfter == fstabBefore, QStringLiteral("/etc/fstab is back to how it was"));
+    if (fstabAfter != fstabBefore) {
+        QFile restore(QStringLiteral("/etc/fstab"));
+        if (restore.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            restore.write(fstabBefore);
+        return false;
+    }
+    QDir(QStringLiteral("/mnt/CHECKME")).removeRecursively();
+    if (!ok)
+        return false;
+
+    ok = step(udisks, QStringLiteral("create 150 MB encrypted ext4 partition"),
+              [&] { const Span f = firstFree(disk()); udisks.createPartition(disk(), f.offset, 150 * MiB, QStringLiteral("ext4"), QStringLiteral("SECRET"), QStringLiteral("first-passphrase")); },
+              QStringLiteral("it is LUKS"), [](const Disk &d) { return d.volumes.size() == 2 && d.volumes[1].fsType == QLatin1String("crypto_LUKS"); })
+        && step(udisks, QStringLiteral("lock it"), [&] { udisks.lock(vol(1)); },
+                QStringLiteral("locked"), [](const Disk &d) { return d.volumes[1].cleartextPath.isEmpty(); })
+        && checkFails(udisks, QStringLiteral("a wrong passphrase is refused"), [&] { udisks.unlock(vol(1), QStringLiteral("wrong")); }, "passphrase")
+        && step(udisks, QStringLiteral("unlock it"), [&] { udisks.unlock(vol(1), QStringLiteral("first-passphrase")); },
+                QStringLiteral("unlocked, ext4 inside"), [](const Disk &d) { return d.volumes[1].cleartextHasFilesystem && d.volumes[1].cleartextFsType == QLatin1String("ext4"); })
+        && step(udisks, QStringLiteral("mount the unlocked side"), [&] { udisks.mount(vol(1)); },
+                QStringLiteral("mounted"), [](const Disk &d) { return !d.volumes[1].cleartextMountPoints.isEmpty(); })
+        && step(udisks, QStringLiteral("lock it while mounted (unmounts first)"), [&] { udisks.lock(vol(1)); },
+                QStringLiteral("locked"), [](const Disk &d) { return d.volumes[1].cleartextPath.isEmpty(); })
+        && run(udisks, QStringLiteral("change the passphrase"), [&] { udisks.changePassphrase(vol(1), QStringLiteral("first-passphrase"), QStringLiteral("second-passphrase")); })
+        && step(udisks, QStringLiteral("unlock with the new passphrase"), [&] { udisks.unlock(vol(1), QStringLiteral("second-passphrase")); },
+                QStringLiteral("unlocked"), [](const Disk &d) { return !d.volumes[1].cleartextPath.isEmpty(); })
+        && step(udisks, QStringLiteral("lock it again"), [&] { udisks.lock(vol(1)); },
+                QStringLiteral("locked"), [](const Disk &d) { return d.volumes[1].cleartextPath.isEmpty(); });
+    if (!ok)
+        return false;
+
+    // A second, smaller image, attached the way the app does it.
+    const QString second = QFileInfo(imagePath).dir().filePath(QStringLiteral("second.img"));
+    {
+        QFile f(second);
+        if (!f.open(QIODevice::WriteOnly) || !f.resize(64ll * 1024 * 1024))
+            return false;
+    }
+    if (!run(udisks, QStringLiteral("open a disk image (read-write)"), [&] { udisks.openImage(second, false); }))
+        return false;
+    if (!waitFor(udisks, QStringLiteral("it shows up as a disk"), [&](const Disk &) { return diskWithFile(udisks, second) != nullptr; }))
+        return false;
+
+    const QString iso = QFileInfo(imagePath).dir().filePath(QStringLiteral("test.iso"));
+    QByteArray isoData(16 * 1024 * 1024, Qt::Uninitialized);
+    QRandomGenerator::global()->fillRange(reinterpret_cast<quint32 *>(isoData.data()), isoData.size() / 4);
+    {
+        QFile f(iso);
+        if (!f.open(QIODevice::WriteOnly))
+            return false;
+        f.write(isoData);
+    }
+
+    int fd = openFd(udisks, *diskWithFile(udisks, second), true, false);
+    report(fd >= 0, QStringLiteral("open the image disk for writing"));
+    if (fd < 0)
+        return false;
+    bool written = false;
+    QString writeMessage;
+    {
+        ImageWriter writer(iso, fd, true, QString::fromLatin1(QCryptographicHash::hash(isoData, QCryptographicHash::Sha256).toHex()));
+        QObject::connect(&writer, &ImageWriter::finished, [&](bool k, const QString &m) { written = k; writeMessage = m; });
+        writer.run();
+    }
+    report(written, QStringLiteral("write a 16 MB image and verify it"), writeMessage);
+    {
+        QFile dev(diskWithFile(udisks, second)->device);
+        if (!dev.open(QIODevice::ReadOnly))
+            return false;
+        report(dev.read(isoData.size()) == isoData, QStringLiteral("the disk really holds the image"));
+    }
+
+    fd = openFd(udisks, *diskWithFile(udisks, second), false, true);
+    bool benchOk = false;
+    BenchmarkResult result;
+    if (fd >= 0) {
+        Benchmark bench(fd, diskWithFile(udisks, second)->size);
+        QObject::connect(&bench, &Benchmark::finished, [&](bool k, const BenchmarkResult &r, const QString &) { benchOk = k; result = r; });
+        bench.run();
+    }
+    report(benchOk && result.readMBps > 0 && result.accessMs >= 0, QStringLiteral("benchmark it"),
+           QStringLiteral("%1 MB/s, %2 ms").arg(result.readMBps, 0, 'f', 0).arg(result.accessMs, 0, 'f', 2));
+
+    const bool wiped = run(udisks, QStringLiteral("securely wipe it"), [&] { udisks.wipe(*diskWithFile(udisks, second)); });
+    {
+        QFile dev(diskWithFile(udisks, second)->device);
+        if (!dev.open(QIODevice::ReadOnly))
+            return false;
+        const QByteArray head = dev.read(isoData.size());
+        report(wiped && head == QByteArray(isoData.size(), '\0'), QStringLiteral("it is all zeros now"));
+    }
+
+    return run(udisks, QStringLiteral("close the disk image"), [&] { udisks.detachImage(*diskWithFile(udisks, second)); })
+        && waitFor(udisks, QStringLiteral("it is gone"), [&](const Disk &) { return diskWithFile(udisks, second) == nullptr; });
+}
+
 void guard(UDisks &udisks)
 {
     for (const Disk &d : udisks.disks()) {
@@ -255,6 +425,14 @@ void guard(UDisks &udisks)
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("delete %1 is refused").arg(name), message);
         ok = run(udisks, {}, [&] { udisks.createPartitionTable(d, QStringLiteral("gpt")); }, &message);
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("new partition table on %1 is refused").arg(shortDevice(d.device)), message);
+        ok = run(udisks, {}, [&] { udisks.wipe(d); }, &message);
+        report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("wiping %1 is refused").arg(shortDevice(d.device)), message);
+        ok = run(udisks, {}, [&] { udisks.powerOff(d); }, &message);
+        report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("powering off %1 is refused").arg(shortDevice(d.device)), message);
+        ok = run(udisks, {}, [&] { udisks.setMountAtStartup(v, true); }, &message);
+        report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("startup mount on %1 is refused").arg(name), message);
+        const int fd = openFd(udisks, d, true, false);
+        report(fd < 0, QStringLiteral("raw write access to %1 is refused").arg(shortDevice(d.device)));
         return;
     }
     report(false, QStringLiteral("find the system disk"));
@@ -307,6 +485,10 @@ int main(int argc, char *argv[])
                     run(udisks, {}, [&] { udisks.unmount(v); }, &ignored);
                 }
             }
+        }
+        for (const Disk &d : udisks.disks()) {
+            if (d.isLoop && d.backingFile.startsWith(dir.path()) && d.blockPath != loop)
+                loopDelete(d.blockPath);
         }
         loopDelete(loop);
     }

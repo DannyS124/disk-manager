@@ -24,6 +24,12 @@ void dump(const QVector<Disk> &disks)
             << "  " << tableName(d) << "  " << diskKind(d);
         if (d.isSystem)
             out << "  [system: " << d.systemReason << "]";
+        if (d.health.state != Health::State::Unknown) {
+            out << "  [health: " << d.health.summary;
+            if (d.health.temperatureC > 0)
+                out << ", " << qRound(d.health.temperatureC) << " °C";
+            out << ", " << d.health.powerOnHours << " h]";
+        }
         out << "\n";
         for (const Span &s : diskSpans(d)) {
             if (s.isFree()) {

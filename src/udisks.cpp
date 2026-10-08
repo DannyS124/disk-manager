@@ -3,6 +3,7 @@
 
 #include "udisks.h"
 
+#include "dbusnames.h"
 #include "format.h"
 
 #include <QCollator>
@@ -17,19 +18,9 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <memory>
 
 namespace {
-
-const QString kService = QStringLiteral("org.freedesktop.UDisks2");
-const QString kRoot = QStringLiteral("/org/freedesktop/UDisks2");
-const QString kDrive = QStringLiteral("org.freedesktop.UDisks2.Drive");
-const QString kBlock = QStringLiteral("org.freedesktop.UDisks2.Block");
-const QString kPartition = QStringLiteral("org.freedesktop.UDisks2.Partition");
-const QString kPartitionTable = QStringLiteral("org.freedesktop.UDisks2.PartitionTable");
-const QString kFilesystem = QStringLiteral("org.freedesktop.UDisks2.Filesystem");
-const QString kSwapspace = QStringLiteral("org.freedesktop.UDisks2.Swapspace");
-const QString kEncrypted = QStringLiteral("org.freedesktop.UDisks2.Encrypted");
-const QString kLoop = QStringLiteral("org.freedesktop.UDisks2.Loop");
 
 using InterfaceMap = QMap<QString, QVariantMap>;
 using ObjectMap = QMap<QDBusObjectPath, InterfaceMap>;
@@ -109,6 +100,22 @@ Volume makeVolume(const QString &path, const InterfaceMap &ifaces)
         v.hasFilesystem = true;
         v.mountPoints = byteStringList(ifaces.value(kFilesystem).value(QStringLiteral("MountPoints")));
     }
+    // Configuration is a(sa{sv}); keep the fstab entry so it can be removed again verbatim.
+    const QVariant config = block.value(QStringLiteral("Configuration"));
+    if (config.canConvert<QDBusArgument>()) {
+        const QDBusArgument arg = config.value<QDBusArgument>();
+        arg.beginArray();
+        while (!arg.atEnd()) {
+            QString type;
+            QVariantMap details;
+            arg.beginStructure();
+            arg >> type >> details;
+            arg.endStructure();
+            if (type == QLatin1String("fstab"))
+                v.fstab = details;
+        }
+        arg.endArray();
+    }
     if (ifaces.contains(kSwapspace))
         v.swapActive = ifaces.value(kSwapspace).value(QStringLiteral("Active")).toBool();
     v.encrypted = ifaces.contains(kEncrypted);
@@ -180,10 +187,31 @@ void UDisks::refresh()
     ObjectMap objects;
     reply.arguments().constFirst().value<QDBusArgument>() >> objects;
 
-    QMap<QString, QVariantMap> drives;
+    QMap<QString, InterfaceMap> drives;
+    m_jobs.clear();
     for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
         if (it->contains(kDrive))
-            drives.insert(it.key().path(), it->value(kDrive));
+            drives.insert(it.key().path(), it.value());
+        if (it->contains(kJob)) {
+            const QVariantMap j = it->value(kJob);
+            Job job;
+            job.operation = j.value(QStringLiteral("Operation")).toString();
+            job.progress = j.value(QStringLiteral("Progress")).toDouble();
+            job.progressValid = j.value(QStringLiteral("ProgressValid")).toBool();
+            job.rate = j.value(QStringLiteral("Rate")).toULongLong();
+            const QVariant objs = j.value(QStringLiteral("Objects"));
+            if (objs.canConvert<QDBusArgument>()) {
+                const QDBusArgument arg = objs.value<QDBusArgument>();
+                arg.beginArray();
+                while (!arg.atEnd()) {
+                    QDBusObjectPath o;
+                    arg >> o;
+                    job.objects << o.path();
+                }
+                arg.endArray();
+            }
+            m_jobs.push_back(job);
+        }
     }
 
     // whole disks
@@ -213,7 +241,8 @@ void UDisks::refresh()
         if (d.device.isEmpty())
             d.device = byteString(block.value(QStringLiteral("Device")));
 
-        const QVariantMap drive = drives.value(d.drivePath);
+        const InterfaceMap driveIfaces = drives.value(d.drivePath);
+        const QVariantMap drive = driveIfaces.value(kDrive);
         const QString vendor = drive.value(QStringLiteral("Vendor")).toString().trimmed();
         d.model = drive.value(QStringLiteral("Model")).toString().trimmed();
         if (!vendor.isEmpty() && !d.model.startsWith(vendor))
@@ -224,6 +253,10 @@ void UDisks::refresh()
         d.bus = drive.value(QStringLiteral("ConnectionBus")).toString();
         d.removable = drive.value(QStringLiteral("Removable")).toBool();
         d.rotationRate = drive.value(QStringLiteral("RotationRate"), -1).toInt();
+        d.canPowerOff = drive.value(QStringLiteral("CanPowerOff")).toBool();
+        d.readOnly = block.value(QStringLiteral("ReadOnly")).toBool();
+        if (!d.isLoop)
+            d.health = readHealth(d.drivePath, driveIfaces.value(kAta), driveIfaces.value(kNvme));
 
         if (ifaces.contains(kPartitionTable))
             d.tableType = ifaces.value(kPartitionTable).value(QStringLiteral("Type")).toString();
@@ -253,6 +286,8 @@ void UDisks::refresh()
                 if (v.objectPath == backing) {
                     v.cleartextPath = it.key().path();
                     v.cleartextMountPoints = mounts;
+                    v.cleartextHasFilesystem = it->contains(kFilesystem);
+                    v.cleartextFsType = it->value(kBlock).value(QStringLiteral("IdType")).toString();
                 }
             }
         }
@@ -359,25 +394,40 @@ void UDisks::call(const QString &path, const QString &interface, const QString &
     });
 }
 
-void UDisks::unmountThen(const QVector<Volume> &volumes, const QString &failure, const std::function<void()> &then)
+void UDisks::unmountThen(const QVector<Volume> &volumes, const QString &failure, const std::function<void()> &then,
+                         bool lockEncrypted)
 {
-    // "tear-down" doesn't unmount the device itself, so do it first
+    // "tear-down" doesn't unmount the device itself, so do it first, one step at a time.
+    struct Step { QString path, interface, method; };
+    QVector<Step> steps;
     for (const Volume &v : volumes) {
-        if (!v.hasFilesystem || v.mountPoints.isEmpty())
-            continue;
-        QVector<Volume> rest = volumes;
-        rest.removeIf([&v](const Volume &o) { return o.objectPath == v.objectPath; });
-        callThen(v.objectPath, kFilesystem, QStringLiteral("Unmount"), {options()}, failure,
-                 [this, rest, failure, then](const QDBusMessage &) { unmountThen(rest, failure, then); });
-        return;
+        if (v.canMount() && !v.mounts().isEmpty())
+            steps.push_back({v.filesystemPath(), kFilesystem, QStringLiteral("Unmount")});
+        if (lockEncrypted && v.encrypted && !v.cleartextPath.isEmpty())
+            steps.push_back({v.objectPath, kEncrypted, QStringLiteral("Lock")});
     }
-    then();
+    auto run = std::make_shared<std::function<void(int)>>();
+    std::weak_ptr<std::function<void(int)>> weak = run;
+    *run = [this, steps, failure, then, weak](int i) {
+        if (i == steps.size()) {
+            then();
+            return;
+        }
+        auto self = weak.lock();
+        callThen(steps[i].path, steps[i].interface, steps[i].method, {options()}, failure,
+                 [self, i](const QDBusMessage &) { (*self)(i + 1); });
+    };
+    (*run)(0);
 }
 
 void UDisks::mount(const Volume &volume)
 {
     const QString name = shortDevice(volume.device);
-    call(volume.objectPath, kFilesystem, QStringLiteral("Mount"), {options()},
+    if (volume.encrypted && volume.cleartextPath.isEmpty()) {
+        emit operationFinished(false, tr("Couldn't mount %1: unlock it first").arg(name));
+        return;
+    }
+    call(volume.filesystemPath(), kFilesystem, QStringLiteral("Mount"), {options()},
          [name](const QDBusMessage &reply) { return tr("Mounted %1 at %2").arg(name, reply.arguments().value(0).toString()); },
          tr("Couldn't mount %1").arg(name));
 }
@@ -387,7 +437,7 @@ void UDisks::unmount(const Volume &volume)
     const QString name = shortDevice(volume.device);
     if (refuseSystem(diskOf(volume), tr("Couldn't unmount %1").arg(name)))
         return;
-    call(volume.objectPath, kFilesystem, QStringLiteral("Unmount"), {options()},
+    call(volume.filesystemPath(), kFilesystem, QStringLiteral("Unmount"), {options()},
          [name](const QDBusMessage &) { return tr("Unmounted %1").arg(name); },
          tr("Couldn't unmount %1").arg(name));
 }
@@ -397,16 +447,20 @@ void UDisks::setLabel(const Volume &volume, const QString &label)
     const QString name = shortDevice(volume.device);
     if (refuseSystem(diskOf(volume), tr("Couldn't rename %1").arg(name)))
         return;
-    call(volume.objectPath, kFilesystem, QStringLiteral("SetLabel"), {label, options()},
+    call(volume.filesystemPath(), kFilesystem, QStringLiteral("SetLabel"), {label, options()},
          [name, label](const QDBusMessage &) { return tr("Renamed %1 to \"%2\"").arg(name, label); },
          tr("Couldn't rename %1").arg(name));
 }
 
 namespace {
 
-QVariantMap formatOptions(const QString &fsType, const QString &label)
+QVariantMap formatOptions(const QString &fsType, const QString &label, const QString &passphrase = {})
 {
     QVariantMap o;
+    if (!passphrase.isEmpty()) {
+        o.insert(QStringLiteral("encrypt.passphrase"), passphrase);
+        o.insert(QStringLiteral("encrypt.type"), QStringLiteral("luks2"));
+    }
     if (!label.isEmpty())
         o.insert(QStringLiteral("label"), label);
     // root dir owned by the user instead of root
@@ -415,8 +469,10 @@ QVariantMap formatOptions(const QString &fsType, const QString &label)
     return o;
 }
 
-QString partitionTypeFor(const QString &tableType, const QString &fsType)
+QString partitionTypeFor(const QString &tableType, const QString &fsType, bool encrypted = false)
 {
+    if (encrypted)
+        return tableType == QLatin1String("gpt") ? QStringLiteral("ca7d7ccb-63ed-4c53-861c-1742536059cc") : QStringLiteral("0x83");
     const bool windows = fsType == QLatin1String("vfat") || fsType == QLatin1String("exfat") || fsType == QLatin1String("ntfs");
     if (tableType == QLatin1String("gpt"))
         return windows ? QStringLiteral("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7") : QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
@@ -427,20 +483,24 @@ QString partitionTypeFor(const QString &tableType, const QString &fsType)
 
 } // namespace
 
-void UDisks::format(const Volume &volume, const QString &fsType, const QString &label)
+void UDisks::format(const Volume &volume, const QString &fsType, const QString &label, const QString &passphrase)
 {
     const QString name = shortDevice(volume.device);
     if (refuseSystem(diskOf(volume), tr("Couldn't format %1").arg(name)))
         return;
-    QVariantMap o = formatOptions(fsType, label);
+    QVariantMap o = formatOptions(fsType, label, passphrase);
     o.insert(QStringLiteral("tear-down"), true);
     o.insert(QStringLiteral("update-partition-type"), true);
     const QString failure = tr("Couldn't format %1").arg(name);
     const QString path = volume.objectPath;
-    unmountThen({volume}, failure, [this, path, fsType, o, name, failure] {
+    const bool encrypted = !passphrase.isEmpty();
+    unmountThen({volume}, failure, [this, path, fsType, o, name, failure, encrypted] {
         call(path, kBlock, QStringLiteral("Format"), {fsType, options(o)},
-             [name, fsType](const QDBusMessage &) { return tr("Formatted %1 as %2").arg(name, fsType); }, failure);
-    });
+             [name, fsType, encrypted](const QDBusMessage &) {
+                 return encrypted ? tr("Formatted %1 as encrypted %2").arg(name, fsType) : tr("Formatted %1 as %2").arg(name, fsType);
+             },
+             failure);
+    }, true);
 }
 
 void UDisks::deletePartition(const Volume &volume)
@@ -453,10 +513,11 @@ void UDisks::deletePartition(const Volume &volume)
     unmountThen({volume}, failure, [this, path, name, failure] {
         call(path, kPartition, QStringLiteral("Delete"), {options({{QStringLiteral("tear-down"), true}})},
              [name](const QDBusMessage &) { return tr("Deleted %1").arg(name); }, failure);
-    });
+    }, true);
 }
 
-void UDisks::createPartition(const Disk &disk, quint64 offset, quint64 size, const QString &fsType, const QString &label)
+void UDisks::createPartition(const Disk &disk, quint64 offset, quint64 size, const QString &fsType, const QString &label,
+                             const QString &passphrase)
 {
     const QString name = shortDevice(disk.device);
     const QString failure = tr("Couldn't create a partition on %1").arg(name);
@@ -480,8 +541,8 @@ void UDisks::createPartition(const Disk &disk, quint64 offset, quint64 size, con
 
     const QString partName = disk.tableType == QLatin1String("gpt") ? label : QString(); // no names on MBR
     call(disk.blockPath, kPartitionTable, QStringLiteral("CreatePartitionAndFormat"),
-         {start, end - start, partitionTypeFor(disk.tableType, fsType), partName, options(),
-          fsType, options(formatOptions(fsType, label))},
+         {start, end - start, partitionTypeFor(disk.tableType, fsType, !passphrase.isEmpty()), partName, options(),
+          fsType, options(formatOptions(fsType, label, passphrase))},
          [name, fsType, start, end](const QDBusMessage &) {
              return tr("Created a %1 %2 partition on %3").arg(formatSize(end - start), fsType, name);
          },
@@ -501,7 +562,7 @@ void UDisks::createPartitionTable(const Disk &disk, const QString &tableType)
                  return tr("%1 now has an empty %2 partition table").arg(name, tableType == QLatin1String("gpt") ? QStringLiteral("GPT") : QStringLiteral("MBR"));
              },
              failure);
-    });
+    }, true);
 }
 
 void UDisks::detectFilesystems()
@@ -527,6 +588,18 @@ void UDisks::detectFilesystems()
         arg >> fs.available >> utility;
         arg.endStructure();
 
+        for (const auto &[method, flag] : {std::pair{QStringLiteral("CanCheck"), &fs.canCheck}, std::pair{QStringLiteral("CanRepair"), &fs.canRepair}}) {
+            QDBusMessage can = QDBusMessage::createMethodCall(kService, kManagerPath, kManager, method);
+            can << fs.id;
+            const QDBusMessage canReply = QDBusConnection::systemBus().call(can, QDBus::Block, 3000);
+            if (canReply.type() == QDBusMessage::ReplyMessage && !canReply.arguments().isEmpty()) {
+                const QDBusArgument c = canReply.arguments().constFirst().value<QDBusArgument>();
+                QString missing;
+                c.beginStructure();
+                c >> *flag >> missing;
+                c.endStructure();
+            }
+        }
         // errors for filesystems that can't resize at all (exfat)
         QDBusMessage resize = QDBusMessage::createMethodCall(kService, QStringLiteral("/org/freedesktop/UDisks2/Manager"),
                                                              QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("CanResize"));

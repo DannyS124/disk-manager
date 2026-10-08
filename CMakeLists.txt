@@ -19,10 +19,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets DBus Network)
 
+# Everything that talks to UDisks2 or touches devices, shared with the test tools.
+add_library(diskforge-core STATIC
+    src/udisks.cpp src/udisks.h
+    src/operations.cpp src/dbusnames.h
+    src/format.cpp src/format.h
+    src/imagewriter.cpp src/imagewriter.h
+    src/benchmark.cpp src/benchmark.h
+)
+set_target_properties(diskforge-core PROPERTIES AUTOMOC ON)
+target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus)
+target_include_directories(diskforge-core PUBLIC src)
+target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
+
 qt_add_executable(diskforge
     src/main.cpp
-    src/udisks.cpp src/udisks.h
-    src/format.cpp src/format.h
     src/diskmap.cpp src/diskmap.h
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
@@ -33,7 +44,7 @@ qt_add_resources(diskforge "app_data" PREFIX "/" FILES
     data/help.html
     data/${APP_ID}.svg
     LICENSE)
-target_link_libraries(diskforge PRIVATE Qt6::Widgets Qt6::DBus Qt6::Network)
+target_link_libraries(diskforge PRIVATE diskforge-core Qt6::Widgets Qt6::Network)
 set(APP_DEFINITIONS
     APP_VERSION="${PROJECT_VERSION}"
     APP_ID="${APP_ID}"
@@ -46,12 +57,12 @@ target_compile_options(diskforge PRIVATE -Wall -Wextra)
 # dev tools, not installed
 option(DISKFORGE_SELFTEST "Build the loop-device self-test" ON)
 if(DISKFORGE_SELFTEST)
-    qt_add_executable(diskforge-selftest tests/selftest.cpp src/udisks.cpp src/format.cpp)
-    target_link_libraries(diskforge-selftest PRIVATE Qt6::Core Qt6::DBus)
+    qt_add_executable(diskforge-selftest tests/selftest.cpp)
+    target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
 
-    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/about.cpp src/udisks.cpp src/format.cpp)
+    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/about.cpp)
     qt_add_resources(diskforge-preview "preview_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
-    target_link_libraries(diskforge-preview PRIVATE Qt6::Widgets Qt6::DBus)
+    target_link_libraries(diskforge-preview PRIVATE diskforge-core Qt6::Widgets)
     target_compile_definitions(diskforge-preview PRIVATE ${APP_DEFINITIONS})
 endif()
 
