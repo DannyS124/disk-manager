@@ -7,6 +7,9 @@
 #   packaging/release.sh --stage 0.4.3     test and build 0.4.3 on this PC, ready to install and try
 #   packaging/release.sh --publish 0.4.3   tried it and it's fine: upload exactly what was staged
 #   packaging/release.sh --pull 0.4.3      a bad release got out: delete it, PKGBUILD goes back to the previous one
+#   packaging/release.sh --aur 0.4.3       push the current PKGBUILD to the AUR (after a packaging-only fix)
+#
+# The AUR repo is expected at ../diskforge-aur (git clone ssh://aur@aur.archlinux.org/diskforge.git).
 #
 # Never reuse a version number once it's been on GitHub.
 set -euo pipefail
@@ -20,13 +23,21 @@ die() { echo "error: $*" >&2; exit 1; }
 pkgver_of() { sed -n 's/^pkgver=//p' "$1"; }
 on_github() { git ls-remote --exit-code --tags origin "refs/tags/v$1" >/dev/null 2>&1; }
 release_hash() { gh release download "$1" -R "$repo" -p SHA256SUMS -O - | cut -d' ' -f1; }
+aur="$(dirname "$root")/diskforge-aur"
+sync_aur() { # message
+    [[ -d "$aur/.git" ]] || { echo "(no AUR clone at $aur, skipping the AUR)"; return 0; }
+    cp "$pkgbuild" "$aur/PKGBUILD"
+    (cd "$aur" && makepkg --printsrcinfo > .SRCINFO && git add PKGBUILD .SRCINFO \
+        && { git diff --cached --quiet || { git commit -qm "$1" && git push -q origin master; }; })
+    echo "==> AUR updated: https://aur.archlinux.org/packages/diskforge"
+}
 set_pkgbuild() { # file version hash
     sed -i "s/^pkgver=.*/pkgver=$2/; s/^pkgrel=.*/pkgrel=1/; s/^sha256sums=.*/sha256sums=('$3')/" "$1"
 }
 
 cmd="${1:-}"
 v="${2:-}"
-[[ -n "$v" ]] || die "usage: release.sh --stage|--publish|--pull <version>"
+[[ -n "$v" ]] || die "usage: release.sh --stage|--publish|--pull|--aur <version>"
 stage="$root/packaging/staging/$v"
 tarball="diskforge-$v.tar.gz"
 pkg="diskforge-$v-1-$(uname -m).pkg.tar.zst"
@@ -119,6 +130,7 @@ sha256: \`$hash\`" >/dev/null
     git commit -qm "release $v" "$pkgbuild"
     git push -q
     echo "==> $v is out: https://github.com/$repo/releases/tag/v$v"
+    sync_aur "update to $v"
     ;;
 
 --pull)
@@ -134,9 +146,16 @@ sha256: \`$hash\`" >/dev/null
     git commit -qm "pull $v" "$pkgbuild"
     git push -q
     echo "v$v is gone and the PKGBUILD builds ${prev#v} again. Fix it and release a new version number."
+    sync_aur "back to ${prev#v}, $v was pulled"
+    ;;
+
+--aur)
+    [[ "$(pkgver_of "$pkgbuild")" == "$v" ]] || die "the PKGBUILD is at $(pkgver_of "$pkgbuild"), not $v"
+    gh release view "v$v" -R "$repo" >/dev/null 2>&1 || die "v$v isn't released on GitHub"
+    sync_aur "$v-$(sed -n 's/^pkgrel=//p' "$pkgbuild")"
     ;;
 
 *)
-    die "usage: release.sh --stage|--publish|--pull <version>"
+    die "usage: release.sh --stage|--publish|--pull|--aur <version>"
     ;;
 esac
