@@ -1,10 +1,10 @@
 # Maintainer: DannyS124
-# Builds the package from this source tree:  cd packaging/arch && makepkg -si
 pkgname=disk-manager
 pkgver=0.3.0
-pkgrel=2
+pkgrel=1
 pkgdesc='Windows-style disk manager for Linux, built on UDisks2'
 arch=('x86_64')
+url='https://github.com/DannyS124/disk-manager'
 license=('MIT')
 depends=('qt6-base' 'udisks2')
 makedepends=('cmake')
@@ -15,9 +15,11 @@ optdepends=(
   'btrfs-progs: create Btrfs volumes'
   'xfsprogs: create XFS volumes'
 )
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
+sha256sums=('572a5a06144474a31df226b1a3f4e04adf09f110957b8f5c5f5b5ecc2166f463')
 
 build() {
-  cmake -S "$startdir/../.." -B build \
+  cmake -S "$pkgname-$pkgver" -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DDISK_MANAGER_SELFTEST=OFF
@@ -26,5 +28,5 @@ build() {
 
 package() {
   DESTDIR="$pkgdir" cmake --install build
-  install -Dm644 "$startdir/../../LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

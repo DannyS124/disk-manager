@@ -21,18 +21,28 @@ change labels, and write a new partition table (GPT or MBR).
 
 ## Install (Arch)
 ```bash
-cd packaging/arch
-makepkg -si          # builds and installs the "disk-manager" package
+git clone https://github.com/DannyS124/disk-manager.git
+cd disk-manager/packaging/arch
+makepkg -si
 ```
+makepkg downloads the release tarball and checks its SHA-256 before building. If the file
+differs in any way it stops with "One or more files did not pass the validity check!".
+
 Then open **Disk Manager** from the app menu. To uninstall, run `sudo pacman -R disk-manager`.
 
 Optional format tools: `exfatprogs` (exFAT), `dosfstools` (FAT32), `ntfs-3g` (NTFS),
 `btrfs-progs`, `xfsprogs`. Formats whose tool is missing are greyed out in the dialogs, with the
 package name.
 
+## Verifying a download
+- The only official source is https://github.com/DannyS124/disk-manager. Copies posted anywhere
+  else aren't from me.
+- Every release has a `SHA256SUMS` file. Check a download with `sha256sum -c SHA256SUMS`.
+- Release tags and commits are signed, and GitHub marks them **Verified**.
+
 ## Development
 ```bash
-cmake -S . -B build && cmake --build build -j"$(nproc)"
+cmake -S . -B build && cmake --build build -j"$(nproc)"   # builds the working tree; the PKGBUILD builds releases
 ./build/disk-manager --dump                 # print the disk layout as text
 sudo ./build/disk-manager-selftest          # every operation, resizing included, on a throwaway 512 MB image
 ./build/disk-manager-selftest --guard       # the system disk is refused (run as yourself)
