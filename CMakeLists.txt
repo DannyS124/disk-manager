@@ -26,6 +26,7 @@ add_library(diskforge-core STATIC
     src/format.cpp src/format.h
     src/imagewriter.cpp src/imagewriter.h
     src/benchmark.cpp src/benchmark.h
+    src/addons.cpp src/addons.h
 )
 set_target_properties(diskforge-core PROPERTIES AUTOMOC ON)
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus)
@@ -38,6 +39,7 @@ qt_add_executable(diskforge
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
+    src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
 )
@@ -60,8 +62,9 @@ option(DISKFORGE_SELFTEST "Build the loop-device self-test" ON)
 if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
+    target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
-    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/tools.cpp src/about.cpp)
+    qt_add_executable(diskforge-preview tests/preview.cpp src/dialogs.cpp src/tools.cpp src/about.cpp src/addonsdialog.cpp)
     qt_add_resources(diskforge-preview "preview_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
     target_link_libraries(diskforge-preview PRIVATE diskforge-core Qt6::Widgets)
     target_compile_definitions(diskforge-preview PRIVATE ${APP_DEFINITIONS})

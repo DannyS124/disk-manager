@@ -4,6 +4,8 @@
 // Renders the dialogs to PNGs: QT_QPA_PLATFORM=offscreen diskforge-preview <dir>
 
 #include "../src/about.h"
+#include "../src/addons.h"
+#include "../src/addonsdialog.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
 #include "../src/udisks.h"
@@ -48,6 +50,10 @@ int main(int argc, char *argv[])
     }
     HelpWindow help;
     save(help, out.filePath(QStringLiteral("handbook.png")));
+    Addons addons;
+    addons.load();
+    AddonsDialog addonsDialog(&addons);
+    save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
     previewTools(udisks, out);
 
     // prefer Ventoy so the warning shows up

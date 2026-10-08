@@ -4,6 +4,7 @@
 #include "mainwindow.h"
 
 #include "about.h"
+#include "addonsdialog.h"
 #include "dialogs.h"
 #include "tools.h"
 #include "diskmap.h"
@@ -18,6 +19,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QProgressBar>
@@ -100,6 +102,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     splitter->setSizes({300, 500});
     setCentralWidget(splitter);
 
+    m_addons.load();
     createActions();
 
     m_progress = new QProgressBar;
@@ -330,6 +333,17 @@ void MainWindow::createActions()
     action->addActions({m_health, m_benchmark});
     action->addSeparator();
     action->addActions({m_copy, m_properties});
+
+    QMenu *tools = menuBar()->addMenu(tr("&Tools"));
+    connect(tools, &QMenu::aboutToShow, this, [this, tools] {
+        tools->clear();
+        if (!addAddonActions(tools))
+            tools->addAction(tr("No add-on actions for this selection"))->setEnabled(false);
+        tools->addSeparator();
+        tools->addAction(themeIcon("preferences-plugin", "application-x-addon"), tr("&Add-ons…"), this, [this] {
+            AddonsDialog(&m_addons, this).exec();
+        });
+    });
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     QAction *handbook = help->addAction(themeIcon("help-contents", "help-browser"), tr("DiskForge &Help"), this, [this] {
@@ -571,6 +585,8 @@ void MainWindow::showContextMenu(const QPoint &globalPos)
     case DiskMap::Selection::Kind::None:
         return;
     }
+    menu.addSeparator();
+    addAddonActions(&menu);
     menu.exec(globalPos);
 }
 
@@ -833,4 +849,58 @@ void MainWindow::checkForUpdates()
     }
     statusBar()->showMessage(tr("Checking for updates…"));
     m_updates->check();
+}
+
+bool MainWindow::addAddonActions(QMenu *menu)
+{
+    const Disk *d = selectedDisk();
+    if (!d)
+        return false;
+    const auto kind = m_map->selection().kind;
+    const auto actions = m_addons.actionsFor(*d, selectedVolume(), kind == DiskMap::Selection::Kind::Free);
+    for (const auto &[addon, action] : actions) {
+        // Copies: the selection or the add-on list may change before the menu item is clicked.
+        const Addon a = *addon;
+        const AddonAction act = *action;
+        menu->addAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))), act.label, this,
+                        [this, a, act] { runAddon(a, act); });
+    }
+    return !actions.isEmpty();
+}
+
+void MainWindow::runAddon(const Addon &addon, const AddonAction &action)
+{
+    const Disk *d = selectedDisk();
+    if (!d)
+        return;
+    QString error;
+    const QStringList argv = Addons::expand(action.command, *d, selectedVolume(), &error);
+    if (argv.isEmpty()) {
+        QMessageBox::warning(this, action.label, error);
+        return;
+    }
+    if (!Addons::isTrusted(addon, action)) {
+        QMessageBox box(QMessageBox::Warning, tr("Run Add-on?"),
+                        tr("\"%1\" from the add-on \"%2\" wants to run:").arg(action.label, addon.name),
+                        QMessageBox::Cancel, this);
+        box.setInformativeText(argv.join(QLatin1Char(' ')) + tr("\n\nOnly run add-ons you trust. It runs as you, not as root."));
+        auto *remember = new QCheckBox(tr("Don't ask again for this action"));
+        box.setCheckBox(remember);
+        QAbstractButton *run = box.addButton(tr("Run"), QMessageBox::AcceptRole);
+        box.setDefaultButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() != run)
+            return;
+        if (remember->isChecked())
+            Addons::trust(addon, action);
+    }
+    if (!action.confirm.isEmpty()) {
+        const QString text = Addons::expand({action.confirm}, *d, selectedVolume(), &error).value(0, action.confirm);
+        if (QMessageBox::question(this, action.label, text) != QMessageBox::Yes)
+            return;
+    }
+    if (!Addons::run(action, argv, &error))
+        QMessageBox::warning(this, action.label, error);
+    else
+        statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
 }

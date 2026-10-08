@@ -1,0 +1,18 @@
+{
+  "id": "backup-rsync",
+  "name": "Back Up with rsync",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "Copies everything on a mounted drive to ~/Backups/<label>. Needs rsync.",
+  "actions": [
+    {
+      "label": "Back Up to ~/Backups",
+      "icon": "document-save",
+      "applies_to": "volume",
+      "when": ["mounted"],
+      "terminal": true,
+      "confirm": "Copy everything on {label} to ~/Backups/{label}?",
+      "command": ["rsync", "-a", "--info=progress2", "--mkpath", "{mountpoint}/", "{home}/Backups/{label}/"]
+    }
+  ]
+}

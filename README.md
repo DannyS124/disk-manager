@@ -16,6 +16,7 @@ a while and wanted something simple for managing drives without going to the ter
 - Write an ISO to a USB stick (Arch install sticks etc.)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
+- Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md))
 
 It doesn't run as root. Changes go through udisks2, so you get the normal password prompt, and the
 drive your system is on is locked so you can't format it by accident.

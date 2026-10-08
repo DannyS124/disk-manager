@@ -3,12 +3,15 @@
 
 #pragma once
 
+#include "addons.h"
+
 #include <QMainWindow>
 
 class DiskMap;
 class HelpWindow;
 class UpdateChecker;
 class QAction;
+class QMenu;
 class QProgressBar;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -44,6 +47,8 @@ private:
     void changeLabel();
     void newPartitionTable();
     void checkForUpdates();
+    bool addAddonActions(QMenu *menu); // false if none apply
+    void runAddon(const Addon &addon, const AddonAction &action);
     int selectedDiskNumber() const;
 
     const Disk *selectedDisk() const;
@@ -79,6 +84,7 @@ private:
     QAction *m_health = nullptr;
     QAction *m_benchmark = nullptr;
     QProgressBar *m_progress = nullptr;
+    Addons m_addons;
     HelpWindow *m_help = nullptr;
     UpdateChecker *m_updates = nullptr;
 };

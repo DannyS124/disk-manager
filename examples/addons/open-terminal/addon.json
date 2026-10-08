@@ -1,0 +1,16 @@
+{
+  "id": "open-terminal",
+  "name": "Open Terminal Here",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "Opens a Konsole window in a mounted drive's folder.",
+  "actions": [
+    {
+      "label": "Open Terminal Here",
+      "icon": "utilities-terminal",
+      "applies_to": "volume",
+      "when": ["mounted"],
+      "command": ["konsole", "--workdir", "{mountpoint}"]
+    }
+  ]
+}

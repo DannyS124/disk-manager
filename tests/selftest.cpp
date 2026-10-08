@@ -21,6 +21,7 @@
 #include <QTextStream>
 #include <QThread>
 
+#include "../src/addons.h"
 #include "../src/benchmark.h"
 #include "../src/imagewriter.h"
 
@@ -411,6 +412,70 @@ bool extras(UDisks &udisks)
         && waitFor(udisks, QStringLiteral("it is gone"), [&](const Disk &) { return diskWithFile(udisks, second) == nullptr; });
 }
 
+// Add-on parsing, matching and placeholder filling. Touches no disks.
+void addonTests()
+{
+    const QString examples = QStringLiteral(SOURCE_DIR "/examples/addons");
+    QMap<QString, Addon> byId;
+    for (const QString &name : QDir(examples).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const Addon a = Addons::parse(examples + QLatin1Char('/') + name + QStringLiteral("/addon.json"));
+        report(a.error.isEmpty(), QStringLiteral("example add-on %1 parses").arg(name), a.error);
+        byId.insert(a.id, a);
+    }
+
+    QTemporaryDir tmp;
+    auto broken = [&](const QByteArray &json, const char *expect, const QString &what) {
+        const QString file = tmp.filePath(QStringLiteral("addon.json"));
+        QFile f(file);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            f.write(json);
+        f.close();
+        const Addon a = Addons::parse(file);
+        report(a.error.contains(QLatin1String(expect)), what, a.error);
+    };
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo","{nope}"]}]})", "Unknown placeholder", QStringLiteral("unknown placeholder is rejected"));
+    broken(R"({"id":"Bad Id","actions":[{"label":"L","command":["echo"]}]})", "id", QStringLiteral("bad id is rejected"));
+    broken(R"({"id":"x","actions":[{"label":"L","when":["sometimes"],"command":["echo"]}]})", "Unknown condition", QStringLiteral("unknown condition is rejected"));
+    broken(R"({"id":"x","actions":[]})", "No actions", QStringLiteral("add-on without actions is rejected"));
+    broken("not json", "JSON", QStringLiteral("invalid JSON is rejected"));
+
+    Disk usb;
+    usb.device = QStringLiteral("/dev/sdz");
+    usb.removable = true;
+    usb.model = QStringLiteral("Test Stick");
+    Volume vol;
+    vol.device = QStringLiteral("/dev/sdz1");
+    vol.label = QStringLiteral("My Stuff; rm -rf ~");
+    vol.fsType = QStringLiteral("vfat");
+    vol.hasFilesystem = true;
+    vol.mountPoints = {QStringLiteral("/run/media/me/My Stuff")};
+    usb.volumes = {vol};
+
+    const AddonAction &terminal = byId.value(QStringLiteral("open-terminal")).actions.value(0);
+    const AddonAction &backup = byId.value(QStringLiteral("backup-rsync")).actions.value(0);
+    const AddonAction &smart = byId.value(QStringLiteral("smart-report")).actions.value(0);
+    report(Addons::applies(terminal, usb, &usb.volumes[0], false), QStringLiteral("open-terminal is offered on a mounted volume"));
+    Volume unmounted = vol;
+    unmounted.mountPoints.clear();
+    report(!Addons::applies(terminal, usb, &unmounted, false), QStringLiteral("but not on an unmounted one"));
+    report(!Addons::applies(terminal, usb, nullptr, false), QStringLiteral("nor on the disk itself"));
+    report(!Addons::applies(smart, usb, nullptr, false), QStringLiteral("smart-report isn't offered without health data"));
+    Disk system = usb;
+    system.isSystem = true;
+    system.health.state = Health::State::Healthy;
+    report(Addons::applies(smart, system, nullptr, false), QStringLiteral("smart-report is offered on the system disk (read-only)"));
+    report(!Addons::applies(backup, system, &system.volumes[0], false), QStringLiteral("other add-ons aren't offered on the system disk"));
+
+    QString error;
+    const QStringList argv = Addons::expand(backup.command, usb, &usb.volumes[0], &error);
+    const QStringList expected = {QStringLiteral("rsync"), QStringLiteral("-a"), QStringLiteral("--info=progress2"), QStringLiteral("--mkpath"),
+                                  QStringLiteral("/run/media/me/My Stuff/"), QDir::homePath() + QStringLiteral("/Backups/My Stuff; rm -rf ~/")};
+    report(argv == expected, QStringLiteral("placeholders fill in, and a nasty label stays one plain argument"), argv.join(QStringLiteral(" | ")));
+    error.clear();
+    report(Addons::expand(backup.command, usb, &unmounted, &error).isEmpty() && error.contains(QLatin1String("Mount")),
+           QStringLiteral("{mountpoint} on an unmounted volume asks to mount first"), error);
+}
+
 void guard(UDisks &udisks)
 {
     for (const Disk &d : udisks.disks()) {
@@ -445,7 +510,9 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
     const bool root = geteuid() == 0;
 
-    if (app.arguments().contains(QStringLiteral("--guard"))) {
+    if (app.arguments().contains(QStringLiteral("--addons"))) {
+        addonTests();
+    } else if (app.arguments().contains(QStringLiteral("--guard"))) {
         // root bypasses polkit, so test the guard as a normal user
         if (root) {
             out << "Run --guard as your normal user, not root." << Qt::endl;

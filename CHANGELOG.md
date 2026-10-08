@@ -11,6 +11,7 @@
 - Open .iso and .img files as disks
 - Benchmark read speed, access time and write speed
 - Progress bar for long operations
+- Add-ons: JSON files that add menu actions (Tools → Add-ons), with three examples in examples/addons
 
 ## 0.4.3
 - Check for Updates says so when there's no release, instead of "Not Found"
