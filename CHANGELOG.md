@@ -11,6 +11,7 @@
 - Open .iso and .img files as disks
 - Benchmark read speed, access time and write speed
 - Progress bar for long operations
+- Fix: actions that ask something first (repair after a check, format, delete, resize...) could fail with "disk not found" if the disk list refreshed while the question was open
 - Right-click any partition, free space or drive to get everything you can do with it, partition and drive options together
 - Scan for bad sectors and repair them (rewrites just those sectors so the drive swaps in spares)
 - Long self-test button in Disk Health

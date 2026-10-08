@@ -54,6 +54,8 @@ private:
 
     const Disk *selectedDisk() const;
     const Volume *selectedVolume() const;
+    const Volume *volumeByPath(const QString &objectPath) const;
+    void gone();
 
     UDisks *m_udisks;
     QTreeWidget *m_table;

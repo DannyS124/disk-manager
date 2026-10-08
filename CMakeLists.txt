@@ -69,6 +69,13 @@ if(DISKFORGE_SELFTEST)
     qt_add_resources(diskforge-preview "preview_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
     target_link_libraries(diskforge-preview PRIVATE diskforge-core Qt6::Widgets)
     target_compile_definitions(diskforge-preview PRIVATE ${APP_DEFINITIONS})
+
+    qt_add_executable(diskforge-uitest tests/uitest.cpp
+        src/mainwindow.cpp src/diskmap.cpp src/dialogs.cpp src/tools.cpp src/about.cpp
+        src/addonsdialog.cpp src/updates.cpp)
+    qt_add_resources(diskforge-uitest "uitest_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
+    target_link_libraries(diskforge-uitest PRIVATE diskforge-core Qt6::Widgets Qt6::Network)
+    target_compile_definitions(diskforge-uitest PRIVATE ${APP_DEFINITIONS})
 endif()
 
 include(GNUInstallDirs)

@@ -71,6 +71,7 @@ case "$cmd" in
     run_tests addons ./build/diskforge-selftest --addons
     run_tests disks sudo ./build/diskforge-selftest
     run_tests badsectors sudo ./build/diskforge-selftest --badsectors
+    run_tests window sudo env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest
 
     # Local tag only. Restaging after a fix moves it to the new commit.
     git tag -d "v$v" >/dev/null 2>&1 || true

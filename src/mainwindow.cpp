@@ -126,19 +126,17 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
         }
     });
     connect(m_udisks, &UDisks::checkFinished, this, [this](const QString &objectPath, bool clean) {
-        if (clean)
+        const Volume *v = volumeByPath(objectPath);
+        if (clean || !v)
             return;
-        for (const Disk &d : m_udisks->disks()) {
-            for (const Volume &v : d.volumes) {
-                if (v.objectPath != objectPath)
-                    continue;
-                const auto answer = QMessageBox::question(this, tr("Errors Found"),
-                    tr("%1 has file system errors. Repair them now?").arg(volumeTitle(v)));
-                if (answer == QMessageBox::Yes)
-                    m_udisks->repair(v);
-                return;
-            }
-        }
+        const auto answer = QMessageBox::question(this, tr("Errors Found"),
+                                                  tr("%1 has file system errors. Repair them now?").arg(volumeTitle(*v)));
+        if (answer != QMessageBox::Yes)
+            return;
+        if (const Volume *fresh = volumeByPath(objectPath))
+            m_udisks->repair(*fresh);
+        else
+            gone();
     });
     connect(m_table, &QTreeWidget::itemSelectionChanged, this, &MainWindow::onTableSelection);
     connect(m_table, &QTreeWidget::itemDoubleClicked, this, &MainWindow::activate);
@@ -222,12 +220,16 @@ void MainWindow::createActions()
         const Volume *v = selectedVolume();
         if (!v)
             return;
+        const QString path = v->objectPath;
         if (!v->mounts().isEmpty()
             && QMessageBox::question(this, tr("Check for Errors"),
                                      tr("%1 has to be unmounted while it's checked. Continue?").arg(volumeTitle(*v))) != QMessageBox::Yes)
             return;
-        statusBar()->showMessage(tr("Checking %1…").arg(shortDevice(v->device)));
-        m_udisks->check(*v);
+        const Volume *fresh = volumeByPath(path);
+        if (!fresh)
+            return gone();
+        statusBar()->showMessage(tr("Checking %1…").arg(shortDevice(fresh->device)));
+        m_udisks->check(*fresh);
     });
 
     m_startup = new QAction(tr("Mount at &Startup"), this);
@@ -243,11 +245,16 @@ void MainWindow::createActions()
         const Volume *v = selectedVolume();
         if (!v)
             return;
+        const QString path = v->objectPath;
         bool ok = false;
         const QString pass = QInputDialog::getText(this, tr("Unlock %1").arg(shortDevice(v->device)),
                                                    tr("Passphrase for %1:").arg(volumeTitle(*v)), QLineEdit::Password, {}, &ok);
-        if (ok && !pass.isEmpty())
-            m_udisks->unlock(*v, pass);
+        if (!ok || pass.isEmpty())
+            return;
+        if (const Volume *fresh = volumeByPath(path))
+            m_udisks->unlock(*fresh, pass);
+        else
+            gone();
     });
 
     m_lock = new QAction(themeIcon("object-locked", "lock"), tr("&Lock"), this);
@@ -261,9 +268,14 @@ void MainWindow::createActions()
         const Volume *v = selectedVolume();
         if (!v)
             return;
+        const QString path = v->objectPath;
         ChangePassphraseDialog dialog(shortDevice(v->device), this);
-        if (dialog.exec() == QDialog::Accepted)
-            m_udisks->changePassphrase(*v, dialog.oldPassphrase(), dialog.newPassphrase());
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        if (const Volume *fresh = volumeByPath(path))
+            m_udisks->changePassphrase(*fresh, dialog.oldPassphrase(), dialog.newPassphrase());
+        else
+            gone();
     });
 
     m_openImage = new QAction(themeIcon("document-open", "document-open"), tr("&Open Disk Image…"), this);
@@ -292,11 +304,15 @@ void MainWindow::createActions()
         const Disk *d = selectedDisk();
         if (!d)
             return;
+        const QString path = d->blockPath;
         WipeDialog dialog(*d, selectedDiskNumber(), this);
-        if (dialog.exec() == QDialog::Accepted) {
-            statusBar()->showMessage(tr("Wiping %1…").arg(shortDevice(d->device)));
-            m_udisks->wipe(*d);
-        }
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        const Disk *fresh = m_udisks->diskByPath(path);
+        if (!fresh)
+            return gone();
+        statusBar()->showMessage(tr("Wiping %1…").arg(shortDevice(fresh->device)));
+        m_udisks->wipe(*fresh);
     });
 
     m_health = new QAction(themeIcon("dialog-information", "help-about"), tr("Disk &Health…"), this);
@@ -733,11 +749,15 @@ void MainWindow::newPartition()
     const DiskMap::Selection sel = m_map->selection();
     if (!d || sel.kind != DiskMap::Selection::Kind::Free)
         return;
+    const QString path = d->blockPath;
     NewPartitionDialog dialog(*d, Span{-1, sel.offset, sel.size}, m_udisks->filesystems(), this);
     if (dialog.exec() != QDialog::Accepted)
         return;
-    statusBar()->showMessage(tr("Creating a partition on %1…").arg(shortDevice(d->device)));
-    m_udisks->createPartition(*d, sel.offset, dialog.sizeBytes(), dialog.fsType(), dialog.label(), dialog.passphrase());
+    const Disk *fresh = m_udisks->diskByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Creating a partition on %1…").arg(shortDevice(fresh->device)));
+    m_udisks->createPartition(*fresh, sel.offset, dialog.sizeBytes(), dialog.fsType(), dialog.label(), dialog.passphrase());
     updateActions();
 }
 
@@ -747,13 +767,16 @@ void MainWindow::formatVolume()
     const Volume *v = selectedVolume();
     if (!d || !v)
         return;
+    const QString path = v->objectPath;
+    const QString device = shortDevice(v->device);
+    const QString what = describeVolume(*v);
     FormatDialog dialog(*d, *v, m_udisks->filesystems(), this);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    QMessageBox confirm(QMessageBox::Warning, tr("Format %1").arg(shortDevice(v->device)),
+    QMessageBox confirm(QMessageBox::Warning, tr("Format %1").arg(device),
                         tr("Formatting will erase ALL data on %1. This can't be undone.\n\nFormat it as %2?")
-                            .arg(describeVolume(*v), dialog.fsType()),
+                            .arg(what, dialog.fsType()),
                         QMessageBox::Cancel, this);
     QAbstractButton *format = confirm.addButton(tr("Format"), QMessageBox::DestructiveRole);
     confirm.setDefaultButton(QMessageBox::Cancel);
@@ -761,8 +784,11 @@ void MainWindow::formatVolume()
     if (confirm.clickedButton() != format)
         return;
 
-    statusBar()->showMessage(tr("Formatting %1…").arg(shortDevice(v->device)));
-    m_udisks->format(*v, dialog.fsType(), dialog.label(), dialog.passphrase());
+    const Volume *fresh = volumeByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Formatting %1…").arg(device));
+    m_udisks->format(*fresh, dialog.fsType(), dialog.label(), dialog.passphrase());
     updateActions();
 }
 
@@ -775,15 +801,18 @@ void MainWindow::deletePartition()
     QString text = tr("Delete %1?\n\nEverything on it will be lost. This can't be undone.").arg(describeVolume(*v));
     if (!diskWarning(*d).isEmpty())
         text += QStringLiteral("\n\n") + diskWarning(*d);
+    const QString path = v->objectPath;
     QMessageBox confirm(QMessageBox::Warning, tr("Delete Partition"), text, QMessageBox::Cancel, this);
     QAbstractButton *del = confirm.addButton(tr("Delete"), QMessageBox::DestructiveRole);
     confirm.setDefaultButton(QMessageBox::Cancel);
     confirm.exec();
     if (confirm.clickedButton() != del)
         return;
-
-    statusBar()->showMessage(tr("Deleting %1…").arg(shortDevice(v->device)));
-    m_udisks->deletePartition(*v);
+    const Volume *fresh = volumeByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Deleting %1…").arg(shortDevice(fresh->device)));
+    m_udisks->deletePartition(*fresh);
     updateActions();
 }
 
@@ -797,6 +826,8 @@ void MainWindow::changeLabel()
         if (fs.id == v->fsType)
             maxLength = fs.maxLabel;
     }
+    const QString path = v->objectPath;
+    const QString oldLabel = v->label;
     bool ok = false;
     QInputDialog input(this);
     input.setWindowTitle(tr("Change Label"));
@@ -806,10 +837,13 @@ void MainWindow::changeLabel()
         edit->setMaxLength(maxLength);
     ok = input.exec() == QDialog::Accepted;
     const QString label = input.textValue().trimmed();
-    if (!ok || label == v->label)
+    if (!ok || label == oldLabel)
         return;
-    statusBar()->showMessage(tr("Renaming %1…").arg(shortDevice(v->device)));
-    m_udisks->setLabel(*v, label);
+    const Volume *fresh = volumeByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Renaming %1…").arg(shortDevice(fresh->device)));
+    m_udisks->setLabel(*fresh, label);
     updateActions();
 }
 
@@ -818,11 +852,15 @@ void MainWindow::newPartitionTable()
     const Disk *d = selectedDisk();
     if (!d || !m_newTable->isEnabled())
         return;
+    const QString path = d->blockPath;
     PartitionTableDialog dialog(*d, selectedDiskNumber(), this);
     if (dialog.exec() != QDialog::Accepted)
         return;
-    statusBar()->showMessage(tr("Writing a new partition table to %1…").arg(shortDevice(d->device)));
-    m_udisks->createPartitionTable(*d, dialog.tableType());
+    const Disk *fresh = m_udisks->diskByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Writing a new partition table to %1…").arg(shortDevice(fresh->device)));
+    m_udisks->createPartitionTable(*fresh, dialog.tableType());
     updateActions();
 }
 
@@ -832,12 +870,16 @@ void MainWindow::resizeVolume()
     const Volume *v = selectedVolume();
     if (!d || !v || !m_resize->isEnabled())
         return;
+    const QString path = v->objectPath;
     ResizeDialog dialog(*d, *v, m_udisks->resizeLimits(*v), m_udisks->resizeNeedsRemount(*v, true),
                         m_udisks->resizeNeedsRemount(*v, false), this);
     if (dialog.exec() != QDialog::Accepted)
         return;
-    statusBar()->showMessage(tr("Resizing %1…").arg(shortDevice(v->device)));
-    m_udisks->resize(*v, dialog.newSize());
+    const Volume *fresh = volumeByPath(path);
+    if (!fresh)
+        return gone();
+    statusBar()->showMessage(tr("Resizing %1…").arg(shortDevice(fresh->device)));
+    m_udisks->resize(*fresh, dialog.newSize());
     updateActions();
 }
 
@@ -899,6 +941,8 @@ void MainWindow::runAddon(const Addon &addon, const AddonAction &action)
         QMessageBox::warning(this, action.label, error);
         return;
     }
+    const QString confirmText = action.confirm.isEmpty()
+        ? QString() : Addons::expand({action.confirm}, *d, selectedVolume(), &error).value(0, action.confirm);
     if (!Addons::isTrusted(addon, action)) {
         QMessageBox box(QMessageBox::Warning, tr("Run Add-on?"),
                         tr("\"%1\" from the add-on \"%2\" wants to run:").arg(action.label, addon.name),
@@ -914,13 +958,28 @@ void MainWindow::runAddon(const Addon &addon, const AddonAction &action)
         if (remember->isChecked())
             Addons::trust(addon, action);
     }
-    if (!action.confirm.isEmpty()) {
-        const QString text = Addons::expand({action.confirm}, *d, selectedVolume(), &error).value(0, action.confirm);
-        if (QMessageBox::question(this, action.label, text) != QMessageBox::Yes)
-            return;
-    }
+    if (!confirmText.isEmpty() && QMessageBox::question(this, action.label, confirmText) != QMessageBox::Yes)
+        return;
     if (!Addons::run(action, argv, &error))
         QMessageBox::warning(this, action.label, error);
     else
         statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
+}
+
+// Dialogs run their own event loop, and a UDisks refresh meanwhile replaces the disk
+// list. Handlers keep the object path across a dialog and look the volume up again.
+const Volume *MainWindow::volumeByPath(const QString &objectPath) const
+{
+    for (const Disk &d : m_udisks->disks()) {
+        for (const Volume &v : d.volumes) {
+            if (v.objectPath == objectPath)
+                return &v;
+        }
+    }
+    return nullptr;
+}
+
+void MainWindow::gone()
+{
+    QMessageBox::warning(this, windowTitle(), tr("That partition or drive isn't there anymore, so nothing was changed."));
 }
