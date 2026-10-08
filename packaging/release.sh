@@ -55,10 +55,22 @@ case "$cmd" in
     echo "==> building and running the self-tests"
     cmake -S . -B build >/dev/null
     cmake --build build -j"$(nproc)" >/dev/null
-    ./build/diskforge-selftest --guard | tail -1
-    ./build/diskforge-selftest --addons | tail -1
-    sudo ./build/diskforge-selftest | tail -1
-    sudo ./build/diskforge-selftest --badsectors | tail -1
+    logs="$root/packaging/staging/test-logs"
+    mkdir -p "$logs"
+    run_tests() { # name command...
+        local name=$1
+        shift
+        if "$@" >"$logs/$name.log" 2>&1; then
+            echo "    $name: $(tail -1 "$logs/$name.log")"
+        else
+            grep -E '^FAIL' "$logs/$name.log" >&2
+            die "$name tests failed, nothing staged (full log: $logs/$name.log)"
+        fi
+    }
+    run_tests guard ./build/diskforge-selftest --guard
+    run_tests addons ./build/diskforge-selftest --addons
+    run_tests disks sudo ./build/diskforge-selftest
+    run_tests badsectors sudo ./build/diskforge-selftest --badsectors
 
     # Local tag only. Restaging after a fix moves it to the new commit.
     git tag -d "v$v" >/dev/null 2>&1 || true
