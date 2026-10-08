@@ -70,6 +70,22 @@ bool conditionHolds(const QString &c, const Disk &disk, const Volume *v)
 }
 
 // Wraps the command so it runs in a terminal window the user can watch.
+// In a Flatpak, add-on commands run on the host through flatpak-spawn. That needs the
+// user's OK: flatpak override --user --talk-name=org.freedesktop.Flatpak <app id>
+bool inFlatpak()
+{
+    static const bool yes = QFileInfo::exists(QStringLiteral("/.flatpak-info"));
+    return yes;
+}
+
+bool programExists(const QString &name)
+{
+    if (!inFlatpak())
+        return !QStandardPaths::findExecutable(name).isEmpty() || QFileInfo(name).isExecutable();
+    const QString path = name.startsWith(QLatin1Char('/')) ? name : QStringLiteral("/usr/bin/") + name;
+    return QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("test"), QStringLiteral("-x"), path}) == 0;
+}
+
 QStringList inTerminal(const QStringList &argv)
 {
     const QString preferred = qEnvironmentVariable("TERMINAL");
@@ -84,7 +100,7 @@ QStringList inTerminal(const QStringList &argv)
     for (const auto &[name, args] : terminals) {
         if (!preferred.isEmpty() && preferred.section(QLatin1Char('/'), -1) != name)
             continue;
-        if (!QStandardPaths::findExecutable(name).isEmpty())
+        if (programExists(name))
             return QStringList{name} + args + argv;
     }
     if (!preferred.isEmpty())
@@ -312,18 +328,26 @@ void Addons::trust(const Addon &addon, const AddonAction &action)
 
 bool Addons::run(const AddonAction &action, const QStringList &argv, QString *error)
 {
+    if (inFlatpak() && QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("true")}) != 0) {
+        if (error)
+            *error = QObject::tr("Add-ons run programs outside the Flatpak, which it isn't allowed to do yet. To allow it, run:\n"
+                                 "flatpak override --user --talk-name=org.freedesktop.Flatpak " APP_ID);
+        return false;
+    }
     QStringList full = action.terminal ? inTerminal(argv) : argv;
     if (full.isEmpty()) {
         if (error)
             *error = QObject::tr("No terminal program found (install konsole, kitty or xterm)");
         return false;
     }
-    if (QStandardPaths::findExecutable(argv.first()).isEmpty() && !QFileInfo(argv.first()).isExecutable()) {
+    if (!programExists(argv.first())) {
         if (error)
             *error = QObject::tr("%1 isn't installed").arg(argv.first());
         return false;
     }
-    const QString program = full.takeFirst();
+    if (inFlatpak())
+        full.prepend(QStringLiteral("--host"));
+    const QString program = inFlatpak() ? QStringLiteral("flatpak-spawn") : full.takeFirst();
     if (!QProcess::startDetached(program, full)) {
         if (error)
             *error = QObject::tr("Couldn't start %1").arg(program);

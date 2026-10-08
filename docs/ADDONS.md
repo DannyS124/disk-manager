@@ -50,3 +50,12 @@ File. There are examples in [`examples/addons`](../examples/addons).
   changes, it asks again.
 - Add-ons aren't offered for the system disk unless they set `system_disks`.
 - Only install add-ons you trust, the same as any other program.
+
+## Getting it into the list
+The list in Tools → Add-ons → Get Add-ons comes from
+[github.com/DannyS124/diskforge-addons](https://github.com/DannyS124/diskforge-addons). Open a pull request
+there with your `addons/<id>/addon.json`. Once it's merged it goes into the list.
+
+DiskForge only installs from that repository, only files pinned to a commit, and only if the file matches
+the checksum in the list. It still shows the commands and asks before installing, and again before each
+action first runs.

@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.5.0
+## 0.6.0
+0.5.0 was never released, so everything from it is in here too.
+
+New in 0.6.0:
+- Clone Drive: copies a whole drive onto another one, skips empty space, and can grow the last partition into a bigger drive. Pick whether the copy replaces the old drive (same IDs) or sits next to it (new IDs)
+- Back Up and Restore: saves a drive or partition to a compressed .img.zst file with a checksum, and checks the whole backup before restoring anything
+- Rescue Copy: gets what's still readable off a failing drive, easy parts first. Stop it any time and carry on later; the map file works with GNU ddrescue too
+- Scan for Bad Sectors now draws a map of the drive as it goes: green is fine, orange is slow, red can't be read
+- Disk Usage: a map of what's using the space on a drive, click into folders
+- Disk Cleanup: old package files, packages you've uninstalled, old system logs, your cache folder and the trash
+- Optimize Drives: TRIM now, or every week
+- Btrfs Snapshots: see your subvolumes and snapper's snapshots
+- Secure Erase: the drive's own erase command (ATA and NVMe), with help for drives that are "frozen"
+- Get Add-ons: install add-ons from the online list (checked against a checksum before installing)
+- Flatpak and AppImage downloads on each release
+- Ready for translations (see CONTRIBUTING.md)
+
+From 0.5.0:
 - Disk health (SMART): healthy/warning/failing on every disk, temperature, hours, bad sectors, self-tests
 - Write an ISO to a USB stick, with an optional SHA-256 check and verification afterwards
 - Encrypted drives: encrypt when formatting or creating a partition, unlock, lock, change passphrase

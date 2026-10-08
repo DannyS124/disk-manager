@@ -48,6 +48,35 @@ USB sticks don't report health.</p>
 nothing. If it finds unreadable sectors, Repair rewrites just those: whatever still reads is kept, the rest was
 already lost. The drive then reuses each spot or swaps in a spare. The "reallocated" count in Disk Health never
 goes back down; that's normal. If new bad sectors keep appearing, the drive is wearing out.</p>
+<p>While it scans, a map of the drive fills in: green reads fine, orange is slow, red can't be read. Hover over a
+square to see where it is. Slow spots often turn into bad sectors later, so keep a backup of that drive.</p>
+<p><b>Get files off a dying drive:</b> right-click the drive, Rescue Copy. It copies everything that can still be
+read into an image file (or onto another drive): the easy parts first, then it goes back for the hard ones. You can
+stop it and start it again later with the same file; it carries on where it stopped. Do this before running any
+repairs on a failing drive. Then open the image with File → Open Disk Image and copy your files off.</p>
+<p><b>Copy a whole drive:</b> right-click the drive, Clone Drive, for example to move to a bigger SSD. Empty
+space isn't copied, and on a bigger drive the last partition can grow into the extra space. Pick "replaces the old
+drive" if the old one is going away (it's an exact copy), or "keep using both" so the copy gets its own IDs. You
+can't clone the drive you're running from; start from a live USB for that.</p>
+<p><b>Back up a drive or partition:</b> right-click it, Back Up. It's saved as one compressed .img.zst file with a
+small .json next to it. Keep both. Empty space packs down to almost nothing. Save it on a different drive.</p>
+<p><b>Put a backup back:</b> right-click the drive or partition, Restore Backup, and pick the .img.zst. The whole
+backup is checked against its checksum before anything is written, so a damaged file can't half-overwrite your
+drive.</p>
+<p><b>What's using all the space?</b> Right-click a mounted partition, Disk Usage. Big boxes are big folders; click
+one to look inside. Folders you can't open (other users', the system's) aren't counted.</p>
+<p><b>Free up space:</b> Tools → Disk Cleanup. It removes old package files, packages you've uninstalled, old
+system logs, your cache folder and the trash. It shows how much each one frees first. On Btrfs with snapshots,
+the space only comes back once the old snapshots are gone.</p>
+<p><b>Keep an SSD fast:</b> Tools → Optimize Drives. It tells the SSD which space is free (TRIM). Tick "every
+week" and you don't have to think about it again. Hard drives don't need it, and Linux doesn't need
+defragmenting.</p>
+<p><b>Snapshots:</b> Tools → Btrfs Snapshots lists your Btrfs subvolumes and the snapshots snapper took (before
+and after each pacman update, for example). To go back to one, use snapper or the snapshot entries in your boot
+menu.</p>
+<p><b>Erase an SSD properly:</b> right-click the drive, Secure Erase. The drive erases itself, including spare
+areas that Wipe Disk can't reach. If it says the drive is frozen, click Sleep Now, wake the PC up, then Check
+Again. Keep the PC on until it's done.</p>
 <p><b>How fast is it?</b> Right-click the disk, Benchmark. Reading doesn't change anything; the optional
 write test uses a temporary file.</p>
 <p><b>Wipe a whole disk:</b> right-click the disk on the left, Wipe Disk. Every byte is overwritten with
@@ -55,8 +84,8 @@ zeros. Do this before you sell or give away a drive.</p>
 <p><b>Start a disk over:</b> right-click the disk on the left, New Partition Table. You have to type
 the disk name to confirm. Pick GPT unless it's for a really old computer.</p>
 
-<p><b>Add-ons:</b> Tools → Add-ons lets you install extra actions other people made, like backing up a
-drive or opening a terminal in it. They show up in the right-click menu and the Tools menu. The first time
+<p><b>Add-ons:</b> Tools → Add-ons → Get Add-ons lists add-ons you can install, or use Install from File for
+one you have. They add extra actions, like backing up a drive or opening a terminal in it. They show up in the right-click menu and the Tools menu. The first time
 one runs, DiskForge shows exactly what it will run and asks first. Only install add-ons you trust.</p>
 
 <a name="filesystems"></a>
@@ -76,6 +105,14 @@ one runs, DiskForge shows exactly what it will run and asks first. Only install 
 <p><b>"Not authorized":</b> the password prompt was cancelled, or there's no polkit agent running.</p>
 <p><b>"Device or resource busy":</b> something still has files open on the drive. Close it and try again.</p>
 <p><b>A drive is missing:</b> press F5. Empty card readers are hidden.</p>
+<p><b>A Secure Erase got cut off and now the drive is locked:</b> during the erase the drive has the temporary
+password <code>xxxx</code>. Unlock it with
+<code>sudo hdparm --user-master u --security-unlock xxxx /dev/sdX</code>, then
+<code>sudo hdparm --user-master u --security-disable xxxx /dev/sdX</code> (use your drive's name), and run the
+erase again.</p>
+<p><b>Using the Flatpak?</b> Disk Usage only sees your home folder, /run/media and /mnt, and add-ons need one
+extra permission: <code>flatpak override --user --talk-name=org.freedesktop.Flatpak io.github.DannyS124.DiskForge</code>.
+The Arch package doesn't have these limits.</p>
 <p>Still stuck? Open an issue at
 <a href="https://github.com/DannyS124/diskforge/issues">github.com/DannyS124/diskforge/issues</a>
 and paste the output of <code>diskforge --dump</code>.</p>

@@ -71,10 +71,15 @@ case "$cmd" in
             die "$name tests failed, nothing staged (full log: $logs/$name.log)"
         fi
     }
-    run_tests guard ./build/diskforge-selftest --guard
-    run_tests addons ./build/diskforge-selftest --addons
+    # As you: the system-disk guard and everything that works on plain files.
+    for suite in guard addons gpt copy usage backup rescuemap cleanup catalog; do
+        run_tests $suite ./build/diskforge-selftest --$suite
+    done
+    # As root: test devices made with losetup and dmsetup.
     run_tests disks sudo ./build/diskforge-selftest
-    run_tests badsectors sudo ./build/diskforge-selftest --badsectors
+    for suite in badsectors blockmap rescue clone btrfs optimize; do
+        run_tests $suite sudo ./build/diskforge-selftest --$suite
+    done
     run_tests window sudo env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest
 
     # Local tag only. Restaging after a fix moves it to the new commit.
@@ -112,7 +117,8 @@ case "$cmd" in
     QT_QPA_PLATFORM=offscreen "$tmp/root/usr/bin/diskforge" --dump >/dev/null || die "packaged program can't read the disks"
     desktop-file-validate "$tmp/root/usr/share/applications/"*.desktop
     appstreamcli validate --no-net "$tmp/root/usr/share/metainfo/"*.xml >/dev/null || die "metainfo doesn't validate"
-    for f in usr/share/icons/hicolor/scalable/apps usr/share/man/man1/diskforge.1.gz; do
+    for f in usr/share/icons/hicolor/scalable/apps usr/share/man/man1/diskforge.1.gz \
+             usr/lib/systemd/system/diskforge-journal-vacuum.service usr/lib/systemd/system/diskforge-paccache-uninstalled.service; do
         [[ -e "$tmp/root/$f" ]] || die "package is missing $f"
     done
 
@@ -121,8 +127,9 @@ case "$cmd" in
 
 Install it and try it:
   sudo pacman -U packaging/staging/$v/$pkg
-On a USB stick you don't need: mount, unmount, format, new partition, resize, rename, delete.
-Then Help, About and Check for Updates.
+On a USB stick you don't need: mount, unmount, format, new partition, resize, rename, delete,
+Back Up and Restore, Clone Drive (onto another spare stick), Rescue Copy.
+Then Disk Usage, Disk Cleanup, Optimize Drives, Btrfs Snapshots, Help, About and Check for Updates.
 
 All good:  packaging/release.sh --publish $v
 Problem:   fix it, commit, and run --stage $v again
@@ -150,6 +157,23 @@ sha256: \`$hash\`" >/dev/null
     git push -q
     echo "==> $v is out: https://github.com/$repo/releases/tag/v$v"
     sync_aur "update to $v"
+
+    # GitHub builds the Flatpak and AppImage for the release; wait for them.
+    echo "==> waiting for the Flatpak and AppImage to be built"
+    run_id=""
+    for _ in $(seq 30); do
+        run_id=$(gh run list -R "$repo" --workflow bundles.yml --event release --limit 5 \
+            --json databaseId,headBranch --jq ".[] | select(.headBranch == \"v$v\") | .databaseId" | head -1)
+        [[ -n "$run_id" ]] && break
+        sleep 10
+    done
+    [[ -n "$run_id" ]] || die "the bundles workflow didn't start; the release is out without them (check the Actions tab)"
+    gh run watch "$run_id" -R "$repo" --exit-status >/dev/null || die "building the bundles failed; the release is out without them (gh run view $run_id -R $repo)"
+    assets=$(gh release view "v$v" -R "$repo" --json assets --jq '.assets[].name')
+    for f in DiskForge-x86_64.flatpak DiskForge-x86_64.AppImage; do
+        grep -qx "$f" <<<"$assets" || die "$f wasn't attached to the release"
+    done
+    echo "==> the Flatpak and AppImage are attached"
     ;;
 
 --pull)

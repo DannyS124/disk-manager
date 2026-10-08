@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 Danny S
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Built by .github/workflows/bundles.yml and attached to each GitHub release. Not for
+# Flathub: a disk manager needs more access than Flathub allows.
+#
+# Inside the Flatpak, Disk Usage and the snapshots view only see what's shared with it
+# (your home, /run/media and /mnt), and add-ons need permission to run host programs:
+#   flatpak override --user --talk-name=org.freedesktop.Flatpak io.github.DannyS124.DiskForge
+id: io.github.DannyS124.DiskForge
+runtime: org.kde.Platform
+runtime-version: '6.9'
+sdk: org.kde.Sdk
+command: diskforge
+finish-args:
+  - --share=ipc
+  - --share=network # the add-on list and Check for Updates, only when you open them
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --system-talk-name=org.freedesktop.UDisks2
+  - --system-talk-name=org.freedesktop.systemd1
+  - --system-talk-name=org.freedesktop.login1
+  - --system-talk-name=org.opensuse.Snapper
+  - --filesystem=home
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+modules:
+  - name: diskforge
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DDISKFORGE_SELFTEST=OFF
+      - -DDISKFORGE_SYSTEMD_UNIT=OFF
+    sources:
+      - type: dir
+        path: ../..

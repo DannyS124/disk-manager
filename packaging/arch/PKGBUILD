@@ -6,14 +6,16 @@ pkgdesc='Disk manager for Linux that works like Windows Disk Management'
 arch=('x86_64')
 url='https://github.com/DannyS124/diskforge'
 license=('GPL-3.0-or-later')
-depends=('glibc' 'hicolor-icon-theme' 'libgcc' 'libstdc++' 'qt6-base' 'qt6-svg' 'udisks2')
-makedepends=('cmake')
+depends=('glibc' 'hicolor-icon-theme' 'libgcc' 'libstdc++' 'qt6-base' 'qt6-svg' 'udisks2' 'zstd')
+makedepends=('cmake' 'qt6-tools')
 optdepends=(
   'exfatprogs: create exFAT volumes'
   'dosfstools: create FAT32 volumes'
   'ntfs-3g: create NTFS volumes'
   'btrfs-progs: create Btrfs volumes'
   'xfsprogs: create XFS volumes'
+  'pacman-contrib: clean up the package cache in Disk Cleanup'
+  'snapper: list Btrfs snapshots'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('49488d50d351425049072fea429b89fe12ed21edcad457020b8658fc265d4f1b')

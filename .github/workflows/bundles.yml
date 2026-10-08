@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: 2026 Danny S
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Builds the Flatpak and the AppImage. On a push to main they're kept as test
+# downloads (Actions tab); when a release is published they're attached to it.
+name: bundles
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flatpak:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.9
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40 # master, 2025-04-24
+        with:
+          bundle: DiskForge-x86_64.flatpak
+          manifest-path: packaging/flatpak/io.github.DannyS124.DiskForge.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+  appimage:
+    runs-on: ubuntu-22.04 # oldest supported glibc, so the AppImage runs on more systems
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
+        with:
+          version: '6.8.*'
+          cache: true
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libzstd-dev pkg-config ninja-build desktop-file-utils
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+            -DDISKFORGE_SELFTEST=OFF -DDISKFORGE_SYSTEMD_UNIT=OFF
+          cmake --build build
+          DESTDIR="$PWD/AppDir" cmake --install build
+          # linuxdeploy wants a bare program name in Exec
+          sed -i 's|^Exec=.*|Exec=diskforge|' AppDir/usr/share/applications/io.github.DannyS124.DiskForge.desktop
+      - name: Package
+        env:
+          OUTPUT: DiskForge-x86_64.AppImage
+          EXTRA_QT_MODULES: svg
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage
+          sha256sum -c <<'SUMS'
+          c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy-x86_64.AppImage
+          15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724  linuxdeploy-plugin-qt-x86_64.AppImage
+          SUMS
+          chmod +x linuxdeploy*.AppImage
+          export QMAKE="$(command -v qmake6 || command -v qmake)"
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
+            -d AppDir/usr/share/applications/io.github.DannyS124.DiskForge.desktop \
+            -i AppDir/usr/share/icons/hicolor/scalable/apps/io.github.DannyS124.DiskForge.svg
+      - name: Check it starts
+        run: |
+          [ "$(QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 ./DiskForge-x86_64.AppImage --version)" = "diskforge $(sed -n 's/^    VERSION //p' CMakeLists.txt)" ]
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DiskForge-x86_64.AppImage
+          path: DiskForge-x86_64.AppImage
+
+  attach:
+    if: github.event_name == 'release'
+    needs: [flatpak, appimage]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # only this job can add files to the release
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l
+          sha256sum DiskForge-x86_64.flatpak DiskForge-x86_64.AppImage > SHA256SUMS-bundles
+          gh release upload "${{ github.event.release.tag_name }}" -R "${{ github.repository }}" --clobber \
+            DiskForge-x86_64.flatpak DiskForge-x86_64.AppImage SHA256SUMS-bundles
