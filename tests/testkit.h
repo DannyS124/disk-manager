@@ -20,3 +20,4 @@ QString sha256File(const QString &path, qint64 offset = 0, qint64 length = -1);
 void gptTests();
 void copyTests();
 void blockMapTests();
+void usageTests();
