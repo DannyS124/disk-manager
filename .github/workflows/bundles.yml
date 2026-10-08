@@ -3,6 +3,8 @@
 #
 # Builds the Flatpak and the AppImage. On a push to main they're kept as test
 # downloads (Actions tab); when a release is published they're attached to it.
+# To redo them for a release that's already out (after fixing this file):
+#   gh workflow run bundles.yml -f tag=v0.6.0
 name: bundles
 
 on:
@@ -11,6 +13,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Build this release's source and attach the bundles to it (e.g. v0.6.0). Empty = just build.
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -23,6 +30,8 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: flathub-infra/flatpak-github-actions/flatpak-builder@933e9e8ca36e85046ebca8e211f0785c6becac40 # master, 2025-04-24
         with:
           bundle: DiskForge-x86_64.flatpak
@@ -33,6 +42,8 @@ jobs:
     runs-on: ubuntu-22.04 # oldest supported glibc, so the AppImage runs on more systems
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4.4.1
         with:
           version: '6.8.*'
@@ -50,7 +61,9 @@ jobs:
       - name: Package
         env:
           OUTPUT: DiskForge-x86_64.AppImage
+          LDAI_OUTPUT: DiskForge-x86_64.AppImage
           EXTRA_QT_MODULES: svg
+          EXTRA_PLATFORM_PLUGINS: libqoffscreen.so # for running it without a screen, like the check below
         run: |
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage
@@ -73,7 +86,7 @@ jobs:
           path: DiskForge-x86_64.AppImage
 
   attach:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.tag != ''
     needs: [flatpak, appimage]
     runs-on: ubuntu-latest
     permissions:
@@ -85,8 +98,9 @@ jobs:
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           ls -l
           sha256sum DiskForge-x86_64.flatpak DiskForge-x86_64.AppImage > SHA256SUMS-bundles
-          gh release upload "${{ github.event.release.tag_name }}" -R "${{ github.repository }}" --clobber \
+          gh release upload "$TAG" -R "${{ github.repository }}" --clobber \
             DiskForge-x86_64.flatpak DiskForge-x86_64.AppImage SHA256SUMS-bundles

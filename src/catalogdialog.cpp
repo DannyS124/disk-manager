@@ -61,12 +61,14 @@ void CatalogDialog::fetch(const QString &url, const std::function<void(const QBy
     connect(reply, &QNetworkReply::finished, this, [reply, done] {
         reply->deleteLater();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (reply->error() == QNetworkReply::OperationCanceledError)
+        if (status == 404)
+            done({}, tr("it isn't online yet"));
+        else if (reply->error() == QNetworkReply::OperationCanceledError)
             done({}, tr("The download was bigger than it can be"));
         else if (reply->error() != QNetworkReply::NoError)
             done({}, reply->errorString());
         else if (status != 200)
-            done({}, tr("The server answered %1").arg(status));
+            done({}, tr("the server answered %1").arg(status));
         else
             done(reply->readAll(), {});
     });
