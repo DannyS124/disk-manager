@@ -14,6 +14,7 @@ class QLabel;
 class QLineEdit;
 class QProgressBar;
 class QPushButton;
+class BlockMapWidget;
 class QThread;
 class QTreeWidget;
 
@@ -127,6 +128,7 @@ private:
     Disk m_disk;
     QLabel *m_status;
     QProgressBar *m_progress;
+    BlockMapWidget *m_map;
     QTreeWidget *m_found;
     QLabel *m_repairNote;
     QPushButton *m_scan;

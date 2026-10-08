@@ -5,6 +5,7 @@
 
 #include "blockio.h"
 
+#include <QElapsedTimer>
 #include <QSet>
 
 #include <algorithm>
@@ -28,6 +29,7 @@ SurfaceScan::SurfaceScan(int fd, quint64 size)
     : m_fd(fd)
     , m_size(size)
 {
+    qRegisterMetaType<QVector<ReadSample>>();
 }
 
 SurfaceScan::~SurfaceScan()
@@ -47,30 +49,58 @@ void SurfaceScan::run()
         return;
     }
 
+    QVector<ReadSample> batch;
+    QElapsedTimer sinceBatch;
+    sinceBatch.start();
+    auto flush = [&] {
+        if (!batch.isEmpty())
+            emit samples(batch);
+        batch.clear();
+        sinceBatch.restart();
+    };
+    // Reads one piece and notes how long it took.
+    auto timedRead = [&](quint64 len, quint64 off) {
+        QElapsedTimer t;
+        t.start();
+        const bool ok = readAt(m_fd, buf.get(), len, off);
+        batch.append({off, quint32(len), quint32(t.elapsed()), ok});
+        return ok;
+    };
+
     quint64 lastReport = 0;
     for (quint64 off = 0; off < m_size; off += kChunk) {
         if (m_cancel) {
+            flush();
             emit finished(false, bad, logical);
             return;
         }
         const quint64 len = std::min(kChunk, m_size - off);
-        if (!readAt(m_fd, buf.get(), len, off)) {
+        QElapsedTimer t;
+        t.start();
+        if (readAt(m_fd, buf.get(), len, off)) {
+            batch.append({off, quint32(len), quint32(t.elapsed()), true});
+        } else {
             // Narrow it down: physical blocks first, then the logical sectors inside a bad one.
             for (quint64 p = off; p < off + len; p += quint64(physical)) {
                 const quint64 plen = std::min<quint64>(quint64(physical), off + len - p);
-                if (readAt(m_fd, buf.get(), plen, p))
+                if (readAt(m_fd, buf.get(), plen, p)) {
+                    batch.append({p, quint32(plen), 0, true});
                     continue;
+                }
                 for (quint64 s = p; s < p + plen; s += quint64(logical)) {
-                    if (!readAt(m_fd, buf.get(), quint64(logical), s))
+                    if (!timedRead(quint64(logical), s))
                         bad << s;
                 }
             }
         }
+        if (sinceBatch.elapsed() >= 250)
+            flush();
         if (off + len - lastReport >= 64 * kChunk || off + len == m_size) {
             lastReport = off + len;
             emit progress(off + len, m_size, int(bad.size()));
         }
     }
+    flush();
     emit finished(true, bad, logical);
 }
 

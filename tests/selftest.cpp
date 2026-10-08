@@ -4,6 +4,8 @@
 // Runs every operation against an image file attached as a loop device.
 // Operations need root (no polkit agent); --guard runs as the user.
 
+#include "testkit.h"
+
 #include "../src/format.h"
 #include "../src/udisks.h"
 
@@ -37,19 +39,7 @@
 
 namespace {
 
-QTextStream out(stdout);
-int failures = 0;
 QString imagePath;
-
-void report(bool ok, const QString &step, const QString &detail = {})
-{
-    out << (ok ? "PASS  " : "FAIL  ") << step;
-    if (!detail.isEmpty())
-        out << "  (" << detail << ")";
-    out << Qt::endl;
-    if (!ok)
-        ++failures;
-}
 
 bool run(UDisks &udisks, const QString &step, const std::function<void()> &op, QString *message = nullptr)
 {
@@ -416,14 +406,6 @@ bool extras(UDisks &udisks)
         && waitFor(udisks, QStringLiteral("it is gone"), [&](const Disk &) { return diskWithFile(udisks, second) == nullptr; });
 }
 
-QString sh(const QString &program, const QStringList &args)
-{
-    QProcess p;
-    p.start(program, args);
-    p.waitForFinished(30000);
-    return QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
-}
-
 // Scan and repair against dm-dust, a kernel test target whose bad blocks fail on read
 // and are cleared by a write, the way a drive's pending sectors behave.
 void badSectorTests()
@@ -596,8 +578,22 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
     const bool root = geteuid() == 0;
 
-    if (app.arguments().contains(QStringLiteral("--addons"))) {
+    const QStringList args = app.arguments();
+    auto needsRoot = [&](const char *suite) {
+        if (!root)
+            out << suite << " needs root (it sets up test devices)" << Qt::endl;
+        return !root;
+    };
+    if (args.contains(QStringLiteral("--addons"))) {
         addonTests();
+    } else if (args.contains(QStringLiteral("--gpt"))) {
+        gptTests();
+    } else if (args.contains(QStringLiteral("--copy"))) {
+        copyTests();
+    } else if (args.contains(QStringLiteral("--blockmap"))) {
+        if (needsRoot("--blockmap"))
+            return 2;
+        blockMapTests();
     } else if (app.arguments().contains(QStringLiteral("--badsectors"))) {
         if (!root) {
             out << "--badsectors needs root (it creates a test device with dmsetup)" << Qt::endl;

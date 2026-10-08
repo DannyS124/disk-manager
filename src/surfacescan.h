@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "blockmapdata.h"
+
 #include <QObject>
 #include <QVector>
 
@@ -23,6 +25,8 @@ public slots:
 
 signals:
     void progress(quint64 done, quint64 total, int badCount);
+    // How long each read took, a few times a second, for the block map.
+    void samples(const QVector<ReadSample> &batch);
     // badSectors: byte offsets of unreadable logical sectors
     void finished(bool completed, const QVector<quint64> &badSectors, int logicalSize);
 

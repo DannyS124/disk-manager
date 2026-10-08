@@ -39,6 +39,9 @@ add_library(diskforge-core STATIC
     src/benchmark.cpp src/benchmark.h
     src/addons.cpp src/addons.h
     src/surfacescan.cpp src/surfacescan.h
+    src/gpt.cpp src/gpt.h
+    src/blockcopy.cpp src/blockcopy.h
+    src/blockmapdata.cpp src/blockmapdata.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD)
 target_include_directories(diskforge-core PUBLIC src)
@@ -51,6 +54,7 @@ add_library(diskforge-ui STATIC
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
+    src/blockmapwidget.cpp src/blockmapwidget.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
@@ -73,7 +77,8 @@ target_compile_options(diskforge PRIVATE -Wall -Wextra)
 # dev tools, not installed
 option(DISKFORGE_SELFTEST "Build the loop-device self-test" ON)
 if(DISKFORGE_SELFTEST)
-    qt_add_executable(diskforge-selftest tests/selftest.cpp)
+    qt_add_executable(diskforge-selftest tests/selftest.cpp tests/testkit.cpp tests/testkit.h
+        tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

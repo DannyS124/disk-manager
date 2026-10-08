@@ -4,7 +4,15 @@
 <context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="862"/>
+        <location filename="../src/tools.cpp" line="853"/>
+        <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
+        <translation>
+            <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
+            <numerusform>%n areas read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/tools.cpp" line="881"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -12,7 +20,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="907"/>
+        <location filename="../src/tools.cpp" line="926"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -21,9 +29,20 @@
     </message>
 </context>
 <context>
+    <name>BlockMapWidget</name>
+    <message numerus="yes">
+        <location filename="../src/blockmapwidget.cpp" line="90"/>
+        <source>Slow (%n area(s))</source>
+        <translation>
+            <numerusform>Slow (%n area)</numerusform>
+            <numerusform>Slow (%n areas)</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>QObject</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="38"/>
+        <location filename="../src/tools.cpp" line="40"/>
         <source>about %n minute(s)</source>
         <translation>
             <numerusform>about %n minute</numerusform>
@@ -31,7 +50,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="39"/>
+        <location filename="../src/tools.cpp" line="41"/>
         <source>about %n hour(s)</source>
         <translation>
             <numerusform>about %n hour</numerusform>
@@ -39,7 +58,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="70"/>
+        <location filename="../src/tools.cpp" line="72"/>
         <source>%n sector(s)</source>
         <translation>
             <numerusform>%n sector</numerusform>

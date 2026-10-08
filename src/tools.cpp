@@ -3,6 +3,8 @@
 
 #include "tools.h"
 
+#include "blockmapwidget.h"
+
 #include "benchmark.h"
 #include "dialogs.h"
 #include "format.h"
@@ -685,6 +687,7 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
     , m_disk(disk)
     , m_status(new QLabel)
     , m_progress(new QProgressBar)
+    , m_map(new BlockMapWidget)
     , m_found(new QTreeWidget)
     , m_repairNote(new QLabel)
     , m_scan(new QPushButton(tr("Start Scan")))
@@ -706,6 +709,14 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
     m_progress->setRange(0, 1000);
     m_progress->setVisible(false);
     m_status->setWordWrap(true);
+    m_map->reset(disk.size, disk.rotationRate > 0);
+    QVector<BlockMapWidget::Area> areas;
+    for (const Volume &v : disk.volumes) {
+        if (!v.isContainer)
+            areas.append({v.offset, v.offset + v.size, volumeTitle(v)});
+    }
+    m_map->setAreas(areas);
+    m_map->setToolTip(QString()); // per-cell tooltips come from the widget
     m_found->setHeaderLabels({tr("Sector"), tr("Position"), tr("Partition")});
     m_found->setRootIsDecorated(false);
     m_found->setVisible(false);
@@ -735,10 +746,11 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
     layout->addWidget(wrappingLabel(intro));
     layout->addWidget(m_progress);
     layout->addWidget(m_status);
+    layout->addWidget(m_map, 2);
     layout->addWidget(m_found, 1);
     layout->addWidget(m_repairNote);
     layout->addLayout(buttons);
-    resize(600, 460);
+    resize(680, 620);
 }
 
 BadSectorsDialog::~BadSectorsDialog()
@@ -817,6 +829,8 @@ void BadSectorsDialog::startScan()
         connect(m_thread, &QThread::finished, scan, &QObject::deleteLater);
         auto *clock = new QElapsedTimer;
         clock->start();
+        m_map->reset(m_disk.size, m_disk.rotationRate > 0);
+        connect(scan, &SurfaceScan::samples, m_map, &BlockMapWidget::addSamples);
         connect(scan, &SurfaceScan::progress, this, [this, clock](quint64 done, quint64 total, int bad) {
             m_progress->setValue(int(done * 1000 / std::max<quint64>(total, 1)));
             const double rate = done / std::max(clock->nsecsElapsed() / 1e9, 0.001);
@@ -834,12 +848,17 @@ void BadSectorsDialog::startScan()
             m_bad = bad;
             m_logical = logical;
             m_progress->setVisible(false);
+            const int slow = m_map->data().slowAreas();
+            const QString slowNote = slow == 0 ? QString()
+                : QStringLiteral(" ") + tr("%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.", nullptr, slow);
             if (!completed)
-                m_status->setText(tr("Stopped. Bad sectors found so far: %1").arg(bad.size()));
-            else if (bad.isEmpty())
+                m_status->setText(tr("Stopped. Bad sectors found so far: %1").arg(bad.size()) + slowNote);
+            else if (bad.isEmpty() && slow == 0)
                 m_status->setText(tr("Done. Every sector reads fine."));
+            else if (bad.isEmpty())
+                m_status->setText(tr("Done. Every sector can be read.") + slowNote);
             else
-                m_status->setText(tr("Done. %1 can't be read:").arg(sectors(bad.size())));
+                m_status->setText(tr("Done. %1 can't be read.").arg(sectors(bad.size())) + slowNote);
             showFound();
             setRunning(false);
         });

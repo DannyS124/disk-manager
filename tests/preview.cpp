@@ -6,6 +6,7 @@
 #include "../src/about.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
+#include "../src/blockmapwidget.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
@@ -120,6 +121,15 @@ void previewTools(UDisks &udisks, const QDir &out)
             save(health, out.filePath(QStringLiteral("health.png")));
             BadSectorsDialog scan(&udisks, d);
             save(scan, out.filePath(QStringLiteral("badsectors.png")));
+            // Same dialog partway through a scan: mostly fine, a few slow spots, one bad.
+            if (auto *map = scan.findChild<BlockMapWidget *>()) {
+                QVector<ReadSample> samples;
+                const quint64 step = d.size / 1000;
+                for (quint64 off = 0; off < d.size * 7 / 10; off += step)
+                    samples.append({off, quint32(step), off % (step * 97) == 0 ? 400u : 12u, off / step != 311});
+                map->addSamples(samples);
+                save(scan, out.filePath(QStringLiteral("badsectors-map.png")));
+            }
             break;
         }
     }
