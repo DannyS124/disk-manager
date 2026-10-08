@@ -67,6 +67,7 @@ add_library(diskforge-ui STATIC
     src/systemtools.cpp src/systemtools.h
     src/erasedialog.cpp src/erasedialog.h
     src/addonsdialog.cpp src/addonsdialog.h
+    src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
     src/translations.cpp src/translations.h
@@ -91,7 +92,8 @@ if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp tests/testkit.cpp tests/testkit.h
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
-        tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp)
+        tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
+        tests/test_catalog.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

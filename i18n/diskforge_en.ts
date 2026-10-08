@@ -103,6 +103,14 @@
             <numerusform>%n files</numerusform>
         </translation>
     </message>
+    <message numerus="yes">
+        <location filename="../src/addons.cpp" line="410"/>
+        <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
+        <translation>
+            <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
+            <numerusform>%n entrys in the list were left out because they didn't check out</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>SnapshotsDialog</name>

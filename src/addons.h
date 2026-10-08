@@ -35,12 +35,33 @@ struct Addon {
     QVector<AddonAction> actions;
 };
 
+// One add-on offered by the online catalog. The add-on itself is only ever fetched from a
+// URL pinned to a commit of the catalog repository, and must match its checksum.
+struct CatalogEntry {
+    QString id;
+    QString name;
+    QString version;
+    QString author;
+    QString description;
+    QString url;
+    QString sha256;
+};
+
 class Addons
 {
 public:
+    static constexpr qint64 kMaxDownload = 64 * 1024; // the catalog and each add-on
+    static QString catalogUrl();
+    // https://raw.githubusercontent.com/DannyS124/diskforge-addons/<40-hex commit>/...
+    static bool isPinnedUrl(const QString &url);
+    static QVector<CatalogEntry> parseCatalog(const QByteArray &json, QString *error);
+    // Checks size, checksum and id, then saves it into the user's add-on folder.
+    static bool installVerified(const QByteArray &data, const CatalogEntry &entry, QString *error);
+
     static QString userDir(); // ~/.local/share/diskforge/addons
     static QStringList searchDirs();
     static Addon parse(const QString &file);
+    static Addon parseData(const QByteArray &json, const QString &file);
 
     void load();
     const QVector<Addon> &all() const { return m_addons; }

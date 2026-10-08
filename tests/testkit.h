@@ -45,3 +45,4 @@ void cleanupTests();
 void snapperTests();
 void btrfsTests();
 void optimizeTests();
+void catalogTests();

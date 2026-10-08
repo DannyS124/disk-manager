@@ -8,6 +8,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QSaveFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -105,15 +106,22 @@ QStringList Addons::searchDirs()
 
 Addon Addons::parse(const QString &file)
 {
-    Addon a;
-    a.file = file;
     QFile f(file);
     if (!f.open(QIODevice::ReadOnly)) {
+        Addon a;
+        a.file = file;
         a.error = f.errorString();
         return a;
     }
+    return parseData(f.read(kMaxDownload * 4), file);
+}
+
+Addon Addons::parseData(const QByteArray &json, const QString &file)
+{
+    Addon a;
+    a.file = file;
     QJsonParseError parseError;
-    const QJsonObject o = QJsonDocument::fromJson(f.readAll(), &parseError).object();
+    const QJsonObject o = QJsonDocument::fromJson(json, &parseError).object();
     if (parseError.error != QJsonParseError::NoError) {
         a.error = QObject::tr("Not valid JSON: %1").arg(parseError.errorString());
         return a;
@@ -343,6 +351,89 @@ bool Addons::install(const QString &file, QString *error)
     if (!QFile::copy(file, target)) {
         if (error)
             *error = QObject::tr("Couldn't copy it to %1").arg(dir);
+        return false;
+    }
+    return true;
+}
+
+QString Addons::catalogUrl()
+{
+    return QStringLiteral("https://raw.githubusercontent.com/DannyS124/diskforge-addons/main/catalog.json");
+}
+
+bool Addons::isPinnedUrl(const QString &url)
+{
+    static const QRegularExpression pinned(
+        QStringLiteral("^https://raw\\.githubusercontent\\.com/DannyS124/diskforge-addons/[0-9a-f]{40}/[A-Za-z0-9._/-]+\\.json$"));
+    // No "..": the path has to stay inside that commit of the repository.
+    return pinned.match(url).hasMatch() && !url.contains(QLatin1String(".."));
+}
+
+QVector<CatalogEntry> Addons::parseCatalog(const QByteArray &json, QString *error)
+{
+    QVector<CatalogEntry> entries;
+    if (json.size() > kMaxDownload) {
+        *error = QObject::tr("The add-on list is too big");
+        return entries;
+    }
+    QJsonParseError parseError;
+    const QJsonObject o = QJsonDocument::fromJson(json, &parseError).object();
+    if (parseError.error != QJsonParseError::NoError || o.value(QStringLiteral("format")).toString() != QLatin1String("diskforge-addon-catalog")) {
+        *error = QObject::tr("The add-on list isn't in a format DiskForge knows");
+        return entries;
+    }
+    if (o.value(QStringLiteral("version")).toInt() > 1) {
+        *error = QObject::tr("The add-on list needs a newer DiskForge");
+        return entries;
+    }
+    static const QRegularExpression id(QStringLiteral("^[a-z0-9][a-z0-9-]*$"));
+    static const QRegularExpression sha(QStringLiteral("^[0-9a-f]{64}$"));
+    int skipped = 0;
+    for (const QJsonValue &v : o.value(QStringLiteral("addons")).toArray()) {
+        const QJsonObject j = v.toObject();
+        CatalogEntry e;
+        e.id = j.value(QStringLiteral("id")).toString();
+        e.name = j.value(QStringLiteral("name")).toString(e.id);
+        e.version = j.value(QStringLiteral("version")).toString();
+        e.author = j.value(QStringLiteral("author")).toString();
+        e.description = j.value(QStringLiteral("description")).toString();
+        e.url = j.value(QStringLiteral("url")).toString();
+        e.sha256 = j.value(QStringLiteral("sha256")).toString();
+        // Anything not pinned to a commit of the catalog repository is left out.
+        if (!id.match(e.id).hasMatch() || !sha.match(e.sha256).hasMatch() || !isPinnedUrl(e.url)) {
+            ++skipped;
+            continue;
+        }
+        entries << e;
+    }
+    if (skipped)
+        *error = QObject::tr("%n entry(s) in the list were left out because they didn't check out", nullptr, skipped);
+    return entries;
+}
+
+bool Addons::installVerified(const QByteArray &data, const CatalogEntry &entry, QString *error)
+{
+    if (data.size() > kMaxDownload) {
+        *error = QObject::tr("The download is bigger than an add-on can be");
+        return false;
+    }
+    if (QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex()) != entry.sha256) {
+        *error = QObject::tr("The download doesn't match the list's checksum, so it wasn't installed");
+        return false;
+    }
+    const QString dir = userDir() + QLatin1Char('/') + entry.id;
+    const Addon a = parseData(data, dir + QStringLiteral("/addon.json"));
+    if (!a.error.isEmpty()) {
+        *error = a.error;
+        return false;
+    }
+    if (a.id != entry.id) {
+        *error = QObject::tr("The add-on calls itself \"%1\", not \"%2\"").arg(a.id, entry.id);
+        return false;
+    }
+    QSaveFile f(dir + QStringLiteral("/addon.json"));
+    if (!QDir().mkpath(dir) || !f.open(QIODevice::WriteOnly) || f.write(data) != data.size() || !f.commit()) {
+        *error = QObject::tr("Couldn't save it in %1").arg(dir);
         return false;
     }
     return true;

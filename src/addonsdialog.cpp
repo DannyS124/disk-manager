@@ -4,6 +4,7 @@
 #include "addonsdialog.h"
 
 #include "addons.h"
+#include "catalogdialog.h"
 
 #include <QDesktopServices>
 #include <QDir>
@@ -29,6 +30,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     m_list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_details->setOpenExternalLinks(true);
 
+    auto *catalog = new QPushButton(QIcon::fromTheme(QStringLiteral("get-hot-new-stuff"), QIcon::fromTheme(QStringLiteral("download"))), tr("Get Add-ons…"));
     auto *install = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), tr("Install from File…"));
     auto *remove = new QPushButton(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove"));
     auto *folder = new QPushButton(QIcon::fromTheme(QStringLiteral("folder-open")), tr("Open Folder"));
@@ -78,6 +80,11 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     connect(guide, &QPushButton::clicked, this, [] {
         QDesktopServices::openUrl(QUrl(QStringLiteral(APP_HOMEPAGE "/blob/main/docs/ADDONS.md")));
     });
+    connect(catalog, &QPushButton::clicked, this, [this] {
+        CatalogDialog(m_addons, this).exec();
+        m_addons->load();
+        fill();
+    });
     connect(close, &QPushButton::clicked, this, &QDialog::accept);
     connect(m_list, &QTreeWidget::currentItemChanged, this, &AddonsDialog::showDetails);
     connect(m_list, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item) {
@@ -89,6 +96,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     });
 
     auto *buttons = new QHBoxLayout;
+    buttons->addWidget(catalog);
     buttons->addWidget(install);
     buttons->addWidget(remove);
     buttons->addWidget(folder);
