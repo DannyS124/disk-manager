@@ -16,6 +16,8 @@ class QLabel;
 class QProgressBar;
 
 QString durationText(double seconds); // "about 5 minutes"
+// Long messages wrap onto more lines: make the dialog tall enough instead of squashing it.
+void fitHeight(QWidget *dialog);
 QString diskTitle(const Disk &d);     // "SanDisk Ultra (sdb, 32.00 GB)"
 
 // Fills a progress bar and a "Phase, 120 MB/s, about 5 minutes left" label. Speed and

@@ -5,6 +5,7 @@
 
 #include "about.h"
 #include "addonsdialog.h"
+#include "copydialogs.h"
 #include "dialogs.h"
 #include "tools.h"
 #include "diskmap.h"
@@ -333,6 +334,38 @@ void MainWindow::createActions()
             BenchmarkDialog(m_udisks, *d, this).exec();
     });
 
+    m_clone = new QAction(themeIcon("edit-copy", "edit-copy"), tr("&Clone Drive…"), this);
+    connect(m_clone, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            CloneDialog(m_udisks, d->blockPath, this).exec();
+    });
+
+    // A selected partition is backed up or restored on its own; otherwise the whole drive.
+    auto backupTarget = [this]() -> QString {
+        if (const Volume *v = selectedVolume())
+            return v->objectPath;
+        const Disk *d = selectedDisk();
+        return d ? d->blockPath : QString();
+    };
+    m_backup = new QAction(themeIcon("document-save-as", "document-save"), tr("&Back Up…"), this);
+    connect(m_backup, &QAction::triggered, this, [this, backupTarget] {
+        const QString path = backupTarget();
+        if (!path.isEmpty())
+            BackupDialog(m_udisks, path, this).exec();
+    });
+    m_restore = new QAction(themeIcon("document-revert", "edit-undo"), tr("R&estore Backup…"), this);
+    connect(m_restore, &QAction::triggered, this, [this, backupTarget] {
+        const QString path = backupTarget();
+        if (!path.isEmpty())
+            RestoreDialog(m_udisks, path, this).exec();
+    });
+
+    m_rescue = new QAction(themeIcon("tools-media-optical-copy", "edit-copy"), tr("Rescue &Copy…"), this);
+    connect(m_rescue, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            RescueDialog(m_udisks, d->blockPath, this).exec();
+    });
+
     auto *quit = new QAction(themeIcon("application-exit", "window-close"), tr("&Quit"), this);
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, qApp, &QApplication::quit);
@@ -354,6 +387,8 @@ void MainWindow::createActions()
     action->addActions({m_newTable, m_wipe, m_detachImage});
     action->addSeparator();
     action->addActions({m_health, m_badSectors, m_benchmark});
+    action->addSeparator();
+    action->addActions({m_backup, m_restore, m_clone, m_rescue});
     action->addSeparator();
     action->addActions({m_copy, m_properties});
 
@@ -544,13 +579,28 @@ void MainWindow::updateActions()
     m_benchmark->setEnabled(d && !busy);
     m_badSectors->setEnabled(d && !d->isLoop && !busy);
     m_copy->setEnabled(d && kind != DiskMap::Selection::Kind::Free);
+    // Clone and Rescue read the whole drive and refuse the running system; Back Up works on
+    // anything that can be unmounted (or isn't mounted); Restore writes, so not the system disk.
+    m_clone->setEnabled(d && !d->isSystem && !busy && d->size > 0);
+    m_rescue->setEnabled(d && !d->isSystem && !d->isLoop && !busy);
+    const bool partition = v && !v->isContainer;
+    bool anyMounted = false;
+    if (d) {
+        for (const Volume &x : d->volumes)
+            anyMounted = anyMounted || ((!v || &x == v) && !x.mounts().isEmpty());
+    }
+    m_backup->setEnabled(d && !busy && kind != DiskMap::Selection::Kind::Free && (!v || partition)
+                         && !(d->isSystem && (!v || v->isSystem || anyMounted)));
+    m_restore->setEnabled(changeable && kind != DiskMap::Selection::Kind::Free && (!v || partition));
+    m_backup->setText(partition ? tr("&Back Up Partition…") : tr("&Back Up Drive…"));
+    m_restore->setText(partition ? tr("R&estore Partition Backup…") : tr("R&estore Drive Backup…"));
     m_properties->setEnabled(d != nullptr);
 
     const QString why = d && d->isSystem ? tr("Disk holds the running system (%1)").arg(d->systemReason)
                       : busy             ? tr("Wait for the current operation to finish")
                                          : QString();
     for (QAction *a : {m_unmount, m_newPartition, m_format, m_rename, m_delete, m_newTable, m_wipe, m_safelyRemove,
-                       m_check, m_startup, m_lock, m_changePass})
+                       m_check, m_startup, m_lock, m_changePass, m_clone, m_restore, m_rescue, m_backup})
         a->setToolTip(why.isEmpty() || a->isEnabled() ? a->text().remove(QLatin1Char('&')) : why);
     m_resize->setToolTip(m_resize->isEnabled() ? tr("Resize") : !why.isEmpty() ? why : limits.reason);
     if (d && !m_health->isEnabled())
@@ -598,6 +648,8 @@ void MainWindow::buildContextMenu(QMenu *menu)
         add({m_open, m_mount, m_unmount, m_unlock, m_lock});
         menu->addSeparator();
         add({m_format, m_resize, m_rename, m_check, m_startup, m_changePass, m_delete});
+        menu->addSeparator();
+        add({m_backup, m_restore});
     } else if (sel.kind == DiskMap::Selection::Kind::Free) {
         menu->addSection(tr("Unallocated space, %1").arg(formatSize(sel.size)));
         add({m_newPartition});
@@ -605,6 +657,9 @@ void MainWindow::buildContextMenu(QMenu *menu)
 
     menu->addSection(tr("Drive: %1").arg(d->model.isEmpty() ? shortDevice(d->device) : d->model));
     add({m_safelyRemove, m_detachImage, m_health, m_badSectors, m_benchmark});
+    if (!v)
+        add({m_backup, m_restore});
+    add({m_clone, m_rescue});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
         add({m_writeImage});
     add({m_newTable, m_wipe});

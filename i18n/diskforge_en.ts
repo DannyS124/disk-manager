@@ -4,7 +4,7 @@
 <context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="853"/>
+        <location filename="../src/tools.cpp" line="840"/>
         <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
         <translation>
             <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
@@ -12,7 +12,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="881"/>
+        <location filename="../src/tools.cpp" line="868"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -20,7 +20,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="926"/>
+        <location filename="../src/tools.cpp" line="913"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -31,7 +31,7 @@
 <context>
     <name>BlockMapWidget</name>
     <message numerus="yes">
-        <location filename="../src/blockmapwidget.cpp" line="90"/>
+        <location filename="../src/blockmapwidget.cpp" line="98"/>
         <source>Slow (%n area(s))</source>
         <translation>
             <numerusform>Slow (%n area)</numerusform>
@@ -40,9 +40,20 @@
     </message>
 </context>
 <context>
+    <name>CloneDialog</name>
+    <message numerus="yes">
+        <location filename="../src/copydialogs.cpp" line="233"/>
+        <source>Copies %n partition(s), %1 in all. Takes %2.</source>
+        <translation>
+            <numerusform>Copies %n partition, %1 in all. Takes %2.</numerusform>
+            <numerusform>Copies %n partitions, %1 in all. Takes %2.</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>QObject</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="40"/>
+        <location filename="../src/jobui.cpp" line="21"/>
         <source>about %n minute(s)</source>
         <translation>
             <numerusform>about %n minute</numerusform>
@@ -50,7 +61,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="41"/>
+        <location filename="../src/jobui.cpp" line="22"/>
         <source>about %n hour(s)</source>
         <translation>
             <numerusform>about %n hour</numerusform>
@@ -58,11 +69,19 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="72"/>
+        <location filename="../src/tools.cpp" line="64"/>
         <source>%n sector(s)</source>
         <translation>
             <numerusform>%n sector</numerusform>
             <numerusform>%n sectors</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/fswalk.cpp" line="111"/>
+        <source>%n smaller file(s)</source>
+        <translation>
+            <numerusform>%n smaller file</numerusform>
+            <numerusform>%n smaller files</numerusform>
         </translation>
     </message>
 </context>

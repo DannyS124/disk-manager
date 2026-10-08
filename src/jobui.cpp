@@ -6,6 +6,7 @@
 #include "format.h"
 
 #include <QLabel>
+#include <QLayout>
 #include <QPointer>
 #include <QProgressBar>
 
@@ -24,6 +25,18 @@ QString durationText(double seconds)
 QString diskTitle(const Disk &d)
 {
     return QStringLiteral("%1 (%2, %3)").arg(d.model, shortDevice(d.device), formatSize(d.size));
+}
+
+void fitHeight(QWidget *dialog)
+{
+    QLayout *l = dialog->layout();
+    if (!l)
+        return;
+    l->activate();
+    const int needed = l->hasHeightForWidth() ? l->totalHeightForWidth(dialog->width()) : l->totalSizeHint().height();
+    dialog->setMinimumHeight(needed);
+    if (needed > dialog->height())
+        dialog->resize(dialog->width(), needed);
 }
 
 PhaseProgress::PhaseProgress(QProgressBar *bar, QLabel *label)

@@ -60,6 +60,7 @@ add_library(diskforge-ui STATIC
     src/tools.cpp src/tools.h
     src/blockmapwidget.cpp src/blockmapwidget.h
     src/jobui.cpp src/jobui.h
+    src/copydialogs.cpp src/copydialogs.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h

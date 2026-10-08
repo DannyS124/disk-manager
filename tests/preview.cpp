@@ -7,6 +7,9 @@
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
 #include "../src/blockmapwidget.h"
+#include "../src/copydialogs.h"
+#include "../src/imagebackup.h"
+#include "../src/rescuecopy.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
@@ -20,8 +23,12 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QTextStream>
+#include <QFile>
+#include <QJsonDocument>
+#include <QTemporaryDir>
 
 void previewTools(UDisks &udisks, const QDir &out);
+void previewCopyTools(UDisks &udisks, const QDir &out);
 
 namespace {
 
@@ -148,4 +155,68 @@ void previewTools(UDisks &udisks, const QDir &out)
         save(format, out.filePath(QStringLiteral("format-encrypted.png")));
         break;
     }
+    previewCopyTools(udisks, out);
+}
+
+// Clone, Back Up, Restore and Rescue Copy, with sample files in a temporary folder.
+void previewCopyTools(UDisks &udisks, const QDir &out)
+{
+    const Disk *source = nullptr;
+    for (const Disk &d : udisks.disks()) {
+        if (!d.isSystem && !d.isLoop && !d.volumes.isEmpty() && (!source || d.rotationRate > 0))
+            source = &d;
+    }
+    if (!source)
+        return;
+    const Disk disk = *source;
+    const Volume volume = disk.volumes.first();
+    QTemporaryDir tmp;
+
+    CloneDialog clone(&udisks, disk.blockPath);
+    save(clone, out.filePath(QStringLiteral("clone.png")));
+
+    BackupDialog backup(&udisks, volume.objectPath);
+    if (auto *file = backup.findChild<QLineEdit *>())
+        file->setText(tmp.filePath(QStringLiteral("SATA500-2026-10-08.img.zst")));
+    save(backup, out.filePath(QStringLiteral("backup.png")));
+
+    // A description file is all Restore reads until it starts.
+    const QString image = tmp.filePath(QStringLiteral("SATA500-2026-10-08.img.zst"));
+    BackupInfo info = imagebackup::infoFor(disk, &volume);
+    info.size = volume.size / 2;
+    info.sha256 = QString(64, QLatin1Char('a'));
+    QFile json(imagebackup::infoPath(image));
+    if (json.open(QIODevice::WriteOnly))
+        json.write(QJsonDocument(info.toJson()).toJson());
+    json.close();
+    {
+        QFile empty(image);
+        if (!empty.open(QIODevice::WriteOnly))
+            return;
+    }
+    RestoreDialog restore(&udisks, volume.objectPath);
+    if (auto *file = restore.findChild<QLineEdit *>())
+        file->setText(image);
+    save(restore, out.filePath(QStringLiteral("restore.png")));
+
+    // A rescue that was stopped partway: the first third done, a few bad spots, some to retry.
+    RescueMap map(disk.size);
+    const quint64 sector = 512;
+    map.set(0, disk.size / 3 / sector * sector, RescueMap::Finished);
+    for (int i = 1; i < 6; ++i) {
+        const quint64 at = disk.size / 3 / 6 * i / sector * sector;
+        map.set(at, 64 * 1024 * 1024, i % 2 ? RescueMap::NonTrimmed : RescueMap::Bad);
+    }
+    const QString rescued = tmp.filePath(QStringLiteral("HGST.img"));
+    QString error;
+    map.save(rescued + QStringLiteral(".map"), &error);
+    {
+        QFile empty(rescued);
+        if (!empty.open(QIODevice::WriteOnly))
+            return;
+    }
+    RescueDialog rescue(&udisks, disk.blockPath);
+    if (auto *file = rescue.findChild<QLineEdit *>())
+        file->setText(rescued);
+    save(rescue, out.filePath(QStringLiteral("rescue.png")));
 }

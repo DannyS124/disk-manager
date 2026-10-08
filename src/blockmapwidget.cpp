@@ -87,12 +87,15 @@ void BlockMapWidget::paintEvent(QPaintEvent *)
     };
     QVector<Entry> legend = {
         {BlockMapData::State::Good, tr("Reads fine")},
-        {BlockMapData::State::Slow, tr("Slow (%n area(s))", nullptr, m_data.slowAreas())},
         {BlockMapData::State::Bad, tr("Can't be read")},
         {BlockMapData::State::Unread, tr("Not read yet")},
     };
+    // A rescue doesn't time its reads, so it has nothing slow to show, but it has parts to retry.
+    const int slow = m_data.slowAreas();
     if (m_showPending)
-        legend.insert(2, {BlockMapData::State::Pending, tr("To retry")});
+        legend.insert(1, {BlockMapData::State::Pending, tr("To retry")});
+    else
+        legend.insert(1, {BlockMapData::State::Slow, slow ? tr("Slow (%n area(s))", nullptr, slow) : tr("Slow")});
     int x = 0;
     const int y = height() - legendHeight() + 5;
     const int box = fontMetrics().ascent();
