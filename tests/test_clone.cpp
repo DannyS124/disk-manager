@@ -140,11 +140,14 @@ void cloneTests()
     // Refusals, before anything is opened.
     Disk system = source;
     system.isSystem = true;
+    Disk elsewhere = source;
+    elsewhere.blockPath += QStringLiteral("y"); // any other drive
     Disk otherSectors = source;
     otherSectors.blockPath += QStringLiteral("x");
     otherSectors.sectorSize = 4096;
     report(!diskclone::plan(source, source).error.isEmpty(), QStringLiteral("cloning a drive onto itself is refused"));
-    report(diskclone::plan(system, source).error.contains(QLatin1String("live USB")), QStringLiteral("cloning the running system is refused"));
+    report(diskclone::plan(system, elsewhere).error.contains(QLatin1String("live USB")), QStringLiteral("cloning the running system is refused"),
+           diskclone::plan(system, elsewhere).error);
     report(!diskclone::plan(source, otherSectors).error.isEmpty(), QStringLiteral("different sector sizes are refused"));
     const QString smallFile = dir.filePath(QStringLiteral("small.img"));
     makeImage(smallFile, 200 * MiB, '\0');
@@ -166,7 +169,7 @@ void cloneTests()
     if (!tgt)
         return;
     run(udisks, QStringLiteral("re-read its partition table"), [&] { udisks.rescan(tgt->blockPath); });
-    tgt = waitForDisk(udisks, tgtFile, [](const Disk &d) { return d.volumes.size() == 3 && !d.volumes[2].uuid.isEmpty(); });
+    tgt = waitForDisk(udisks, tgtFile, [](const Disk &d) { return d.volumes.size() == 3 && !d.volumes[2].uuid.isEmpty(); }, 2000);
     report(tgt, QStringLiteral("the clone shows three partitions"));
     if (!tgt)
         return;
@@ -201,7 +204,7 @@ void cloneTests()
     report(both && cloneTo(udisks, source, *both, true, &message), QStringLiteral("clone for keeping both drives"), message);
     if (both) {
         run(udisks, {}, [&] { udisks.rescan(both->blockPath); }, &message);
-        both = waitForDisk(udisks, bothFile, [](const Disk &d) { return d.volumes.size() == 3 && !d.volumes[2].uuid.isEmpty(); });
+        both = waitForDisk(udisks, bothFile, [](const Disk &d) { return d.volumes.size() == 3 && !d.volumes[2].uuid.isEmpty(); }, 2000);
     }
     if (both) {
         const QString srcDump = sh(QStringLiteral("sfdisk"), {QStringLiteral("--dump"), source.device});
@@ -250,7 +253,7 @@ void cloneTests()
         const Disk mbrSource = *mbr;
         report(cloneTo(udisks, mbrSource, *mt, false, &message), QStringLiteral("clone the MBR drive"), message);
         run(udisks, {}, [&] { udisks.rescan(mt->blockPath); }, &message);
-        mt = waitForDisk(udisks, mbrTarget, [](const Disk &d) { return d.volumes.size() == 4 && !d.volumes.last().uuid.isEmpty(); });
+        mt = waitForDisk(udisks, mbrTarget, [](const Disk &d) { return d.volumes.size() == 4 && !d.volumes.last().uuid.isEmpty(); }, 2000);
         report(mt && dumpWithoutDevice(mt->device) == dumpWithoutDevice(mbrSource.device), QStringLiteral("all four partitions come across, logical ones too"));
         bool clean = mt;
         for (int n : {5, 6}) {

@@ -116,15 +116,27 @@ const Disk *diskWithFile(UDisks &udisks, const QString &file)
     return nullptr;
 }
 
-const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check)
+const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check, int quietMs)
 {
-    QElapsedTimer timer;
+    QElapsedTimer timer, quiet;
     timer.start();
-    while (timer.elapsed() < 15000) {
+    QString last;
+    while (timer.elapsed() < 15000 + quietMs) {
         udisks.refresh();
         const Disk *d = diskWithFile(udisks, file);
-        if (d && check(*d))
-            return d;
+        if (d && check(*d)) {
+            QString now;
+            for (const Volume &v : d->volumes)
+                now += v.objectPath + v.uuid + QString::number(v.size) + QLatin1Char(';');
+            if (now != last || !quiet.isValid()) {
+                last = now;
+                quiet.start();
+            }
+            if (quiet.elapsed() >= quietMs)
+                return d;
+        } else {
+            quiet.invalidate();
+        }
         QCoreApplication::processEvents();
         QThread::msleep(200);
     }

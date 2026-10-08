@@ -363,16 +363,27 @@ void CloneDialog::waitForPartitions()
         }
         return t;
     };
+    // udev re-reads the table again a moment after the copy closes the drive, so the
+    // partitions can vanish and come back. Go on once nothing has changed for 2 s.
+    auto *settled = new QTimer(this);
+    settled->setSingleShot(true);
+    settled->setInterval(2000);
     auto *timeout = new QTimer(this);
     timeout->setSingleShot(true);
     auto conn = std::make_shared<QMetaObject::Connection>();
-    auto proceed = [this, ready, timeout, conn] {
-        const Disk *t = ready();
-        if (!t && timeout->isActive())
-            return;
+    auto changed = [ready, settled] {
+        if (ready())
+            settled->start();
+        else
+            settled->stop();
+    };
+    auto go = [this, ready, settled, timeout, conn] {
         disconnect(*conn);
+        settled->stop();
         timeout->stop();
+        settled->deleteLater();
         timeout->deleteLater();
+        const Disk *t = ready();
         if (!t) {
             m_notes << tr("The copy's partitions didn't show up. Unplug the drive and plug it back in.");
             return nextStep();
@@ -422,10 +433,11 @@ void CloneDialog::waitForPartitions()
         }
         nextStep();
     };
-    *conn = connect(m_udisks, &UDisks::changed, this, proceed);
-    connect(timeout, &QTimer::timeout, this, proceed);
+    *conn = connect(m_udisks, &UDisks::changed, this, changed);
+    connect(settled, &QTimer::timeout, this, go);
+    connect(timeout, &QTimer::timeout, this, go);
     timeout->start(20000);
-    proceed();
+    changed();
 }
 
 void CloneDialog::finish(bool ok, const QString &message)

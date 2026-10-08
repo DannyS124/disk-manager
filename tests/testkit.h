@@ -28,7 +28,9 @@ QString loopSetup(const QString &path, QString *error);
 void loopDelete(const QString &objectPath);
 const Disk *diskWithFile(UDisks &udisks, const QString &file);
 // Polls UDisks until `check` holds for the loop device backed by `file` (15 s at most).
-const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check);
+// quietMs: also wait until its partitions have stopped changing for that long (udev
+// re-reads a partition table a moment after a program that wrote to the disk closes it).
+const Disk *waitForDisk(UDisks &udisks, const QString &file, const std::function<bool(const Disk &)> &check, int quietMs = 0);
 // Opens a disk or partition through UDisks and returns the fd (-1 on failure).
 int openBlockFd(UDisks &udisks, const QString &objectPath, int mode);
 

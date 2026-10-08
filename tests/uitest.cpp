@@ -17,6 +17,7 @@
 #include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QFile>
@@ -213,6 +214,11 @@ void cloneThroughWindow(MainWindow &window, UDisks &udisks, const QTemporaryDir 
             if (e->placeholderText() == shortDevice(target))
                 e->setText(shortDevice(target));
         }
+        // Keep the layout identical so it can be compared (growing is tested in --clone).
+        for (QCheckBox *box : dialog->findChildren<QCheckBox *>()) {
+            if (box->text().startsWith(QLatin1String("Let the last partition")))
+                box->setChecked(false);
+        }
         // The list gets replaced while the dialog is open; the dialog has to cope.
         for (int i = 0; i < 3; ++i)
             udisks.refresh();
@@ -231,8 +237,9 @@ void cloneThroughWindow(MainWindow &window, UDisks &udisks, const QTemporaryDir 
     const bool copied = std::any_of(answerer.boxes.cbegin(), answerer.boxes.cend(), [](const QString &b) { return b.startsWith(QLatin1String("Copied")); });
     report(copied, QStringLiteral("the clone finished"), answerer.boxes.join(QStringLiteral(" | ")));
     sh(QStringLiteral("partprobe"), {target});
-    report(layout(target) == layout(source) && partitionHash(target + QStringLiteral("p1")) == partitionHash(source + QStringLiteral("p1")),
-           QStringLiteral("the copy has the same partitions and data"));
+    const QString was = layout(source), now = layout(target);
+    report(!was.isEmpty() && now == was && partitionHash(target + QStringLiteral("p1")) == partitionHash(source + QStringLiteral("p1")),
+           QStringLiteral("the copy has the same partitions and data"), now == was ? QString() : was + QStringLiteral(" vs ") + now);
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), source});
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), target});
 }
