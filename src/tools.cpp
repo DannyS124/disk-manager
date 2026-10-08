@@ -177,7 +177,8 @@ WipeDialog::WipeDialog(const Disk &disk, int diskNumber, QWidget *parent)
 {
     setWindowTitle(tr("Wipe Disk %1").arg(diskNumber));
     const bool slow = disk.rotationRate > 0 || disk.bus == QLatin1String("usb") || disk.removable;
-    const double seconds = double(disk.size) / (slow ? 80e6 : 400e6);
+    // Measured: a 5400 rpm laptop drive zero-fills at about 50 MB/s.
+    const double seconds = double(disk.size) / (slow ? 50e6 : 400e6);
 
     QStringList lost;
     for (const Volume &v : disk.volumes) {
@@ -690,7 +691,7 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
     const bool slow = disk.rotationRate > 0 || disk.bus == QLatin1String("usb") || disk.removable;
     QString intro = tr("<p><b>%1</b></p><p>Reads every sector of the drive to find ones that can't be read. "
                        "Scanning doesn't change anything and takes %2. You can keep using the PC meanwhile.</p>")
-                        .arg(diskTitle(disk).toHtmlEscaped(), durationText(double(disk.size) / (slow ? 90e6 : 450e6)));
+                        .arg(diskTitle(disk).toHtmlEscaped(), durationText(double(disk.size) / (slow ? 70e6 : 450e6)));
     if (disk.health.badSectors > 0)
         intro += tr("<p>The drive reports %1 bad sectors. The ones it already swapped for spares (reallocated) are "
                     "handled and stay in that count for good. The ones it couldn't read (pending) show up in this scan "
