@@ -21,6 +21,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgv
 sha256sums=('10668620dffafc8f85c777ff639e5e13689f51e671a6994ac0c6177de153ac1a')
 
 build() {
+  rm -rf build  # makepkg keeps src/ between builds; an old cache breaks updates
   cmake -S "$pkgname-$pkgver" -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
