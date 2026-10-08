@@ -503,6 +503,10 @@ void guard(UDisks &udisks)
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("new partition table on %1 is refused").arg(shortDevice(d.device)), message);
         ok = run(udisks, {}, [&] { udisks.wipe(d); }, &message);
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("wiping %1 is refused").arg(shortDevice(d.device)), message);
+        for (auto method : {UDisks::EraseMethod::NvmeUserData, UDisks::EraseMethod::AtaNormal}) {
+            ok = run(udisks, {}, [&] { udisks.secureErase(d, method); }, &message);
+            report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("secure erase of %1 is refused").arg(shortDevice(d.device)), message);
+        }
         ok = run(udisks, {}, [&] { udisks.powerOff(d); }, &message);
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("powering off %1 is refused").arg(shortDevice(d.device)), message);
         ok = run(udisks, {}, [&] { udisks.setMountAtStartup(v, true); }, &message);

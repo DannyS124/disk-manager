@@ -12,6 +12,7 @@
 #include "../src/rescuecopy.h"
 #include "../src/usagedialog.h"
 #include "../src/systemtools.h"
+#include "../src/erasedialog.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
@@ -161,6 +162,17 @@ void previewTools(UDisks &udisks, const QDir &out)
         break;
     }
     previewCopyTools(udisks, out);
+
+    // Secure erase: a frozen ATA drive and an NVMe drive (the system one, so Erase stays off).
+    for (const Disk &d : udisks.disks()) {
+        if (d.ataEraseMinutes > 0 || d.ataEnhancedEraseMinutes > 0) {
+            SecureEraseDialog erase(&udisks, d.blockPath, 1);
+            save(erase, out.filePath(QStringLiteral("secure-erase-ata.png")));
+        } else if (d.nvmeNamespace) {
+            SecureEraseDialog erase(&udisks, d.blockPath, 0);
+            save(erase, out.filePath(QStringLiteral("secure-erase-nvme.png")));
+        }
+    }
 
     // Disk usage of this source tree (small and always there), once the scan is done.
     UsageDialog usage(QStringLiteral(SOURCE_DIR), QStringLiteral("diskforge"));

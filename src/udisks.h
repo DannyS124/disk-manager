@@ -217,6 +217,10 @@ public:
     void changePassphrase(const Volume &volume, const QString &oldPassphrase, const QString &newPassphrase);
     // Overwrite the whole disk with zeros; leaves it without a partition table.
     void wipe(const Disk &disk);
+    // The drive's own erase command: ATA Security Erase (normal or enhanced) or an NVMe
+    // format with secure erase (user data or crypto). Reaches spare areas a wipe can't.
+    enum class EraseMethod { AtaNormal, AtaEnhanced, NvmeUserData, NvmeCrypto };
+    void secureErase(const Disk &disk, EraseMethod method);
     // SMART
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"

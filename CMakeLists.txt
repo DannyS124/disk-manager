@@ -65,6 +65,7 @@ add_library(diskforge-ui STATIC
     src/copydialogs.cpp src/copydialogs.h
     src/usagedialog.cpp src/usagedialog.h
     src/systemtools.cpp src/systemtools.h
+    src/erasedialog.cpp src/erasedialog.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h

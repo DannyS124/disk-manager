@@ -453,6 +453,43 @@ void UDisks::wipe(const Disk &disk)
     }, true);
 }
 
+void UDisks::secureErase(const Disk &disk, EraseMethod method)
+{
+    const QString name = shortDevice(disk.device);
+    const QString failure = tr("Couldn't erase %1").arg(name);
+    if (refuseSystem(&disk, failure))
+        return;
+    const Disk *d = diskByPath(disk.blockPath);
+    const bool ata = method == EraseMethod::AtaNormal || method == EraseMethod::AtaEnhanced;
+    QString refusal;
+    if (!d)
+        refusal = tr("it isn't there anymore");
+    else if (d->isLoop)
+        refusal = tr("it's a disk image, not a drive");
+    else if (ata && d->ataEraseMinutes <= 0 && d->ataEnhancedEraseMinutes <= 0)
+        refusal = tr("the drive doesn't support it");
+    else if (ata && d->ataFrozen)
+        refusal = tr("the drive is frozen until the PC sleeps and wakes once");
+    else if (!ata && !d->nvmeNamespace)
+        refusal = tr("the drive doesn't support it");
+    if (!refusal.isEmpty()) {
+        emit operationFinished(false, failure + QStringLiteral(": ") + refusal);
+        return;
+    }
+    const QString blockPath = d->blockPath, drivePath = d->drivePath;
+    unmountThen(d->volumes, failure, [this, method, ata, blockPath, drivePath, name, failure] {
+        auto done = [name](const QDBusMessage &) { return tr("%1 has been erased. Use New Partition Table to use it again.").arg(name); };
+        if (ata)
+            call(drivePath, kAta, QStringLiteral("SecurityEraseUnit"),
+                 {options({{QStringLiteral("enhanced"), method == EraseMethod::AtaEnhanced}})}, done, failure);
+        else
+            call(blockPath, kNvmeNamespace, QStringLiteral("FormatNamespace"),
+                 {options({{QStringLiteral("secure_erase"),
+                            method == EraseMethod::NvmeCrypto ? QStringLiteral("crypto_erase") : QStringLiteral("user_data")}})},
+                 done, failure);
+    }, true);
+}
+
 void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool direct)
 {
     OpenMode mode = OpenMode::Read;

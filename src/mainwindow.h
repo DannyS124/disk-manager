@@ -95,6 +95,7 @@ private:
     QAction *m_optimize = nullptr;
     QAction *m_cleanup = nullptr;
     QAction *m_snapshots = nullptr;
+    QAction *m_secureErase = nullptr;
     QProgressBar *m_progress = nullptr;
     Addons m_addons;
     HelpWindow *m_help = nullptr;

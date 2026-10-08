@@ -6,6 +6,7 @@
 #include "about.h"
 #include "addonsdialog.h"
 #include "copydialogs.h"
+#include "erasedialog.h"
 #include "snapper.h"
 #include "systemtools.h"
 #include "usagedialog.h"
@@ -319,6 +320,22 @@ void MainWindow::createActions()
         m_udisks->wipe(*fresh);
     });
 
+    m_secureErase = new QAction(themeIcon("edit-delete-shred", "edit-delete"), tr("Secure &Erase…"), this);
+    connect(m_secureErase, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        if (!d)
+            return;
+        const QString path = d->blockPath;
+        SecureEraseDialog dialog(m_udisks, path, selectedDiskNumber(), this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        const Disk *fresh = m_udisks->diskByPath(path);
+        if (!fresh)
+            return gone();
+        statusBar()->showMessage(tr("Erasing %1… the drive is doing it, so there's no progress until it's done.").arg(shortDevice(fresh->device)));
+        m_udisks->secureErase(*fresh, dialog.method());
+    });
+
     m_health = new QAction(themeIcon("dialog-information", "help-about"), tr("Disk &Health…"), this);
     connect(m_health, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
@@ -400,7 +417,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newPartition, m_format, m_resize, m_rename, m_check, m_startup, m_delete});
     action->addSeparator();
-    action->addActions({m_newTable, m_wipe, m_detachImage});
+    action->addActions({m_newTable, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
     action->addActions({m_health, m_badSectors, m_benchmark});
     action->addSeparator();
@@ -590,6 +607,7 @@ void MainWindow::updateActions()
     m_resize->setEnabled(changeable && limits.possible);
     m_newTable->setEnabled(changeable);
     m_wipe->setEnabled(changeable);
+    m_secureErase->setEnabled(changeable && !d->isLoop && (d->ataEraseMinutes > 0 || d->ataEnhancedEraseMinutes > 0 || d->nvmeNamespace));
     m_detachImage->setEnabled(d && d->isLoop && !busy);
     m_openImage->setEnabled(!busy);
     m_writeImage->setEnabled(!busy);
@@ -620,7 +638,7 @@ void MainWindow::updateActions()
                       : busy             ? tr("Wait for the current operation to finish")
                                          : QString();
     for (QAction *a : {m_unmount, m_newPartition, m_format, m_rename, m_delete, m_newTable, m_wipe, m_safelyRemove,
-                       m_check, m_startup, m_lock, m_changePass, m_clone, m_restore, m_rescue, m_backup})
+                       m_check, m_startup, m_lock, m_changePass, m_clone, m_restore, m_rescue, m_backup, m_secureErase})
         a->setToolTip(why.isEmpty() || a->isEnabled() ? a->text().remove(QLatin1Char('&')) : why);
     m_resize->setToolTip(m_resize->isEnabled() ? tr("Resize") : !why.isEmpty() ? why : limits.reason);
     if (d && !m_health->isEnabled())
@@ -684,7 +702,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
     add({m_clone, m_rescue});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
         add({m_writeImage});
-    add({m_newTable, m_wipe});
+    add({m_newTable, m_wipe, m_secureErase});
 
     const auto addonActions = m_addons.actionsFor(*d, v, sel.kind == DiskMap::Selection::Kind::Free);
     if (!addonActions.isEmpty()) {
