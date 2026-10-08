@@ -281,9 +281,12 @@ void HealthDialog::reload()
     QString explain;
     if (h.state == Health::State::Failing)
         explain = tr("The drive itself reports that it's failing. Copy anything you want to keep to another drive now.");
-    else if (h.state == Health::State::Warning && h.badSectors > 0)
-        explain = tr("The drive has replaced or can't read some sectors. It still works, but keep backups of "
-                     "anything important on it and watch whether the number grows.");
+    else if (h.state == Health::State::Warning && h.pendingSectors > 0)
+        explain = tr("The drive can't read some sectors. Scan for Bad Sectors finds them and can repair them; whatever "
+                     "was stored there is already lost. Keep backups of anything important on this drive.");
+    else if (h.state == Health::State::Warning && h.reallocatedSectors > 0)
+        explain = tr("The drive has swapped some weak sectors for spares. That's what drives are built to do and it still "
+                     "works fine, but keep backups and watch whether the number grows.");
     else if (h.state == Health::State::Warning)
         explain = tr("Something isn't quite right. Keep backups of anything important on this drive.");
     else if (h.state == Health::State::Healthy)
@@ -297,8 +300,10 @@ void HealthDialog::reload()
         m_form->addRow(tr("Temperature:"), new QLabel(QStringLiteral("%1 °C").arg(qRound(h.temperatureC))));
     if (h.powerOnHours > 0)
         m_form->addRow(tr("Powered on:"), new QLabel(tr("%L1 hours (%L2 days)").arg(h.powerOnHours).arg(h.powerOnHours / 24)));
-    if (h.badSectors >= 0)
-        m_form->addRow(tr("Bad sectors:"), new QLabel(QString::number(h.badSectors)));
+    if (h.reallocatedSectors >= 0)
+        m_form->addRow(tr("Replaced sectors:"), new QLabel(QString::number(h.reallocatedSectors)));
+    if (h.pendingSectors >= 0)
+        m_form->addRow(tr("Unreadable sectors:"), new QLabel(QString::number(h.pendingSectors)));
     if (h.percentUsed >= 0)
         m_form->addRow(tr("Life used:"), new QLabel(QStringLiteral("%1%").arg(h.percentUsed)));
     if (!h.criticalWarnings.isEmpty())
@@ -692,10 +697,13 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
     QString intro = tr("<p><b>%1</b></p><p>Reads every sector of the drive to find ones that can't be read. "
                        "Scanning doesn't change anything and takes %2. You can keep using the PC meanwhile.</p>")
                         .arg(diskTitle(disk).toHtmlEscaped(), durationText(double(disk.size) / (slow ? 70e6 : 450e6)));
-    if (disk.health.badSectors > 0)
-        intro += tr("<p>The drive reports %1 bad sectors. The ones it already swapped for spares (reallocated) are "
-                    "handled and stay in that count for good. The ones it couldn't read (pending) show up in this scan "
-                    "and can be repaired.</p>").arg(disk.health.badSectors);
+    if (disk.health.pendingSectors > 0)
+        intro += tr("<p>The drive reports %1 that it can't read. This scan finds them so they can be repaired.</p>")
+                     .arg(count(disk.health.pendingSectors, tr("sector"), tr("sectors")));
+    else if (disk.health.reallocatedSectors > 0)
+        intro += tr("<p>The drive has already swapped %1 for spares; those are handled. It doesn't report any unreadable "
+                    "sectors right now, but a scan checks every sector to be sure.</p>")
+                     .arg(count(disk.health.reallocatedSectors, tr("sector"), tr("sectors")));
 
     m_progress->setRange(0, 1000);
     m_progress->setVisible(false);

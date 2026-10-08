@@ -61,7 +61,9 @@ struct Health {
     bool nvme = false;
     double temperatureC = -1;
     quint64 powerOnHours = 0;
-    qint64 badSectors = -1; // ATA: reallocated + pending + uncorrectable, -1 if unknown
+    qint64 badSectors = -1; // ATA: reallocated + pending, -1 if unknown
+    qint64 reallocatedSectors = -1; // swapped for spares by the drive; never goes down
+    qint64 pendingSectors = -1; // can't be read right now; fixable by rewriting
     int percentUsed = -1; // NVMe wear
     QStringList criticalWarnings; // NVMe
     QString selftestStatus;
@@ -249,6 +251,6 @@ private:
     int m_pending = 0;
     bool m_interactive = true;
     // SMART attribute details, refetched only when the drive's SmartUpdated changes.
-    struct HealthCache { quint64 updated = 0; qint64 badSectors = -1; qint64 mediaErrors = 0; int percentUsed = -1; bool attrFailing = false; };
+    struct HealthCache { quint64 updated = 0; qint64 badSectors = -1; qint64 reallocated = -1; qint64 pending = -1; qint64 mediaErrors = 0; int percentUsed = -1; bool attrFailing = false; };
     QMap<QString, HealthCache> m_healthCache;
 };

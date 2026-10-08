@@ -128,23 +128,32 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             cache = {};
             cache.updated = h.updated;
             const QVector<SmartAttribute> attrs = decodeAta(blockingCall(drivePath, kAta, QStringLiteral("SmartGetAttributes"), {QVariantMap()}));
-            qint64 bad = 0;
+            qint64 reallocated = 0, pending = 0;
             for (const SmartAttribute &a : attrs) {
-                if ((a.id == 5 || a.id == 197) && a.rawValue > 0)
-                    bad += a.rawValue;
+                if (a.id == 5 && a.rawValue > 0)
+                    reallocated = a.rawValue;
+                if (a.id == 197 && a.rawValue > 0)
+                    pending = a.rawValue;
                 cache.attrFailing = cache.attrFailing || a.failing;
             }
-            cache.badSectors = attrs.isEmpty() ? -1 : bad;
+            cache.reallocated = attrs.isEmpty() ? -1 : reallocated;
+            cache.pending = attrs.isEmpty() ? -1 : pending;
+            cache.badSectors = attrs.isEmpty() ? -1 : reallocated + pending;
         }
         h.badSectors = cache.badSectors;
+        h.reallocatedSectors = cache.reallocated;
+        h.pendingSectors = cache.pending;
         const bool failing = ata.value(QStringLiteral("SmartFailing")).toBool()
             || ata.value(QStringLiteral("SmartNumAttributesFailing")).toInt() > 0 || cache.attrFailing;
         if (failing) {
             h.state = Health::State::Failing;
             h.summary = tr("Failing, back up now");
-        } else if (h.badSectors > 0) {
+        } else if (h.pendingSectors > 0) {
             h.state = Health::State::Warning;
-            h.summary = h.badSectors == 1 ? tr("1 bad sector") : tr("%1 bad sectors").arg(h.badSectors);
+            h.summary = h.pendingSectors == 1 ? tr("1 unreadable sector") : tr("%1 unreadable sectors").arg(h.pendingSectors);
+        } else if (h.reallocatedSectors > 0) {
+            h.state = Health::State::Warning;
+            h.summary = h.reallocatedSectors == 1 ? tr("1 sector replaced") : tr("%1 sectors replaced").arg(h.reallocatedSectors);
         } else if (ata.value(QStringLiteral("SmartNumAttributesFailedInThePast")).toInt() > 0) {
             h.state = Health::State::Warning;
             h.summary = tr("Had problems in the past");
