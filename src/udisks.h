@@ -213,7 +213,7 @@ public:
     QVector<SmartAttribute> smartAttributes(const Disk &disk); // blocking
     // Raw device access for the image writer and benchmark. Unmounts first; polkit asks
     // for a password. The fd arrives through deviceOpened; the caller closes it.
-    void openDevice(const Disk &disk, bool writable, bool forBenchmark = false);
+    void openDevice(const Disk &disk, bool writable, bool forBenchmark = false, bool direct = false);
 
 signals:
     void changed();

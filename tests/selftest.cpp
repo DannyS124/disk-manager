@@ -23,6 +23,10 @@
 
 #include "../src/addons.h"
 #include "../src/benchmark.h"
+#include "../src/surfacescan.h"
+
+#include <QProcess>
+#include <fcntl.h>
 #include "../src/imagewriter.h"
 
 #include <QFileInfo>
@@ -412,6 +416,88 @@ bool extras(UDisks &udisks)
         && waitFor(udisks, QStringLiteral("it is gone"), [&](const Disk &) { return diskWithFile(udisks, second) == nullptr; });
 }
 
+QString sh(const QString &program, const QStringList &args)
+{
+    QProcess p;
+    p.start(program, args);
+    p.waitForFinished(30000);
+    return QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
+}
+
+// Scan and repair against dm-dust, a kernel test target whose bad blocks fail on read
+// and are cleared by a write, the way a drive's pending sectors behave.
+void badSectorTests()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("dust.img"));
+    QByteArray original(64 * 1024 * 1024, Qt::Uninitialized);
+    QRandomGenerator::global()->fillRange(reinterpret_cast<quint32 *>(original.data()), original.size() / 4);
+    {
+        QFile f(image);
+        if (!f.open(QIODevice::WriteOnly))
+            return report(false, QStringLiteral("create test image"));
+        f.write(original);
+    }
+    const QString loop = sh(QStringLiteral("losetup"), {QStringLiteral("-f"), QStringLiteral("--show"), image});
+    report(loop.startsWith(QLatin1String("/dev/loop")), QStringLiteral("attach test image"), loop);
+    const QString name = QStringLiteral("diskforge-dust-test");
+    const QString dev = QStringLiteral("/dev/mapper/") + name;
+    sh(QStringLiteral("modprobe"), {QStringLiteral("dm-dust")});
+    sh(QStringLiteral("dmsetup"), {QStringLiteral("create"), name, QStringLiteral("--table"),
+                                   QStringLiteral("0 131072 dust %1 0 512").arg(loop)});
+    // Sector 1000 starts a 4 KiB block; 50003 sits in the middle of one.
+    for (const char *block : {"1000", "50003"})
+        sh(QStringLiteral("dmsetup"), {QStringLiteral("message"), name, QStringLiteral("0"), QStringLiteral("addbadblock"), QLatin1String(block)});
+    sh(QStringLiteral("dmsetup"), {QStringLiteral("message"), name, QStringLiteral("0"), QStringLiteral("enable")});
+
+    auto scan = [&](QVector<quint64> *bad) {
+        const int fd = ::open(dev.toLocal8Bit().constData(), O_RDONLY | O_DIRECT | O_CLOEXEC);
+        if (fd < 0)
+            return false;
+        bool completed = false;
+        SurfaceScan s(fd, quint64(original.size()));
+        QObject::connect(&s, &SurfaceScan::finished, [&](bool c, const QVector<quint64> &b, int) { completed = c; *bad = b; });
+        s.run();
+        return completed;
+    };
+
+    QVector<quint64> bad;
+    const bool scanned = scan(&bad);
+    report(scanned && bad == QVector<quint64>{1000 * 512ull, 50003 * 512ull}, QStringLiteral("scan finds exactly the two bad sectors"),
+           QStringLiteral("%1 found").arg(bad.size()));
+
+    RepairResult result;
+    {
+        const int fd = ::open(dev.toLocal8Bit().constData(), O_RDWR | O_DIRECT | O_CLOEXEC);
+        SectorRepair repair(fd, bad, 4096); // as on a drive with 4 KiB physical sectors, like the HGST
+        QObject::connect(&repair, &SectorRepair::finished, [&](const RepairResult &r) { result = r; });
+        repair.run();
+    }
+    report(result.error.isEmpty() && result.blocks == 2 && result.zeroed == 2 && result.stillBad == 0,
+           QStringLiteral("repair rewrites both blocks"),
+           QStringLiteral("blocks %1, zeroed %2, still bad %3 %4").arg(result.blocks).arg(result.zeroed).arg(result.stillBad).arg(result.error));
+
+    QVector<quint64> after;
+    report(scan(&after) && after.isEmpty(), QStringLiteral("a second scan finds nothing"));
+
+    {
+        QFile f(dev);
+        if (f.open(QIODevice::ReadOnly)) {
+            const QByteArray now = f.readAll();
+            auto sector = [](const QByteArray &d, int s) { return d.mid(s * 512, 512); };
+            bool neighboursKept = true;
+            for (int s : {1001, 1002, 1007, 50000, 50002, 50004, 50007, 999})
+                neighboursKept = neighboursKept && sector(now, s) == sector(original, s);
+            report(neighboursKept, QStringLiteral("good sectors next to the bad ones keep their data"));
+            report(sector(now, 1000) == QByteArray(512, '\0') && sector(now, 50003) == QByteArray(512, '\0'),
+                   QStringLiteral("the unreadable sectors are zeros now"));
+            report(now.left(1000 * 512) == original.left(1000 * 512), QStringLiteral("nothing else changed"));
+        }
+    }
+    sh(QStringLiteral("dmsetup"), {QStringLiteral("remove"), name});
+    sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+}
+
 // Add-on parsing, matching and placeholder filling. Touches no disks.
 void addonTests()
 {
@@ -512,6 +598,12 @@ int main(int argc, char *argv[])
 
     if (app.arguments().contains(QStringLiteral("--addons"))) {
         addonTests();
+    } else if (app.arguments().contains(QStringLiteral("--badsectors"))) {
+        if (!root) {
+            out << "--badsectors needs root (it creates a test device with dmsetup)" << Qt::endl;
+            return 2;
+        }
+        badSectorTests();
     } else if (app.arguments().contains(QStringLiteral("--guard"))) {
         // root bypasses polkit, so test the guard as a normal user
         if (root) {

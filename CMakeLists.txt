@@ -27,6 +27,7 @@ add_library(diskforge-core STATIC
     src/imagewriter.cpp src/imagewriter.h
     src/benchmark.cpp src/benchmark.h
     src/addons.cpp src/addons.h
+    src/surfacescan.cpp src/surfacescan.h
 )
 set_target_properties(diskforge-core PROPERTIES AUTOMOC ON)
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus)

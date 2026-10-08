@@ -116,6 +116,8 @@ void previewTools(UDisks &udisks, const QDir &out)
         if (d.health.state == Health::State::Warning || d.health.state == Health::State::Failing) {
             HealthDialog health(&udisks, d.blockPath);
             save(health, out.filePath(QStringLiteral("health.png")));
+            BadSectorsDialog scan(&udisks, d);
+            save(scan, out.filePath(QStringLiteral("badsectors.png")));
             break;
         }
     }

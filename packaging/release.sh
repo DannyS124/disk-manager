@@ -58,6 +58,7 @@ case "$cmd" in
     ./build/diskforge-selftest --guard | tail -1
     ./build/diskforge-selftest --addons | tail -1
     sudo ./build/diskforge-selftest | tail -1
+    sudo ./build/diskforge-selftest --badsectors | tail -1
 
     # Local tag only. Restaging after a fix moves it to the new commit.
     git tag -d "v$v" >/dev/null 2>&1 || true

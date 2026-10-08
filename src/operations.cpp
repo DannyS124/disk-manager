@@ -444,7 +444,7 @@ void UDisks::wipe(const Disk &disk)
     }, true);
 }
 
-void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark)
+void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool direct)
 {
     const QString name = shortDevice(disk.device);
     const QString failure = tr("Couldn't open %1").arg(name);
@@ -453,14 +453,15 @@ void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark)
         return;
     }
     const QString path = disk.blockPath;
-    auto open = [this, path, writable, forBenchmark, failure] {
+    auto open = [this, path, writable, forBenchmark, direct, failure] {
         QDBusMessage message = forBenchmark
             ? QDBusMessage::createMethodCall(kService, path, kBlock, QStringLiteral("OpenForBenchmark"))
             : QDBusMessage::createMethodCall(kService, path, kBlock, QStringLiteral("OpenDevice"));
         if (forBenchmark)
             message << options({{QStringLiteral("writable"), writable}});
         else
-            message << (writable ? QStringLiteral("rw") : QStringLiteral("r")) << options({{QStringLiteral("flags"), O_EXCL | O_CLOEXEC}});
+            message << (writable ? QStringLiteral("rw") : QStringLiteral("r"))
+                    << options({{QStringLiteral("flags"), O_EXCL | O_CLOEXEC | (direct ? O_DIRECT : 0)}});
         message.setInteractiveAuthorizationAllowed(m_interactive);
         ++m_pending;
         auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, 10 * 60 * 1000), this);

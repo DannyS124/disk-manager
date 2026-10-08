@@ -305,6 +305,12 @@ void MainWindow::createActions()
             HealthDialog(m_udisks, d->blockPath, this).exec();
     });
 
+    m_badSectors = new QAction(themeIcon("tools-check-spelling", "edit-find"), tr("Scan for Bad &Sectors…"), this);
+    connect(m_badSectors, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            BadSectorsDialog(m_udisks, *d, this).exec();
+    });
+
     m_benchmark = new QAction(themeIcon("speedometer", "chronometer"), tr("&Benchmark…"), this);
     connect(m_benchmark, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
@@ -331,7 +337,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newTable, m_wipe, m_detachImage});
     action->addSeparator();
-    action->addActions({m_health, m_benchmark});
+    action->addActions({m_health, m_badSectors, m_benchmark});
     action->addSeparator();
     action->addActions({m_copy, m_properties});
 
@@ -520,6 +526,7 @@ void MainWindow::updateActions()
     m_writeImage->setEnabled(!busy);
     m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
     m_benchmark->setEnabled(d && !busy);
+    m_badSectors->setEnabled(d && !d->isLoop && !busy);
     m_copy->setEnabled(d && kind != DiskMap::Selection::Kind::Free);
     m_properties->setEnabled(d != nullptr);
 
@@ -581,7 +588,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
     }
 
     menu->addSection(tr("Drive: %1").arg(d->model.isEmpty() ? shortDevice(d->device) : d->model));
-    add({m_safelyRemove, m_detachImage, m_health, m_benchmark});
+    add({m_safelyRemove, m_detachImage, m_health, m_badSectors, m_benchmark});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
         add({m_writeImage});
     add({m_newTable, m_wipe});

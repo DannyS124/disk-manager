@@ -104,6 +104,41 @@ private:
     QMetaObject::Connection m_openConn;
 };
 
+// Finds unreadable sectors (read-only), then rewrites just those so the drive reuses
+// them or swaps in spares.
+class BadSectorsDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *parent = nullptr);
+    ~BadSectorsDialog() override;
+
+protected:
+    void reject() override;
+
+private:
+    void startScan();
+    void startRepair();
+    void stop();
+    void setRunning(bool running);
+    void showFound();
+
+    UDisks *m_udisks;
+    Disk m_disk;
+    QLabel *m_status;
+    QProgressBar *m_progress;
+    QTreeWidget *m_found;
+    QLabel *m_repairNote;
+    QPushButton *m_scan;
+    QPushButton *m_repair;
+    QVector<quint64> m_bad;
+    int m_logical = 512;
+    QThread *m_thread = nullptr;
+    QObject *m_worker = nullptr;
+    QMetaObject::Connection m_openConn;
+    bool m_running = false;
+};
+
 class WriteImageDialog : public QDialog
 {
     Q_OBJECT

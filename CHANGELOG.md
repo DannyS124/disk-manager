@@ -12,6 +12,8 @@
 - Benchmark read speed, access time and write speed
 - Progress bar for long operations
 - Right-click any partition, free space or drive to get everything you can do with it, partition and drive options together
+- Scan for bad sectors and repair them (rewrites just those sectors so the drive swaps in spares)
+- Long self-test button in Disk Health
 - Add-ons: JSON files that add menu actions (Tools → Add-ons), with three examples in examples/addons
 
 ## 0.4.3

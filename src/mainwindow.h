@@ -84,6 +84,7 @@ private:
     QAction *m_wipe = nullptr;
     QAction *m_health = nullptr;
     QAction *m_benchmark = nullptr;
+    QAction *m_badSectors = nullptr;
     QProgressBar *m_progress = nullptr;
     Addons m_addons;
     HelpWindow *m_help = nullptr;

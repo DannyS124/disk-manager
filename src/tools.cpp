@@ -7,6 +7,7 @@
 #include "dialogs.h"
 #include "format.h"
 #include "imagewriter.h"
+#include "surfacescan.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -63,6 +64,12 @@ QString selftestText(const Health &h)
     if (s.startsWith(QLatin1String("abort")) || s == QLatin1String("interrupted"))
         return QObject::tr("Last one was stopped before it finished");
     return QObject::tr("Last one failed (%1)").arg(s);
+}
+
+// "1 sector" / "3 sectors"
+QString count(qint64 n, const QString &one, const QString &many)
+{
+    return n == 1 ? QStringLiteral("1 ") + one : QStringLiteral("%1 ").arg(n) + many;
 }
 
 QString diskTitle(const Disk &d)
@@ -228,8 +235,20 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
         if (const Disk *d = m_udisks->diskByPath(m_blockPath))
             m_udisks->smartSelftest(*d, QStringLiteral("short"));
     });
+    auto *longTest = new QPushButton(tr("Run Long Self-Test"));
+    connect(longTest, &QPushButton::clicked, this, [this] {
+        if (const Disk *d = m_udisks->diskByPath(m_blockPath))
+            m_udisks->smartSelftest(*d, QStringLiteral("extended"));
+    });
+    auto *scan = new QPushButton(tr("Scan for Bad Sectors…"));
+    connect(scan, &QPushButton::clicked, this, [this] {
+        if (const Disk *d = m_udisks->diskByPath(m_blockPath))
+            BadSectorsDialog(m_udisks, *d, this).exec();
+    });
     auto *buttons = new QHBoxLayout;
     buttons->addWidget(m_selftest);
+    buttons->addWidget(longTest);
+    buttons->addWidget(scan);
     buttons->addWidget(refresh);
     buttons->addStretch();
     buttons->addWidget(close);
@@ -652,4 +671,249 @@ void WriteImageDialog::start()
         m_thread->start();
     });
     m_udisks->openDevice(disk, true, false);
+}
+
+// --- Bad sectors --------------------------------------------------------------
+
+BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *parent)
+    : QDialog(parent)
+    , m_udisks(udisks)
+    , m_disk(disk)
+    , m_status(new QLabel)
+    , m_progress(new QProgressBar)
+    , m_found(new QTreeWidget)
+    , m_repairNote(new QLabel)
+    , m_scan(new QPushButton(tr("Start Scan")))
+    , m_repair(new QPushButton(tr("Repair…")))
+{
+    setWindowTitle(tr("Bad Sectors on %1").arg(disk.model));
+    const bool slow = disk.rotationRate > 0 || disk.bus == QLatin1String("usb") || disk.removable;
+    QString intro = tr("<p><b>%1</b></p><p>Reads every sector of the drive to find ones that can't be read. "
+                       "Scanning doesn't change anything and takes %2. You can keep using the PC meanwhile.</p>")
+                        .arg(diskTitle(disk).toHtmlEscaped(), durationText(double(disk.size) / (slow ? 90e6 : 450e6)));
+    if (disk.health.badSectors > 0)
+        intro += tr("<p>The drive reports %1 bad sectors. The ones it already swapped for spares (reallocated) are "
+                    "handled and stay in that count for good. The ones it couldn't read (pending) show up in this scan "
+                    "and can be repaired.</p>").arg(disk.health.badSectors);
+
+    m_progress->setRange(0, 1000);
+    m_progress->setVisible(false);
+    m_status->setWordWrap(true);
+    m_found->setHeaderLabels({tr("Sector"), tr("Position"), tr("Partition")});
+    m_found->setRootIsDecorated(false);
+    m_found->setVisible(false);
+    m_repairNote->setWordWrap(true);
+    m_repairNote->setText(tr("Repair rewrites only these sectors. Anything the drive can still read is kept; the rest was "
+                             "already lost and becomes zeros. The drive then reuses each spot or swaps in a spare. "
+                             "If new bad sectors keep showing up, the drive is wearing out: plan to replace it."));
+    m_repairNote->setVisible(false);
+    m_repair->setVisible(false);
+
+    auto *close = new QPushButton(tr("Close"));
+    connect(close, &QPushButton::clicked, this, &BadSectorsDialog::reject);
+    connect(m_scan, &QPushButton::clicked, this, [this] {
+        if (m_running)
+            stop();
+        else
+            startScan();
+    });
+    connect(m_repair, &QPushButton::clicked, this, &BadSectorsDialog::startRepair);
+    auto *buttons = new QHBoxLayout;
+    buttons->addWidget(m_repair);
+    buttons->addStretch();
+    buttons->addWidget(m_scan);
+    buttons->addWidget(close);
+
+    auto *layout = new QVBoxLayout(this);
+    layout->addWidget(wrappingLabel(intro));
+    layout->addWidget(m_progress);
+    layout->addWidget(m_status);
+    layout->addWidget(m_found, 1);
+    layout->addWidget(m_repairNote);
+    layout->addLayout(buttons);
+    resize(600, 460);
+}
+
+BadSectorsDialog::~BadSectorsDialog()
+{
+    stop();
+}
+
+void BadSectorsDialog::stop()
+{
+    disconnect(m_openConn);
+    if (auto *s = qobject_cast<SurfaceScan *>(m_worker))
+        s->cancel(); // finished() then reports how far it got
+}
+
+void BadSectorsDialog::reject()
+{
+    if (m_running && qobject_cast<SectorRepair *>(m_worker))
+        return; // a repair is a few writes; let it finish
+    stop();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
+    QDialog::reject();
+}
+
+void BadSectorsDialog::setRunning(bool running)
+{
+    m_running = running;
+    m_scan->setText(running ? tr("Stop") : tr("Scan Again"));
+    m_repair->setEnabled(!running && !m_bad.isEmpty() && !m_disk.isSystem);
+}
+
+void BadSectorsDialog::showFound()
+{
+    m_found->clear();
+    for (quint64 offset : m_bad) {
+        QString where = tr("Outside any partition");
+        for (const Volume &v : m_disk.volumes) {
+            if (!v.isContainer && offset >= v.offset && offset < v.offset + v.size)
+                where = volumeTitle(v);
+        }
+        new QTreeWidgetItem(m_found, {QString::number(offset / quint64(m_logical)), formatSize(offset), where});
+    }
+    for (int c = 0; c < m_found->columnCount(); ++c)
+        m_found->resizeColumnToContents(c);
+    const bool any = !m_bad.isEmpty();
+    m_found->setVisible(any);
+    m_repairNote->setVisible(any);
+    m_repair->setVisible(any);
+    if (any && m_disk.isSystem)
+        m_repairNote->setText(m_repairNote->text() + QStringLiteral("\n\n")
+                              + tr("This is your system drive, so DiskForge won't write to it. Repair it from a live USB instead."));
+}
+
+void BadSectorsDialog::startScan()
+{
+    m_bad.clear();
+    showFound();
+    setRunning(true);
+    m_status->setText(tr("Waiting for permission…"));
+    m_openConn = connect(m_udisks, &UDisks::deviceOpened, this, [this](const QString &path, int fd) {
+        if (path != m_disk.blockPath)
+            return;
+        disconnect(m_openConn);
+        if (fd < 0) {
+            m_status->setText(tr("Couldn't open the drive."));
+            setRunning(false);
+            return;
+        }
+        auto *scan = new SurfaceScan(fd, m_disk.size);
+        m_worker = scan;
+        m_thread = new QThread(this);
+        scan->moveToThread(m_thread);
+        connect(m_thread, &QThread::started, scan, &SurfaceScan::run);
+        connect(m_thread, &QThread::finished, scan, &QObject::deleteLater);
+        auto *clock = new QElapsedTimer;
+        clock->start();
+        connect(scan, &SurfaceScan::progress, this, [this, clock](quint64 done, quint64 total, int bad) {
+            m_progress->setValue(int(done * 1000 / std::max<quint64>(total, 1)));
+            const double rate = done / std::max(clock->nsecsElapsed() / 1e9, 0.001);
+            m_status->setText(tr("Scanned %1 of %2, %3/s, %4 left. Bad sectors so far: %5")
+                                  .arg(formatSize(done), formatSize(total), formatSize(quint64(rate)),
+                                       durationText((total - done) / std::max(rate, 1.0)))
+                                  .arg(bad));
+        });
+        connect(scan, &SurfaceScan::finished, this, [this, clock](bool completed, const QVector<quint64> &bad, int logical) {
+            delete clock;
+            m_thread->quit();
+            m_thread->wait();
+            m_thread = nullptr;
+            m_worker = nullptr;
+            m_bad = bad;
+            m_logical = logical;
+            m_progress->setVisible(false);
+            if (!completed)
+                m_status->setText(tr("Stopped. Bad sectors found so far: %1").arg(bad.size()));
+            else if (bad.isEmpty())
+                m_status->setText(tr("Done. Every sector reads fine."));
+            else
+                m_status->setText(tr("Done. %1 can't be read:").arg(count(bad.size(), tr("sector"), tr("sectors"))));
+            showFound();
+            setRunning(false);
+        });
+        m_progress->setValue(0);
+        m_progress->setVisible(true);
+        m_thread->start();
+    });
+    m_udisks->openDevice(m_disk, false, true);
+}
+
+void BadSectorsDialog::startRepair()
+{
+    if (m_bad.isEmpty() || m_disk.isSystem)
+        return;
+    QStringList mounted;
+    for (const Volume &v : m_disk.volumes) {
+        if (!v.mounts().isEmpty())
+            mounted << volumeTitle(v);
+    }
+    QString question = tr("Repair %1 on %2?").arg(count(m_bad.size(), tr("bad sector"), tr("bad sectors")), diskTitle(m_disk));
+    if (!mounted.isEmpty())
+        question += QStringLiteral("\n\n") + tr("These get unmounted first: %1").arg(mounted.join(QStringLiteral(", ")));
+    QMessageBox confirm(QMessageBox::Warning, tr("Repair Bad Sectors"), question, QMessageBox::Cancel, this);
+    confirm.setInformativeText(m_repairNote->text());
+    QAbstractButton *go = confirm.addButton(tr("Repair"), QMessageBox::AcceptRole);
+    confirm.setDefaultButton(QMessageBox::Cancel);
+    confirm.exec();
+    if (confirm.clickedButton() != go)
+        return;
+
+    setRunning(true);
+    m_scan->setEnabled(false);
+    m_status->setText(tr("Waiting for permission…"));
+    const QVector<quint64> bad = m_bad;
+    m_openConn = connect(m_udisks, &UDisks::deviceOpened, this, [this, bad](const QString &path, int fd) {
+        if (path != m_disk.blockPath)
+            return;
+        disconnect(m_openConn);
+        if (fd < 0) {
+            m_status->setText(tr("Couldn't open the drive for writing."));
+            m_scan->setEnabled(true);
+            setRunning(false);
+            return;
+        }
+        auto *repair = new SectorRepair(fd, bad);
+        m_worker = repair;
+        m_thread = new QThread(this);
+        repair->moveToThread(m_thread);
+        connect(m_thread, &QThread::started, repair, &SectorRepair::run);
+        connect(m_thread, &QThread::finished, repair, &QObject::deleteLater);
+        connect(repair, &SectorRepair::progress, this, [this](int done, int total) {
+            m_status->setText(tr("Rewriting block %1 of %2…").arg(done).arg(total));
+        });
+        connect(repair, &SectorRepair::finished, this, [this](const RepairResult &r) {
+            m_thread->quit();
+            m_thread->wait();
+            m_thread = nullptr;
+            m_worker = nullptr;
+            m_scan->setEnabled(true);
+            QString text;
+            if (!r.error.isEmpty()) {
+                text = r.error;
+            } else {
+                text = tr("Rewrote %1. Still readable and kept: %2. Already lost, now zeros: %3.")
+                           .arg(count(r.blocks, tr("block"), tr("blocks")), count(r.recovered, tr("sector"), tr("sectors")),
+                                count(r.zeroed, tr("sector"), tr("sectors")));
+                if (r.stillBad > 0)
+                    text += QStringLiteral("\n\n") + tr("%1 still can't be read: the drive has run out of ways to fix them. "
+                                                        "Copy off anything you need and replace it.").arg(count(r.stillBad, tr("sector"), tr("sectors")));
+                else
+                    text += QStringLiteral("\n\n") + tr("Run Check for Errors on the partition so the file system catches up, then scan again to confirm.");
+            }
+            m_status->setText(text);
+            m_bad.clear();
+            showFound();
+            setRunning(false);
+            if (const Disk *d = m_udisks->diskByPath(m_disk.blockPath))
+                m_udisks->smartUpdate(*d); // pending count should drop
+            QMessageBox::information(this, tr("Repair Bad Sectors"), text);
+        });
+        m_thread->start();
+    });
+    m_udisks->openDevice(m_disk, true, false, true);
 }

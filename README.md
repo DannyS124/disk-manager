@@ -12,7 +12,7 @@ a while and wanted something simple for managing drives without going to the ter
 - Make a new partition table (GPT or MBR), or wipe a whole disk
 - Check for errors and repair
 - Make a drive mount at startup
-- Disk health: warns you before a drive dies
+- Disk health: warns you before a drive dies, scan for bad sectors and repair them
 - Write an ISO to a USB stick (Arch install sticks etc.)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
