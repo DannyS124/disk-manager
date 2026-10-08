@@ -373,9 +373,8 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
     message.setArguments(args);
     message.setInteractiveAuthorizationAllowed(m_interactive);
 
-    // long timeout for polkit prompts and slow formats
     ++m_pending;
-    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, 10 * 60 * 1000), this);
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, failure, next](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         --m_pending;

@@ -5,6 +5,8 @@
 
 #include <QString>
 
+#include <limits>
+
 inline const QString kService = QStringLiteral("org.freedesktop.UDisks2");
 inline const QString kRoot = QStringLiteral("/org/freedesktop/UDisks2");
 inline const QString kManagerPath = QStringLiteral("/org/freedesktop/UDisks2/Manager");
@@ -20,3 +22,7 @@ inline const QString kSwapspace = QStringLiteral("org.freedesktop.UDisks2.Swapsp
 inline const QString kEncrypted = QStringLiteral("org.freedesktop.UDisks2.Encrypted");
 inline const QString kLoop = QStringLiteral("org.freedesktop.UDisks2.Loop");
 inline const QString kJob = QStringLiteral("org.freedesktop.UDisks2.Job");
+
+// Wipes, checks and image writes can take hours, and polkit may wait for a password:
+// never give up on a reply (INT_MAX is libdbus's "no timeout").
+inline constexpr int kNoTimeout = std::numeric_limits<int>::max();

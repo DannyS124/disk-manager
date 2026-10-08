@@ -464,7 +464,7 @@ void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool
                     << options({{QStringLiteral("flags"), O_EXCL | O_CLOEXEC | (direct ? O_DIRECT : 0)}});
         message.setInteractiveAuthorizationAllowed(m_interactive);
         ++m_pending;
-        auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, 10 * 60 * 1000), this);
+        auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
         connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, path, failure](QDBusPendingCallWatcher *w) {
             w->deleteLater();
             --m_pending;
