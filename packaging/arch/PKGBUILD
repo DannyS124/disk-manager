@@ -2,7 +2,7 @@
 pkgname=diskforge
 pkgver=0.4.1
 pkgrel=1
-pkgdesc='Disk manager and partition editor with a Windows-style layout, built on UDisks2'
+pkgdesc='Disk manager for Linux that works like Windows Disk Management'
 arch=('x86_64')
 url='https://github.com/DannyS124/diskforge'
 license=('GPL-3.0-or-later')

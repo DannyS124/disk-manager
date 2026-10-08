@@ -1,20 +1,21 @@
 # Changelog
 
-## 0.4.1 - 2026-10-08
-- License changed from MIT to **GPL-3.0-or-later**. Copies and modified versions have to stay open source.
+## 0.4.2
+- Simpler wording in the help, About window and docs
 
-## 0.4.0 - 2026-10-08
-- Renamed to **DiskForge**.
-- About window (author, license, versions), built-in handbook (F1), Check for Updates, Report a Bug.
-- App icon, AppStream metadata for software centers, and a man page (`man diskforge`).
-- Releases are signed and the PKGBUILD checks the download's SHA-256.
+## 0.4.1
+- Switched the license to GPL-3.0-or-later
 
-## 0.3.0 - 2026-10-08
-- Shrink and grow partitions (ext4, Btrfs, NTFS, FAT32; XFS can grow).
+## 0.4.0
+- Renamed to DiskForge
+- Help (F1), About window, Check for Updates
+- App icon, man page, AppStream metadata
 
-## 0.2.0 - 2026-10-08
-- Format, create and delete partitions, change labels, write new GPT/MBR partition tables.
-- Ventoy warning, type-to-confirm for wiping a disk.
+## 0.3.0
+- Resize partitions (ext4, btrfs, NTFS, FAT32)
 
-## 0.1.0 - 2026-10-08
-- Disk and partition view, mount, unmount, open in file manager, properties.
+## 0.2.0
+- Format, create and delete partitions, rename, new partition tables
+
+## 0.1.0
+- First version: view disks, mount/unmount

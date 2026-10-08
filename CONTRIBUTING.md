@@ -1,28 +1,10 @@
 # Contributing
 
-Bug reports, ideas and pull requests are welcome. By contributing, you agree that your changes are
-released under the project's license, GPL-3.0-or-later.
-
-## Building
-```bash
-cmake -S . -B build && cmake --build build -j"$(nproc)"
-./build/diskforge
+PRs are welcome. If you change anything in `src/udisks.cpp`, run the self-test first:
 ```
-Needs `qt6-base`, `qt6-svg`, `udisks2` and `cmake`.
-
-## Before sending a pull request
-DiskForge changes real disks, so every change to `src/udisks.cpp` has to pass the self-test:
-```bash
-sudo ./build/diskforge-selftest        # every operation on a throwaway loop-device image
-./build/diskforge-selftest --guard     # the system disk is refused (run as yourself)
+sudo ./build/diskforge-selftest
+./build/diskforge-selftest --guard
 ```
-For UI changes, render the dialogs and look at them:
-```bash
-QT_QPA_PLATFORM=offscreen ./build/diskforge-preview out/
-```
+Don't open block devices directly or run anything as root. Everything goes through udisks2.
 
-## Rules for disk code
-- Never open block devices directly. Every change goes through UDisks2.
-- Never run anything as root from the app.
-- Anything on a system disk must be refused in the backend, not only greyed out in the window.
-- Destructive dialogs keep Cancel as the default button.
+Contributions are GPL-3.0-or-later like the rest of the project.

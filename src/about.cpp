@@ -57,17 +57,14 @@ AboutDialog::AboutDialog(const QString &udisksVersion, QWidget *parent)
     header->addWidget(title, 1);
 
     auto *tabs = new QTabWidget;
-    tabs->addTab(richLabel(tr("<p>View disks and partitions the way Windows Disk Management shows them, "
-                              "and mount, format, create, delete and resize partitions.</p>"
-                              "<p>Every change goes through UDisks2 and polkit, and the disk your system "
-                              "runs from is locked so it can't be changed by accident.</p>"
+    tabs->addTab(richLabel(tr("<p>A disk manager for Linux that works like Windows Disk Management.</p>"
                               "<p>© 2026 %1<br>Released under the GNU General Public License, version 3 or later. "
                               "This program comes with absolutely no warranty.</p>"
                               "<p>%2<br>%3</p>")
                                .arg(QStringLiteral(APP_AUTHOR), link(homepage, tr("Project website")),
                                     link(homepage + QStringLiteral("/issues"), tr("Report a bug")))),
                  tr("&About"));
-    tabs->addTab(richLabel(tr("<p><b>%1</b><br>Creator and maintainer<br>%2</p>")
+    tabs->addTab(richLabel(tr("<p><b>%1</b><br>%2</p>")
                                .arg(QStringLiteral(APP_AUTHOR),
                                     link(QStringLiteral(APP_AUTHOR_URL)))),
                  tr("A&uthor"));
@@ -95,7 +92,7 @@ AboutDialog::AboutDialog(const QString &udisksVersion, QWidget *parent)
 HelpWindow::HelpWindow(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("DiskForge Handbook"));
+    setWindowTitle(tr("DiskForge Help"));
     auto *browser = new QTextBrowser;
     browser->setOpenExternalLinks(true);
     browser->setHtml(resourceText(QStringLiteral(":/data/help.html")));

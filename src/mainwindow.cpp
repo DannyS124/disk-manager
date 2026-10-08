@@ -199,7 +199,7 @@ void MainWindow::createActions()
     action->addActions({m_copy, m_properties});
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
-    QAction *handbook = help->addAction(themeIcon("help-contents", "help-browser"), tr("DiskForge &Handbook"), this, [this] {
+    QAction *handbook = help->addAction(themeIcon("help-contents", "help-browser"), tr("DiskForge &Help"), this, [this] {
         if (!m_help)
             m_help = new HelpWindow(this);
         m_help->show();

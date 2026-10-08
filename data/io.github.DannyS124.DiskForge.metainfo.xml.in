@@ -11,20 +11,14 @@
   </developer>
 
   <description>
-    <p>
-      A disk manager laid out like Windows Disk Management: a list of volumes on top and every disk
-      drawn as a bar of partitions underneath, sized to scale.
-    </p>
+    <p>A disk manager for Linux that looks and works like Windows Disk Management.</p>
     <ul>
-      <li>Mount, unmount and open drives in the file manager</li>
-      <li>Format as ext4, Btrfs, NTFS, FAT32 or exFAT</li>
-      <li>Create, delete and resize partitions, and change labels</li>
-      <li>Write new GPT or MBR partition tables</li>
+      <li>Mount and unmount drives</li>
+      <li>Format as ext4, btrfs, NTFS, FAT32 or exFAT</li>
+      <li>Create, delete and resize partitions</li>
+      <li>Rename volumes and make new partition tables</li>
     </ul>
-    <p>
-      It runs as your normal user. Every change goes through UDisks2 and polkit, and the disk your
-      system runs from is locked so it can't be changed by accident.
-    </p>
+    <p>It doesn't run as root, and the drive your system is on is locked so you can't format it by accident.</p>
   </description>
 
   <launchable type="desktop-id">io.github.DannyS124.DiskForge.desktop</launchable>
@@ -39,7 +33,7 @@
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/DannyS124/diskforge/v@PROJECT_VERSION@/docs/screenshot.png</image>
-      <caption>Disks, partitions and free space at a glance</caption>
+      <caption>Main window</caption>
     </screenshot>
   </screenshots>
 
@@ -58,6 +52,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.2" date="2026-10-08">
+      <description>
+        <p>Simpler wording in the help and About window.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-08">
       <description>
         <p>License changed from MIT to GPL-3.0-or-later.</p>

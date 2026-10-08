@@ -74,9 +74,9 @@ FsPicker::FsPicker(const QVector<FsType> &filesystems, const Disk &disk, QComboB
     auto *model = qobject_cast<QStandardItemModel *>(combo->model());
     for (int i = 0; i < m_filesystems.size(); ++i) {
         const FsType &fs = m_filesystems[i];
-        QString text = QStringLiteral("%1 — %2").arg(fs.name, fs.hint);
+        QString text = QStringLiteral("%1 (%2)").arg(fs.name, fs.hint);
         if (!fs.available)
-            text += QObject::tr(" (install %1)").arg(fs.package);
+            text += QObject::tr(", needs %1").arg(fs.package);
         combo->addItem(text, fs.id);
         if (!fs.available && model)
             model->item(i)->setEnabled(false);

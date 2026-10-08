@@ -507,12 +507,12 @@ void UDisks::createPartitionTable(const Disk &disk, const QString &tableType)
 void UDisks::detectFilesystems()
 {
     m_filesystems = {
-        {QStringLiteral("exfat"), tr("exFAT"), tr("USB drives: works on Windows, macOS and Linux"), 11, QStringLiteral("exfatprogs")},
-        {QStringLiteral("vfat"), tr("FAT32"), tr("Works everywhere, but files are limited to 4 GB"), 11, QStringLiteral("dosfstools")},
-        {QStringLiteral("ntfs"), tr("NTFS"), tr("Windows drives"), 32, QStringLiteral("ntfs-3g")},
+        {QStringLiteral("exfat"), tr("exFAT"), tr("USB drives, works everywhere"), 11, QStringLiteral("exfatprogs")},
+        {QStringLiteral("vfat"), tr("FAT32"), tr("old devices, max 4 GB per file"), 11, QStringLiteral("dosfstools")},
+        {QStringLiteral("ntfs"), tr("NTFS"), tr("Windows"), 32, QStringLiteral("ntfs-3g")},
         {QStringLiteral("ext4"), tr("ext4"), tr("Linux"), 16, QStringLiteral("e2fsprogs")},
-        {QStringLiteral("btrfs"), tr("Btrfs"), tr("Linux, with snapshots"), 255, QStringLiteral("btrfs-progs")},
-        {QStringLiteral("xfs"), tr("XFS"), tr("Linux, very large files"), 12, QStringLiteral("xfsprogs")},
+        {QStringLiteral("btrfs"), tr("Btrfs"), tr("Linux, snapshots"), 255, QStringLiteral("btrfs-progs")},
+        {QStringLiteral("xfs"), tr("XFS"), tr("Linux, big files"), 12, QStringLiteral("xfsprogs")},
     };
     for (FsType &fs : m_filesystems) {
         QDBusMessage message = QDBusMessage::createMethodCall(kService, QStringLiteral("/org/freedesktop/UDisks2/Manager"),

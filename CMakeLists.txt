@@ -3,8 +3,8 @@
 
 cmake_minimum_required(VERSION 3.21)
 project(diskforge
-    VERSION 0.4.1
-    DESCRIPTION "Windows-style disk manager for Linux, built on UDisks2"
+    VERSION 0.4.2
+    DESCRIPTION "Disk manager for Linux in the style of Windows Disk Management"
     HOMEPAGE_URL "https://github.com/DannyS124/diskforge"
     LANGUAGES CXX)
 
