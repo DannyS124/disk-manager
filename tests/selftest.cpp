@@ -590,8 +590,16 @@ int main(int argc, char *argv[])
         gptTests();
     } else if (args.contains(QStringLiteral("--copy"))) {
         copyTests();
+    } else if (args.contains(QStringLiteral("--backup"))) {
+        backupTests();
     } else if (args.contains(QStringLiteral("--usage"))) {
         usageTests();
+    } else if (args.contains(QStringLiteral("--rescuemap"))) {
+        rescueMapTests();
+    } else if (args.contains(QStringLiteral("--rescue"))) {
+        if (needsRoot("--rescue"))
+            return 2;
+        rescueTests();
     } else if (args.contains(QStringLiteral("--blockmap"))) {
         if (needsRoot("--blockmap"))
             return 2;

@@ -264,6 +264,9 @@ void UDisks::refresh()
         {
             QFile discard(QStringLiteral("/sys/class/block/%1/queue/discard_max_bytes").arg(shortDevice(d.device)));
             d.discard = discard.open(QIODevice::ReadOnly) && discard.readAll().trimmed().toULongLong() > 0;
+            QFile sector(QStringLiteral("/sys/class/block/%1/queue/logical_block_size").arg(shortDevice(d.device)));
+            if (sector.open(QIODevice::ReadOnly))
+                d.sectorSize = std::max(512, sector.readAll().trimmed().toInt());
         }
         if (!d.isLoop)
             d.health = readHealth(d.drivePath, driveIfaces.value(kAta), driveIfaces.value(kNvme));
@@ -464,6 +467,16 @@ void UDisks::setLabel(const Volume &volume, const QString &label)
     call(volume.filesystemPath(), kFilesystem, QStringLiteral("SetLabel"), {label, options()},
          [name, label](const QDBusMessage &) { return tr("Renamed %1 to \"%2\"").arg(name, label); },
          tr("Couldn't rename %1").arg(name));
+}
+
+void UDisks::setUuid(const Volume &volume, const QString &uuid)
+{
+    const QString name = shortDevice(volume.device);
+    if (refuseSystem(diskOf(volume), tr("Couldn't change the ID of %1").arg(name)))
+        return;
+    call(volume.filesystemPath(), kFilesystem, QStringLiteral("SetUUID"), {uuid, options()},
+         [name](const QDBusMessage &) { return tr("Gave %1 a new ID").arg(name); },
+         tr("Couldn't change the ID of %1").arg(name));
 }
 
 namespace {

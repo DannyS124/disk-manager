@@ -21,3 +21,6 @@ void gptTests();
 void copyTests();
 void blockMapTests();
 void usageTests();
+void backupTests();
+void rescueTests();
+void rescueMapTests();

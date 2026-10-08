@@ -43,6 +43,9 @@ add_library(diskforge-core STATIC
     src/blockcopy.cpp src/blockcopy.h
     src/blockmapdata.cpp src/blockmapdata.h
     src/fswalk.cpp src/fswalk.h src/squarify.h
+    src/clone.cpp src/clone.h
+    src/imagebackup.cpp src/imagebackup.h
+    src/rescuecopy.cpp src/rescuecopy.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD)
 target_include_directories(diskforge-core PUBLIC src)
@@ -80,7 +83,8 @@ option(DISKFORGE_SELFTEST "Build the loop-device self-test" ON)
 if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-selftest tests/selftest.cpp tests/testkit.cpp tests/testkit.h
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
-        tests/test_usage.cpp)
+        tests/test_usage.cpp tests/test_backup.cpp
+        tests/test_rescue.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

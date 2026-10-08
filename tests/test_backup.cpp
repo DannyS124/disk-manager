@@ -1,0 +1,156 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Back up and restore through the real jobs, on plain files (no root needed).
+
+#include "testkit.h"
+
+#include "../src/imagebackup.h"
+
+#include <QFile>
+#include <QJsonDocument>
+#include <QRandomGenerator>
+#include <QTemporaryDir>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace {
+
+constexpr qint64 MiB = 1024 * 1024;
+
+int openFile(const QString &path, int flags)
+{
+    return ::open(QFile::encodeName(path).constData(), flags | O_CLOEXEC, 0644);
+}
+
+struct Outcome {
+    bool ok = false;
+    bool wrote = false;
+    QString message;
+};
+
+Outcome backup(const QString &disk, const QString &image, const BackupInfo &info, bool cancel = false)
+{
+    Outcome o;
+    BackupJob job(openFile(disk, O_RDONLY), image, info);
+    QObject::connect(&job, &BackupJob::progress, [&](const QString &, quint64, quint64) {
+        if (cancel)
+            job.cancel();
+    });
+    QObject::connect(&job, &BackupJob::finished, [&](bool ok, const QString &m) { o = {ok, true, m}; });
+    job.run();
+    return o;
+}
+
+Outcome restore(const QString &image, const QString &target, bool checkFirst = true)
+{
+    Outcome o;
+    RestoreJob job(image, imagebackup::describe(image), openFile(target, O_RDWR), checkFirst, true);
+    QObject::connect(&job, &RestoreJob::finished, [&](bool ok, const QString &m, bool wrote) { o = {ok, wrote, m}; });
+    job.run();
+    return o;
+}
+
+void makeFile(const QString &path, qint64 size, char fill)
+{
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(QByteArray(size, fill));
+}
+
+} // namespace
+
+void backupTests()
+{
+    QTemporaryDir dir;
+    auto path = [&](const char *name) { return dir.filePath(QLatin1String(name)); };
+
+    // A 32 MiB GPT disk with two partitions full of data.
+    const QString disk = path("disk.img");
+    makeFile(disk, 32 * MiB, '\0');
+    int code = -1;
+    sh(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("printf 'label: gpt\\nsize=10MiB\\nsize=12MiB\\n' | sfdisk -q '%1'").arg(disk)}, &code);
+    {
+        QFile f(disk);
+        if (f.open(QIODevice::ReadWrite)) {
+            QByteArray data(20 * MiB, Qt::Uninitialized);
+            QRandomGenerator::global()->fillRange(reinterpret_cast<quint32 *>(data.data()), int(data.size() / 4));
+            f.seek(1 * MiB);
+            f.write(data);
+        }
+    }
+    report(code == 0, QStringLiteral("make a test disk"));
+
+    Disk source;
+    source.device = QStringLiteral("/dev/sdz");
+    source.model = QStringLiteral("Test Disk");
+    source.size = 32 * MiB;
+    source.tableType = QStringLiteral("gpt");
+    const QString image = path("disk.img.zst");
+    Outcome o = backup(disk, image, imagebackup::infoFor(source, nullptr));
+    report(o.ok && QFile::exists(imagebackup::infoPath(image)), QStringLiteral("back up a disk"), o.message);
+
+    const BackupInfo info = imagebackup::describe(image);
+    report(info.error.isEmpty() && info.size == quint64(32 * MiB) && info.kind == QLatin1String("disk") && info.model == QLatin1String("Test Disk"),
+           QStringLiteral("the description reads back"), info.error);
+    report(info.sha256 == sha256File(disk), QStringLiteral("its checksum matches the disk"));
+    report(info.fileSha256 == sha256File(image), QStringLiteral("its file checksum matches sha256sum"));
+
+    // Restore onto a bigger disk.
+    const QString target = path("target.img");
+    makeFile(target, 48 * MiB, char(0x55));
+    o = restore(image, target);
+    report(o.ok, QStringLiteral("restore onto a bigger disk"), o.message);
+    report(sha256File(target, MiB, 22 * MiB) == sha256File(disk, MiB, 22 * MiB), QStringLiteral("the partitions come back exactly"));
+    const QString verify = sh(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("sfdisk --verify '%1' 2>&1").arg(target)});
+    report(verify.contains(QLatin1String("No errors detected")) && !verify.contains(QLatin1String("not on the end")),
+           QStringLiteral("the partition table fits the bigger disk"), verify.contains(QLatin1String("No errors")) ? QString() : verify);
+
+    // One flipped byte in the middle of the backup: caught before anything is written.
+    const QString damaged = path("damaged.img.zst");
+    QFile::copy(image, damaged);
+    QFile::copy(imagebackup::infoPath(image), imagebackup::infoPath(damaged));
+    {
+        QFile f(damaged);
+        if (f.open(QIODevice::ReadWrite)) {
+            f.seek(f.size() / 2);
+            const char c = f.peek(1).at(0);
+            f.write(QByteArray(1, char(c ^ 0x10)));
+        }
+    }
+    makeFile(target, 48 * MiB, char(0x55));
+    const QString untouched = sha256File(target);
+    o = restore(damaged, target);
+    report(!o.ok && !o.wrote && sha256File(target) == untouched, QStringLiteral("a damaged backup is refused and nothing is written"), o.message);
+
+    // A backup whose description says a different checksum (swapped or edited files).
+    const QString swapped = path("swapped.img.zst");
+    QFile::copy(image, swapped);
+    {
+        BackupInfo edited = info;
+        edited.sha256 = QString(64, QLatin1Char('0'));
+        QFile json(imagebackup::infoPath(swapped));
+        if (json.open(QIODevice::WriteOnly))
+            json.write(QJsonDocument(edited.toJson()).toJson());
+    }
+    o = restore(swapped, target);
+    report(!o.ok && !o.wrote && sha256File(target) == untouched, QStringLiteral("a checksum mismatch is refused and nothing is written"), o.message);
+
+    // Too small a target.
+    const QString small = path("small.img");
+    makeFile(small, 16 * MiB, '\0');
+    o = restore(image, small);
+    report(!o.ok && !o.wrote, QStringLiteral("a target smaller than the backup is refused"), o.message);
+
+    // Without its description: the size comes from the zstd header, the zstd checksum still guards it.
+    const QString bare = path("bare.img.zst");
+    QFile::copy(image, bare);
+    const BackupInfo bareInfo = imagebackup::describe(bare);
+    report(bareInfo.error.isEmpty() && bareInfo.size == quint64(32 * MiB), QStringLiteral("a backup without its description still knows its size"), bareInfo.error);
+
+    // Stopping a backup leaves nothing behind.
+    const QString stopped = path("stopped.img.zst");
+    o = backup(disk, stopped, imagebackup::infoFor(source, nullptr), true);
+    report(!o.ok && !QFile::exists(stopped) && !QFile::exists(imagebackup::infoPath(stopped)), QStringLiteral("a stopped backup is cleaned up"), o.message);
+}

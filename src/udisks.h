@@ -90,6 +90,7 @@ struct Disk {
     QString systemReason;
     bool isVentoy = false;
     bool discard = false; // supports TRIM
+    int sectorSize = 512; // logical
     int ataEraseMinutes = 0; // ATA Secure Erase estimates; 0 = not supported
     int ataEnhancedEraseMinutes = 0;
     bool ataFrozen = false; // the firmware refuses security commands until the next sleep/wake
@@ -183,6 +184,8 @@ public:
     void mount(const Volume &volume);
     void unmount(const Volume &volume);
     void setLabel(const Volume &volume, const QString &label);
+    // A new file system ID, for a clone kept next to its original.
+    void setUuid(const Volume &volume, const QString &uuid);
     // passphrase non-empty: LUKS2 container with the filesystem inside
     void format(const Volume &volume, const QString &fsType, const QString &label, const QString &passphrase = {});
     void deletePartition(const Volume &volume);
