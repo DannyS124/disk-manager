@@ -40,6 +40,10 @@ void UpdateChecker::check()
     QNetworkReply *reply = m_network.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
+        if (reply->error() == QNetworkReply::ContentNotFoundError) {
+            emit finished({}, {}, tr("There's no release on GitHub right now."));
+            return;
+        }
         if (reply->error() != QNetworkReply::NoError) {
             emit finished({}, {}, reply->errorString());
             return;

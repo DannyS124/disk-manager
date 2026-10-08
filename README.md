@@ -16,6 +16,8 @@ It doesn't run as root. Changes go through udisks2, so you get the normal passwo
 drive your system is on is locked so you can't format it by accident.
 
 ## Install (Arch)
+This installs the latest release. If there's no release on the
+[Releases page](https://github.com/DannyS124/diskforge/releases) right now, build from source instead (see Building).
 ```
 git clone https://github.com/DannyS124/diskforge.git
 cd diskforge/packaging/arch

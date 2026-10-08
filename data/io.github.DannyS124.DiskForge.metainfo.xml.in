@@ -52,6 +52,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.4.3" date="2026-10-08">
+      <description>
+        <p>Simpler wording, and Check for Updates handles there being no release.</p>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-10-08">
       <description>
         <p>Simpler wording in the help and About window.</p>

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+- Check for Updates says so when there's no release, instead of "Not Found"
+- Includes the 0.4.2 wording changes (0.4.2 was taken down before it was tested)
+
 ## 0.4.2
 - Simpler wording in the help, About window and docs
 
