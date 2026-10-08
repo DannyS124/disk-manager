@@ -3,6 +3,8 @@
 
 #include "surfacescan.h"
 
+#include "blockio.h"
+
 #include <QSet>
 
 #include <algorithm>
@@ -10,45 +12,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <linux/fs.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
 namespace {
 
 constexpr quint64 kChunk = 1024 * 1024;
-constexpr quint64 kAlign = 4096;
-
-using Buffer = std::unique_ptr<char, decltype(&free)>;
-
-Buffer alignedBuffer(size_t size)
-{
-    void *raw = nullptr;
-    if (posix_memalign(&raw, kAlign, size) != 0)
-        return Buffer(nullptr, &free);
-    return Buffer(static_cast<char *>(raw), &free);
-}
-
-int logicalSize(int fd)
-{
-    int size = 0;
-    return ::ioctl(fd, BLKSSZGET, &size) == 0 && size > 0 ? size : 512;
-}
-
-int physicalSize(int fd)
-{
-    unsigned int size = 0;
-    return ::ioctl(fd, BLKPBSZGET, &size) == 0 && size > 0 ? int(size) : logicalSize(fd);
-}
-
-bool readAt(int fd, char *buf, quint64 len, quint64 offset)
-{
-    ssize_t n;
-    do {
-        n = ::pread(fd, buf, len, off_t(offset));
-    } while (n < 0 && errno == EINTR);
-    return n == ssize_t(len);
-}
+using blockio::alignedBuffer;
+using blockio::logicalSize;
+using blockio::physicalSize;
+using blockio::readAt;
 
 } // namespace
 
@@ -69,7 +41,7 @@ void SurfaceScan::run()
     const int logical = logicalSize(m_fd);
     const int physical = physicalSize(m_fd);
     QVector<quint64> bad;
-    Buffer buf = alignedBuffer(kChunk);
+    blockio::Buffer buf = alignedBuffer(kChunk);
     if (!buf) {
         emit finished(false, bad, logical);
         return;
@@ -131,7 +103,7 @@ void SectorRepair::run()
     }
     std::sort(blocks.begin(), blocks.end());
 
-    Buffer buf = alignedBuffer(size_t(std::max<quint64>(quint64(physical), kAlign)));
+    blockio::Buffer buf = alignedBuffer(size_t(std::max<quint64>(quint64(physical), blockio::kAlign)));
     if (!buf) {
         r.error = tr("Out of memory");
         emit finished(r);

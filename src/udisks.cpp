@@ -7,6 +7,7 @@
 #include "format.h"
 
 #include <QCollator>
+#include <QFile>
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -255,6 +256,15 @@ void UDisks::refresh()
         d.rotationRate = drive.value(QStringLiteral("RotationRate"), -1).toInt();
         d.canPowerOff = drive.value(QStringLiteral("CanPowerOff")).toBool();
         d.readOnly = block.value(QStringLiteral("ReadOnly")).toBool();
+        const QVariantMap ata = driveIfaces.value(kAta);
+        d.ataEraseMinutes = ata.value(QStringLiteral("SecurityEraseUnitMinutes")).toInt();
+        d.ataEnhancedEraseMinutes = ata.value(QStringLiteral("SecurityEnhancedEraseUnitMinutes")).toInt();
+        d.ataFrozen = ata.value(QStringLiteral("SecurityFrozen")).toBool();
+        d.nvmeNamespace = ifaces.contains(kNvmeNamespace);
+        {
+            QFile discard(QStringLiteral("/sys/class/block/%1/queue/discard_max_bytes").arg(shortDevice(d.device)));
+            d.discard = discard.open(QIODevice::ReadOnly) && discard.readAll().trimmed().toULongLong() > 0;
+        }
         if (!d.isLoop)
             d.health = readHealth(d.drivePath, driveIfaces.value(kAta), driveIfaces.value(kNvme));
 
@@ -359,6 +369,11 @@ QVariantMap UDisks::options(QVariantMap extra) const
 
 bool UDisks::refuseSystem(const Disk *disk, const QString &failure)
 {
+    // Dialogs keep copies of a disk; what counts is the disk as it is right now.
+    if (disk) {
+        if (const Disk *current = diskByPath(disk->blockPath))
+            disk = current;
+    }
     if (disk && !disk->isSystem)
         return false;
     emit operationFinished(false, failure + QStringLiteral(": ")

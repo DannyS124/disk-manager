@@ -35,9 +35,8 @@ QString durationText(double seconds)
     if (seconds < 90)
         return QObject::tr("about a minute");
     if (seconds < 90 * 60)
-        return QObject::tr("about %1 minutes").arg(qRound(seconds / 60));
-    const int hours = qRound(seconds / 3600);
-    return hours == 1 ? QObject::tr("about an hour") : QObject::tr("about %1 hours").arg(hours);
+        return QObject::tr("about %n minute(s)", nullptr, qRound(seconds / 60));
+    return QObject::tr("about %n hour(s)", nullptr, qRound(seconds / 3600));
 }
 
 QString healthColor(Health::State s)
@@ -66,10 +65,9 @@ QString selftestText(const Health &h)
     return QObject::tr("Last one failed (%1)").arg(s);
 }
 
-// "1 sector" / "3 sectors"
-QString count(qint64 n, const QString &one, const QString &many)
+QString sectors(qint64 n)
 {
-    return n == 1 ? QStringLiteral("1 ") + one : QStringLiteral("%1 ").arg(n) + many;
+    return QObject::tr("%n sector(s)", nullptr, int(n));
 }
 
 QString diskTitle(const Disk &d)
@@ -699,11 +697,11 @@ BadSectorsDialog::BadSectorsDialog(UDisks *udisks, const Disk &disk, QWidget *pa
                         .arg(diskTitle(disk).toHtmlEscaped(), durationText(double(disk.size) / (slow ? 70e6 : 450e6)));
     if (disk.health.pendingSectors > 0)
         intro += tr("<p>The drive reports %1 that it can't read. This scan finds them so they can be repaired.</p>")
-                     .arg(count(disk.health.pendingSectors, tr("sector"), tr("sectors")));
+                     .arg(sectors(disk.health.pendingSectors));
     else if (disk.health.reallocatedSectors > 0)
         intro += tr("<p>The drive has already swapped %1 for spares; those are handled. It doesn't report any unreadable "
                     "sectors right now, but a scan checks every sector to be sure.</p>")
-                     .arg(count(disk.health.reallocatedSectors, tr("sector"), tr("sectors")));
+                     .arg(sectors(disk.health.reallocatedSectors));
 
     m_progress->setRange(0, 1000);
     m_progress->setVisible(false);
@@ -841,7 +839,7 @@ void BadSectorsDialog::startScan()
             else if (bad.isEmpty())
                 m_status->setText(tr("Done. Every sector reads fine."));
             else
-                m_status->setText(tr("Done. %1 can't be read:").arg(count(bad.size(), tr("sector"), tr("sectors"))));
+                m_status->setText(tr("Done. %1 can't be read:").arg(sectors(bad.size())));
             showFound();
             setRunning(false);
         });
@@ -861,7 +859,7 @@ void BadSectorsDialog::startRepair()
         if (!v.mounts().isEmpty())
             mounted << volumeTitle(v);
     }
-    QString question = tr("Repair %1 on %2?").arg(count(m_bad.size(), tr("bad sector"), tr("bad sectors")), diskTitle(m_disk));
+    QString question = tr("Repair %n bad sector(s) on %1?", nullptr, int(m_bad.size())).arg(diskTitle(m_disk));
     if (!mounted.isEmpty())
         question += QStringLiteral("\n\n") + tr("These get unmounted first: %1").arg(mounted.join(QStringLiteral(", ")));
     QMessageBox confirm(QMessageBox::Warning, tr("Repair Bad Sectors"), question, QMessageBox::Cancel, this);
@@ -906,11 +904,10 @@ void BadSectorsDialog::startRepair()
                 text = r.error;
             } else {
                 text = tr("Rewrote %1. Still readable and kept: %2. Already lost, now zeros: %3.")
-                           .arg(count(r.blocks, tr("block"), tr("blocks")), count(r.recovered, tr("sector"), tr("sectors")),
-                                count(r.zeroed, tr("sector"), tr("sectors")));
+                           .arg(tr("%n block(s)", nullptr, r.blocks), sectors(r.recovered), sectors(r.zeroed));
                 if (r.stillBad > 0)
                     text += QStringLiteral("\n\n") + tr("%1 still can't be read: the drive has run out of ways to fix them. "
-                                                        "Copy off anything you need and replace it.").arg(count(r.stillBad, tr("sector"), tr("sectors")));
+                                                        "Copy off anything you need and replace it.").arg(sectors(r.stillBad));
                 else
                     text += QStringLiteral("\n\n") + tr("Run Check for Errors on the partition so the file system catches up, then scan again to confirm.");
             }

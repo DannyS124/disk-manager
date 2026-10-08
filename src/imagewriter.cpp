@@ -3,6 +3,8 @@
 
 #include "imagewriter.h"
 
+#include "blockio.h"
+
 #include <QCryptographicHash>
 #include <QFile>
 
@@ -13,35 +15,8 @@
 namespace {
 
 constexpr qint64 kChunk = 4 * 1024 * 1024;
-
-bool writeAll(int fd, const char *data, qint64 size)
-{
-    while (size > 0) {
-        const ssize_t n = ::write(fd, data, size_t(size));
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            return false;
-        }
-        data += n;
-        size -= n;
-    }
-    return true;
-}
-
-qint64 readFull(int fd, char *data, qint64 size)
-{
-    qint64 total = 0;
-    while (total < size) {
-        const ssize_t n = ::read(fd, data + total, size_t(size - total));
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0)
-            break;
-        total += n;
-    }
-    return total;
-}
+using blockio::readFull;
+using blockio::writeAll;
 
 } // namespace
 

@@ -89,6 +89,11 @@ struct Disk {
     bool isSystem = false;
     QString systemReason;
     bool isVentoy = false;
+    bool discard = false; // supports TRIM
+    int ataEraseMinutes = 0; // ATA Secure Erase estimates; 0 = not supported
+    int ataEnhancedEraseMinutes = 0;
+    bool ataFrozen = false; // the firmware refuses security commands until the next sleep/wake
+    bool nvmeNamespace = false; // NVMe drive that can do a secure format
     Health health;
     QVector<Volume> volumes;   // sorted by offset
 };
@@ -213,9 +218,14 @@ public:
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
     QVector<SmartAttribute> smartAttributes(const Disk &disk); // blocking
-    // Raw device access for the image writer and benchmark. Unmounts first; polkit asks
+    // Raw access to a whole disk or one partition. Everything except the read-only
+    // benchmark mode unmounts first; writable modes refuse system disks. polkit asks
     // for a password. The fd arrives through deviceOpened; the caller closes it.
+    enum class OpenMode { Read, ReadWrite, ReadWriteDirect, Benchmark, BenchmarkWritable };
+    void openBlock(const QString &objectPath, OpenMode mode);
     void openDevice(const Disk &disk, bool writable, bool forBenchmark = false, bool direct = false);
+    // Asks the kernel to re-read the partition table (after writing one directly).
+    void rescan(const QString &objectPath);
 
 signals:
     void changed();

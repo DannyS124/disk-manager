@@ -3,6 +3,7 @@
 
 #include "format.h"
 #include "mainwindow.h"
+#include "translations.h"
 #include "udisks.h"
 
 #include <QApplication>
@@ -54,6 +55,7 @@ void dump(const QVector<Disk> &disks)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    installTranslations();
     QApplication::setApplicationName(QStringLiteral("diskforge"));
     QApplication::setApplicationDisplayName(QStringLiteral("DiskForge"));
     QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));

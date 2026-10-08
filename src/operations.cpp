@@ -150,10 +150,10 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             h.summary = tr("Failing, back up now");
         } else if (h.pendingSectors > 0) {
             h.state = Health::State::Warning;
-            h.summary = h.pendingSectors == 1 ? tr("1 unreadable sector") : tr("%1 unreadable sectors").arg(h.pendingSectors);
+            h.summary = tr("%n unreadable sector(s)", nullptr, int(h.pendingSectors));
         } else if (h.reallocatedSectors > 0) {
             h.state = Health::State::Warning;
-            h.summary = h.reallocatedSectors == 1 ? tr("1 sector replaced") : tr("%1 sectors replaced").arg(h.reallocatedSectors);
+            h.summary = tr("%n sector(s) replaced", nullptr, int(h.reallocatedSectors));
         } else if (ata.value(QStringLiteral("SmartNumAttributesFailedInThePast")).toInt() > 0) {
             h.state = Health::State::Warning;
             h.summary = tr("Had problems in the past");
@@ -207,7 +207,7 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             h.summary = tr("Worn out (%1% used)").arg(h.percentUsed);
         } else if (cache.mediaErrors > 0) {
             h.state = Health::State::Warning;
-            h.summary = cache.mediaErrors == 1 ? tr("1 media error") : tr("%1 media errors").arg(cache.mediaErrors);
+            h.summary = tr("%n media error(s)", nullptr, int(cache.mediaErrors));
         } else {
             h.state = Health::State::Healthy;
             h.summary = tr("Healthy");
@@ -455,40 +455,84 @@ void UDisks::wipe(const Disk &disk)
 
 void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool direct)
 {
-    const QString name = shortDevice(disk.device);
+    OpenMode mode = OpenMode::Read;
+    if (forBenchmark)
+        mode = writable ? OpenMode::BenchmarkWritable : OpenMode::Benchmark;
+    else if (writable)
+        mode = direct ? OpenMode::ReadWriteDirect : OpenMode::ReadWrite;
+    openBlock(disk.blockPath, mode);
+}
+
+void UDisks::openBlock(const QString &objectPath, OpenMode mode)
+{
+    const Disk *disk = nullptr;
+    QVector<Volume> affected;
+    QString name = objectPath;
+    for (const Disk &d : m_disks) {
+        if (d.blockPath == objectPath) {
+            disk = &d;
+            affected = d.volumes;
+            name = shortDevice(d.device);
+        }
+        for (const Volume &v : d.volumes) {
+            if (v.objectPath == objectPath) {
+                disk = &d;
+                affected = {v};
+                name = shortDevice(v.device);
+            }
+        }
+    }
     const QString failure = tr("Couldn't open %1").arg(name);
-    if (writable && refuseSystem(&disk, failure)) {
-        emit deviceOpened(disk.blockPath, -1);
+    if (!disk) {
+        emit operationFinished(false, failure + QStringLiteral(": ") + tr("it isn't there anymore"));
+        emit deviceOpened(objectPath, -1);
         return;
     }
-    const QString path = disk.blockPath;
-    auto open = [this, path, writable, forBenchmark, direct, failure] {
-        QDBusMessage message = forBenchmark
-            ? QDBusMessage::createMethodCall(kService, path, kBlock, QStringLiteral("OpenForBenchmark"))
-            : QDBusMessage::createMethodCall(kService, path, kBlock, QStringLiteral("OpenDevice"));
-        if (forBenchmark)
-            message << options({{QStringLiteral("writable"), writable}});
-        else
-            message << (writable ? QStringLiteral("rw") : QStringLiteral("r"))
-                    << options({{QStringLiteral("flags"), O_EXCL | O_CLOEXEC | (direct ? O_DIRECT : 0)}});
+    const bool writes = mode == OpenMode::ReadWrite || mode == OpenMode::ReadWriteDirect || mode == OpenMode::BenchmarkWritable;
+    if (writes && refuseSystem(disk, failure)) {
+        emit deviceOpened(objectPath, -1);
+        return;
+    }
+
+    auto open = [this, objectPath, mode, failure] {
+        QDBusMessage message;
+        if (mode == OpenMode::Benchmark || mode == OpenMode::BenchmarkWritable) {
+            message = QDBusMessage::createMethodCall(kService, objectPath, kBlock, QStringLiteral("OpenForBenchmark"));
+            message << options({{QStringLiteral("writable"), mode == OpenMode::BenchmarkWritable}});
+        } else {
+            int flags = O_CLOEXEC;
+            if (mode != OpenMode::Read)
+                flags |= O_EXCL;
+            if (mode == OpenMode::ReadWriteDirect)
+                flags |= O_DIRECT;
+            message = QDBusMessage::createMethodCall(kService, objectPath, kBlock, QStringLiteral("OpenDevice"));
+            message << (mode == OpenMode::Read ? QStringLiteral("r") : QStringLiteral("rw")) << options({{QStringLiteral("flags"), flags}});
+        }
         message.setInteractiveAuthorizationAllowed(m_interactive);
         ++m_pending;
         auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
-        connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, path, failure](QDBusPendingCallWatcher *w) {
+        connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, objectPath, failure](QDBusPendingCallWatcher *w) {
             w->deleteLater();
             --m_pending;
             if (w->isError()) {
                 emit operationFinished(false, failure + QStringLiteral(": ") + w->error().message());
-                emit deviceOpened(path, -1);
+                emit deviceOpened(objectPath, -1);
                 return;
             }
             const auto fd = w->reply().arguments().value(0).value<QDBusUnixFileDescriptor>();
-            emit deviceOpened(path, fd.isValid() ? ::dup(fd.fileDescriptor()) : -1);
+            emit deviceOpened(objectPath, fd.isValid() ? ::dup(fd.fileDescriptor()) : -1);
         });
     };
-    // Reading for a benchmark works while mounted; anything that writes needs it unmounted.
-    if (forBenchmark && !writable)
+    // Reading for a benchmark or a rescue works while mounted; everything else gets
+    // unmounted (and locked) first so the data doesn't change underneath.
+    if (mode == OpenMode::Benchmark)
         open();
     else
-        unmountThen(disk.volumes, failure, open, true);
+        unmountThen(affected, failure, open, true);
+}
+
+void UDisks::rescan(const QString &objectPath)
+{
+    call(objectPath, kBlock, QStringLiteral("Rescan"), {options()},
+         [](const QDBusMessage &) { return QString(); }, tr("Couldn't re-read the partition table"));
 }

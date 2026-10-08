@@ -55,6 +55,10 @@ case "$cmd" in
     echo "==> building and running the self-tests"
     cmake -S . -B build >/dev/null
     cmake --build build -j"$(nproc)" >/dev/null
+    # New or changed strings must be in the translation template before a release.
+    cmake --build build --target update_translations >/dev/null 2>&1
+    python3 -I packaging/fill-english-plurals.py i18n/diskforge_en.ts
+    git diff --quiet -- i18n || die "translations are out of date: commit the changes in i18n/ and stage again"
     logs="$root/packaging/staging/test-logs"
     mkdir -p "$logs"
     run_tests() { # name command...

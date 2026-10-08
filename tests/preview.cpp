@@ -8,6 +8,7 @@
 #include "../src/addonsdialog.h"
 #include "../src/dialogs.h"
 #include "../src/tools.h"
+#include "../src/translations.h"
 #include "../src/udisks.h"
 
 #include <QApplication>
@@ -37,6 +38,7 @@ void save(QWidget &widget, const QString &path)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    installTranslations();
     QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/data/" APP_ID ".svg")));
     const QDir out(app.arguments().value(1, QStringLiteral(".")));
