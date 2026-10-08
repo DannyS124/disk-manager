@@ -1,6 +1,6 @@
 # Maintainer: Danny S <48356907+DannyS124@users.noreply.github.com>
 pkgname=diskforge
-pkgver=0.4.1
+pkgver=0.4.2
 pkgrel=1
 pkgdesc='Disk manager for Linux that works like Windows Disk Management'
 arch=('x86_64')
@@ -18,7 +18,7 @@ optdepends=(
   'xfsprogs: create XFS volumes'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('448605965b44f8b699c8897f2b9869313f01800f6ba78eb08c78930901ed6948')
+sha256sums=('10668620dffafc8f85c777ff639e5e13689f51e671a6994ac0c6177de153ac1a')
 
 build() {
   cmake -S "$pkgname-$pkgver" -B build \
