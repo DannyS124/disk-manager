@@ -8,6 +8,7 @@
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusPendingCallWatcher>
+#include <QDBusVariant>
 #include <QMap>
 #include <QStorageInfo>
 #include <QVariantMap>
@@ -654,4 +655,13 @@ void UDisks::resize(const Volume &volume, quint64 newSize)
         callThen(path, kFilesystem, QStringLiteral("Mount"), {options()}, failure, [resizeNow](const QDBusMessage &) { resizeNow(); });
     else
         unmountThen({volume}, failure, resizeNow);
+}
+
+QString UDisks::daemonVersion() const
+{
+    QDBusMessage message = QDBusMessage::createMethodCall(kService, QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                                          QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("Get"));
+    message << QStringLiteral("org.freedesktop.UDisks2.Manager") << QStringLiteral("Version");
+    const QDBusMessage reply = QDBusConnection::systemBus().call(message, QDBus::Block, 3000);
+    return reply.arguments().value(0).value<QDBusVariant>().variant().toString();
 }

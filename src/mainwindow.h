@@ -3,6 +3,8 @@
 #include <QMainWindow>
 
 class DiskMap;
+class HelpWindow;
+class UpdateChecker;
 class QAction;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -36,6 +38,7 @@ private:
     void resizeVolume();
     void changeLabel();
     void newPartitionTable();
+    void checkForUpdates();
     int selectedDiskNumber() const;
 
     const Disk *selectedDisk() const;
@@ -58,4 +61,6 @@ private:
     QAction *m_resize = nullptr;
     QAction *m_rename = nullptr;
     QAction *m_newTable = nullptr;
+    HelpWindow *m_help = nullptr;
+    UpdateChecker *m_updates = nullptr;
 };

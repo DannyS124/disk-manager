@@ -1,10 +1,13 @@
-// Renders the dialogs to PNGs: QT_QPA_PLATFORM=offscreen disk-manager-preview <dir>
+// Renders the dialogs to PNGs: QT_QPA_PLATFORM=offscreen diskforge-preview <dir>
 
+#include "../src/about.h"
 #include "../src/dialogs.h"
 #include "../src/udisks.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QIcon>
+#include <QTabWidget>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QTextStream>
@@ -25,8 +28,19 @@ void save(QWidget &widget, const QString &path)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/data/" APP_ID ".svg")));
     const QDir out(app.arguments().value(1, QStringLiteral(".")));
     UDisks udisks;
+
+    AboutDialog about(udisks.daemonVersion());
+    save(about, out.filePath(QStringLiteral("about.png")));
+    if (auto *tabs = about.findChild<QTabWidget *>()) {
+        tabs->setCurrentIndex(3);
+        save(about, out.filePath(QStringLiteral("about-components.png")));
+    }
+    HelpWindow help;
+    save(help, out.filePath(QStringLiteral("handbook.png")));
 
     // prefer Ventoy so the warning shows up
     const Disk *disk = nullptr;

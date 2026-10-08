@@ -1,12 +1,12 @@
-# Maintainer: DannyS124
-pkgname=disk-manager
+# Maintainer: Danny S <48356907+DannyS124@users.noreply.github.com>
+pkgname=diskforge
 pkgver=0.3.0
 pkgrel=1
-pkgdesc='Windows-style disk manager for Linux, built on UDisks2'
+pkgdesc='Disk manager and partition editor with a Windows-style layout, built on UDisks2'
 arch=('x86_64')
-url='https://github.com/DannyS124/disk-manager'
+url='https://github.com/DannyS124/diskforge'
 license=('MIT')
-depends=('qt6-base' 'udisks2')
+depends=('qt6-base' 'qt6-svg' 'udisks2')
 makedepends=('cmake')
 optdepends=(
   'exfatprogs: create exFAT volumes'
@@ -22,7 +22,7 @@ build() {
   cmake -S "$pkgname-$pkgver" -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
-    -DDISK_MANAGER_SELFTEST=OFF
+    -DDISKFORGE_SELFTEST=OFF
   cmake --build build
 }
 

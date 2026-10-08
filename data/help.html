@@ -1,0 +1,129 @@
+<html>
+<body>
+<h1>DiskForge Handbook</h1>
+<p>
+  <a href="#window">The window</a> ·
+  <a href="#tasks">Common tasks</a> ·
+  <a href="#filesystems">Choosing a file system</a> ·
+  <a href="#safety">Safety</a> ·
+  <a href="#trouble">Troubleshooting</a> ·
+  <a href="#keys">Keyboard shortcuts</a> ·
+  <a href="#cli">Command line</a>
+</p>
+
+<a name="window"></a>
+<h2>The window</h2>
+<p><b>Volume list (top).</b> Every partition on every disk, with its label, device name
+(<code>/dev/sdb1</code>), file system, status, size and free space. Free space is only shown for
+mounted volumes.</p>
+<p><b>Disk map (bottom).</b> One row per disk. The box on the left shows the disk number, its
+partition table (GPT or MBR), the connection (NVMe, SSD, HDD, USB), its size, and whether it's
+<i>Online</i> or a locked <i>System disk</i>. To the right, each partition is drawn as a block:</p>
+<ul>
+  <li>a <b>blue</b> bar on top means a partition</li>
+  <li>a <b>grey</b> bar means unallocated space you can use for a new partition</li>
+  <li>a <b>striped</b> block is the current selection</li>
+</ul>
+<p>Click anything to select it. Selecting in the list selects it in the map, and the other way round.
+<b>Right-click</b> for everything you can do with it. <b>Double-click</b> a mounted volume to open it
+in the file manager. Hover over a block for details.</p>
+
+<a name="tasks"></a>
+<h2>Common tasks</h2>
+
+<h3>Use a USB stick</h3>
+<p>Plug it in and it appears by itself. Right-click its partition and choose <b>Mount</b>, then
+<b>Open in File Manager</b>. Choose <b>Unmount</b> before pulling it out.</p>
+
+<h3>Format a drive</h3>
+<p>Right-click the partition and choose <b>Format…</b>. Pick a label and a file system (see
+<a href="#filesystems">Choosing a file system</a>). The dialog says exactly what will be erased and
+asks again before it starts. A mounted partition is unmounted first.</p>
+
+<h3>Make a new partition</h3>
+<p>Right-click a <b>grey Unallocated</b> block and choose <b>New Partition…</b>. Set the size (all
+free space by default), a label and a file system. A brand-new disk with no partition table needs
+<b>New Partition Table…</b> first.</p>
+
+<h3>Shrink or grow a partition</h3>
+<p>Right-click the partition and choose <b>Resize…</b>. The dialog shows how much is in use and how
+far it can shrink or grow. Growing only uses unallocated space <i>directly after</i> the partition.
+ext4, Btrfs, NTFS and FAT32 can be resized; XFS can only grow; exFAT can't be resized at all.
+The app mounts or unmounts the partition first if its file system needs that.
+<b>Back up anything important before resizing.</b></p>
+
+<h3>Rename a partition</h3>
+<p>Select it and press <b>F2</b>, or right-click and choose <b>Change Label…</b>.</p>
+
+<h3>Delete a partition</h3>
+<p>Right-click and choose <b>Delete Partition…</b>. Everything on it is lost; the space becomes
+unallocated.</p>
+
+<h3>Start a disk over</h3>
+<p>Right-click the disk's box on the left and choose <b>New Partition Table…</b>. This erases every
+partition on the disk, so you have to type the disk's name (for example <code>sdb</code>) to confirm.
+Choose <b>GPT</b> unless the disk is for a very old computer or device, then <b>MBR</b>.</p>
+
+<a name="filesystems"></a>
+<h2>Choosing a file system</h2>
+<table border="1" cellpadding="6" cellspacing="0">
+  <tr><th>File system</th><th>Best for</th><th>Notes</th></tr>
+  <tr><td>exFAT</td><td>USB sticks and external drives</td><td>Works on Windows, macOS and Linux. Needs <code>exfatprogs</code>. Can't be resized.</td></tr>
+  <tr><td>FAT32</td><td>Old devices, cameras, boot sticks</td><td>Works everywhere, but single files can't be bigger than 4 GB.</td></tr>
+  <tr><td>NTFS</td><td>Drives shared with Windows</td><td>Linux reads and writes it fine.</td></tr>
+  <tr><td>ext4</td><td>Linux-only drives</td><td>The standard Linux file system. Fast and reliable.</td></tr>
+  <tr><td>Btrfs</td><td>Linux, with snapshots</td><td>Can be resized only while mounted (the app handles it). At least 256 MB.</td></tr>
+  <tr><td>XFS</td><td>Linux, very large files</td><td>Can grow but never shrink. Needs <code>xfsprogs</code>.</td></tr>
+</table>
+<p>A file system whose tool isn't installed is greyed out in the list, with the package to install.</p>
+
+<a name="safety"></a>
+<h2>Safety</h2>
+<ul>
+  <li><b>Your system disk is locked.</b> Any disk holding the running system (anything mounted outside
+  <code>/run/media</code>, <code>/media</code> or <code>/mnt</code>, or active swap) shows a lock and
+  can't be changed. The check happens twice: in the window and again before any request is sent.</li>
+  <li><b>Changes need your password.</b> DiskForge runs as you, not as root. Every change goes
+  through UDisks2, the system disk service, which asks for your password through polkit.</li>
+  <li><b>Cancel is always the default button.</b> Destructive buttons have to be clicked on purpose.</li>
+  <li><b>Ventoy sticks get a warning</b> before any change that would stop them from booting.</li>
+  <li><b>Only one change runs at a time.</b> Actions are greyed out until it finishes.</li>
+</ul>
+
+<a name="trouble"></a>
+<h2>Troubleshooting</h2>
+<p><b>An action is greyed out.</b> Hover over it in the Action menu for the reason, for example a
+system disk, a change still running, a file system that can't resize, or no free space after the
+partition.</p>
+<p><b>"Not authorized".</b> The password prompt was cancelled, or no polkit agent is running.
+KDE Plasma and GNOME include one.</p>
+<p><b>"Device or resource busy".</b> Something is still using the drive. Close file manager windows,
+terminals or programs that have files open on it, then try again.</p>
+<p><b>A drive doesn't show up.</b> Press <b>F5</b> to refresh. Card readers and optical drives
+without media are hidden.</p>
+<p><b>exFAT or XFS is greyed out.</b> Install the tool shown next to it, for example
+<code>sudo pacman -S exfatprogs</code>.</p>
+
+<a name="keys"></a>
+<h2>Keyboard shortcuts</h2>
+<table border="1" cellpadding="6" cellspacing="0">
+  <tr><td><b>F1</b></td><td>This handbook</td></tr>
+  <tr><td><b>F2</b></td><td>Change label</td></tr>
+  <tr><td><b>F5</b></td><td>Refresh</td></tr>
+  <tr><td><b>Delete</b></td><td>Delete partition (asks first)</td></tr>
+  <tr><td><b>Alt+Enter</b></td><td>Properties</td></tr>
+  <tr><td><b>Ctrl+Q</b></td><td>Quit</td></tr>
+</table>
+
+<a name="cli"></a>
+<h2>Command line</h2>
+<p><code>diskforge --dump</code> prints the disk layout as text, which is useful in bug reports.
+<code>diskforge --select /dev/sdb1</code> starts with a partition selected.
+See <code>man diskforge</code> for all options.</p>
+
+<h2>Getting help</h2>
+<p>Report bugs or ask questions at
+<a href="https://github.com/DannyS124/diskforge/issues">github.com/DannyS124/diskforge/issues</a>.
+Include the output of <code>diskforge --dump</code>.</p>
+</body>
+</html>

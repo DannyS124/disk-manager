@@ -1,8 +1,10 @@
 #include "mainwindow.h"
 
+#include "about.h"
 #include "dialogs.h"
 #include "diskmap.h"
 #include "format.h"
+#include "updates.h"
 #include "udisks.h"
 
 #include <QAction>
@@ -64,7 +66,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     , m_table(new QTreeWidget)
     , m_map(new DiskMap)
 {
-    setWindowTitle(tr("Disk Manager"));
+    setWindowTitle(tr("DiskForge"));
 
     m_table->setColumnCount(ColumnCount);
     m_table->setHeaderLabels({tr("Volume"), tr("Device"), tr("File System"), tr("Status"),
@@ -194,12 +196,27 @@ void MainWindow::createActions()
     action->addActions({m_copy, m_properties});
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
-    help->addAction(themeIcon("help-about", "help-about"), tr("&About Disk Manager"), this, [this] {
-        QMessageBox::about(this, tr("About Disk Manager"),
-                           tr("<b>Disk Manager</b> %1<br><br>A Windows-style disk manager for Linux, built on UDisks2. "
-                              "Disks holding the running system are shown but never modified.")
-                               .arg(QApplication::applicationVersion()));
+    QAction *handbook = help->addAction(themeIcon("help-contents", "help-browser"), tr("DiskForge &Handbook"), this, [this] {
+        if (!m_help)
+            m_help = new HelpWindow(this);
+        m_help->show();
+        m_help->raise();
+        m_help->activateWindow();
     });
+    handbook->setShortcut(QKeySequence::HelpContents);
+    help->addSeparator();
+    help->addAction(themeIcon("update-none", "system-software-update"), tr("Check for &Updates…"), this, &MainWindow::checkForUpdates);
+    help->addAction(themeIcon("tools-report-bug", "dialog-warning"), tr("Report a &Bug…"), this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral(APP_HOMEPAGE "/issues/new/choose")));
+    });
+    help->addAction(themeIcon("internet-services", "applications-internet"), tr("Project &Website"), this, [] {
+        QDesktopServices::openUrl(QUrl(QStringLiteral(APP_HOMEPAGE)));
+    });
+    help->addSeparator();
+    help->addAction(QApplication::windowIcon(), tr("&About DiskForge"), this, [this] {
+        AboutDialog(m_udisks->daemonVersion(), this).exec();
+    });
+    help->addAction(themeIcon("qtcreator", "help-about"), tr("About &Qt"), qApp, &QApplication::aboutQt);
 
     QToolBar *toolbar = addToolBar(tr("Main"));
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
@@ -582,4 +599,34 @@ void MainWindow::resizeVolume()
     statusBar()->showMessage(tr("Resizing %1…").arg(shortDevice(v->device)));
     m_udisks->resize(*v, dialog.newSize());
     updateActions();
+}
+
+void MainWindow::checkForUpdates()
+{
+    if (!m_updates) {
+        m_updates = new UpdateChecker(this);
+        connect(m_updates, &UpdateChecker::finished, this, [this](const QString &latest, const QString &url, const QString &error) {
+            statusBar()->clearMessage();
+            const QString current = QApplication::applicationVersion();
+            if (!error.isEmpty()) {
+                QMessageBox::warning(this, tr("Check for Updates"), tr("Couldn't check for updates:\n%1").arg(error));
+                return;
+            }
+            if (!isNewerVersion(latest, current)) {
+                QMessageBox::information(this, tr("Check for Updates"), tr("You have the latest version (%1).").arg(current));
+                return;
+            }
+            QMessageBox box(QMessageBox::Information, tr("Update Available"),
+                            tr("DiskForge %1 is available. You have %2.").arg(latest, current), QMessageBox::Close, this);
+            box.setInformativeText(tr("It installs over this version, so there's no need to uninstall first.\n\n"
+                                      "Installed from the AUR:\n    yay -Syu\n\n"
+                                      "Installed from the GitHub repo:\n    cd diskforge && git pull\n    cd packaging/arch && makepkg -si"));
+            QAbstractButton *open = box.addButton(tr("Open Release Page"), QMessageBox::ActionRole);
+            box.exec();
+            if (box.clickedButton() == open && !url.isEmpty())
+                QDesktopServices::openUrl(QUrl(url));
+        });
+    }
+    statusBar()->showMessage(tr("Checking for updates…"));
+    m_updates->check();
 }

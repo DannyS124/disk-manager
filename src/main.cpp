@@ -44,11 +44,11 @@ void dump(const QVector<Disk> &disks)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("disk-manager"));
-    QApplication::setApplicationDisplayName(QStringLiteral("Disk Manager"));
+    QApplication::setApplicationName(QStringLiteral("diskforge"));
+    QApplication::setApplicationDisplayName(QStringLiteral("DiskForge"));
     QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
-    QApplication::setDesktopFileName(QStringLiteral("disk-manager"));
-    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("drive-harddisk")));
+    QApplication::setDesktopFileName(QStringLiteral(APP_ID));
+    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral(APP_ID), QIcon(QStringLiteral(":/data/" APP_ID ".svg"))));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("A Windows-style disk manager built on UDisks2."));
@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
             QTextStream(stderr) << message << "\n";
             return 1;
         }
-        QMessageBox::critical(nullptr, QStringLiteral("Disk Manager"), message);
+        QMessageBox::critical(nullptr, QStringLiteral("DiskForge"), message);
         return 1;
     }
 

@@ -276,8 +276,8 @@ int main(int argc, char *argv[])
     } else {
         if (!root) {
             out << "Disk changes need a password, so the unattended run uses root:\n"
-                   "  sudo ./build/disk-manager-selftest      operations on a throwaway 512 MB image\n"
-                   "  ./build/disk-manager-selftest --guard   system disk is refused (as you)" << Qt::endl;
+                   "  sudo ./build/diskforge-selftest      operations on a throwaway 512 MB image\n"
+                   "  ./build/diskforge-selftest --guard   system disk is refused (as you)" << Qt::endl;
             return 2;
         }
         QTemporaryDir dir;

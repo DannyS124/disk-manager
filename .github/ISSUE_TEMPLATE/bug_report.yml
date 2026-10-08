@@ -1,0 +1,30 @@
+name: Bug report
+description: Something doesn't work or looks wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DiskForge version
+      description: Help → About DiskForge, or `diskforge --version`
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and desktop
+      placeholder: "Arch Linux, KDE Plasma 6"
+  - type: textarea
+    id: dump
+    attributes:
+      label: Output of `diskforge --dump`
+      description: Shows how DiskForge sees your disks.
+      render: text

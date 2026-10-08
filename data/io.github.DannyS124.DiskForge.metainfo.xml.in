@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.DannyS124.DiskForge</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>DiskForge</name>
+  <summary>Disk manager and partition editor</summary>
+  <developer id="io.github.dannys124">
+    <name>Danny S</name>
+  </developer>
+
+  <description>
+    <p>
+      A disk manager laid out like Windows Disk Management: a list of volumes on top and every disk
+      drawn as a bar of partitions underneath, sized to scale.
+    </p>
+    <ul>
+      <li>Mount, unmount and open drives in the file manager</li>
+      <li>Format as ext4, Btrfs, NTFS, FAT32 or exFAT</li>
+      <li>Create, delete and resize partitions, and change labels</li>
+      <li>Write new GPT or MBR partition tables</li>
+    </ul>
+    <p>
+      It runs as your normal user. Every change goes through UDisks2 and polkit, and the disk your
+      system runs from is locked so it can't be changed by accident.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.DannyS124.DiskForge.desktop</launchable>
+  <provides>
+    <binary>diskforge</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/DannyS124/diskforge</url>
+  <url type="bugtracker">https://github.com/DannyS124/diskforge/issues</url>
+  <url type="vcs-browser">https://github.com/DannyS124/diskforge</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/DannyS124/diskforge/v@PROJECT_VERSION@/docs/screenshot.png</image>
+      <caption>Disks, partitions and free space at a glance</caption>
+    </screenshot>
+  </screenshots>
+
+  <categories>
+    <category>System</category>
+    <category>Filesystem</category>
+  </categories>
+  <keywords>
+    <keyword>disk</keyword>
+    <keyword>partition</keyword>
+    <keyword>format</keyword>
+    <keyword>resize</keyword>
+    <keyword>usb</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.4.0" date="2026-10-08">
+      <description>
+        <p>About dialog, app icon, AppStream metadata and a man page.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-10-08">
+      <description>
+        <p>Shrink and grow partitions (ext4, Btrfs, NTFS, FAT32).</p>
+      </description>
+    </release>
+  </releases>
+</component>

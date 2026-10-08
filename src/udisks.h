@@ -109,6 +109,7 @@ public:
     const QVector<FsType> &filesystems() const { return m_filesystems; }
     const Disk *diskOf(const Volume &volume) const;
     bool isBusy() const { return m_pending > 0; }
+    QString daemonVersion() const;
 
     // false: fail instead of prompting (selftest)
     void setInteractive(bool interactive) { m_interactive = interactive; }
