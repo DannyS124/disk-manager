@@ -18,5 +18,4 @@ btrfs          Btrfs checks and scrubs
 mdadm          RAID arrays
 lvm            LVM
 thin_check     LVM thin volumes
-gio            the desktop icons (the session marks them as trusted)
 wpa_supplicant Wi-Fi

@@ -3,5 +3,5 @@ Type=Application
 Name=TestDisk
 Comment=Find lost partitions and fix boot sectors
 Exec=qterminal -e sudo testdisk
-Icon=drive-harddisk
+Icon=bluespark-testdisk
 Categories=System;

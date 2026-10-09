@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ad8ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Time, schedules: a stopwatch. -->
+  <circle cx="12" cy="13.5" r="7.5"/>
+  <path d="M10 2.5h4M12 2.5v3.5"/>
+  <path d="M12 13.5V9.5" stroke="#00e5ff"/>
+</svg>

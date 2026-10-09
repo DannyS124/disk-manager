@@ -3,5 +3,5 @@ Type=Application
 Name=Save Logs
 Comment=Copy what happened on this boot to the logs folder on the stick
 Exec=bluespark-logs --notify
-Icon=text-x-log
+Icon=bluespark-logs
 Categories=System;

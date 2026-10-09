@@ -4,6 +4,8 @@
 
 # Linux and the live boot (finds the stick, runs the system from RAM on top of it)
 linux-image-amd64
+# The boot animation (our own theme, rescue/plymouth)
+plymouth
 live-boot
 live-boot-initramfs-tools
 busybox
@@ -65,7 +67,6 @@ fonts-dejavu-core
 fonts-noto-core
 gvfs
 gvfs-daemons
-libglib2.0-bin
 libnotify-bin
 
 # Network and the web browser (wpasupplicant and the regulatory list are what Wi-Fi needs)

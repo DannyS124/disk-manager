@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="40" viewBox="0 0 10 40">
+  <!-- Left end of the boot menu's selection bar: the neon edge. -->
+  <rect x="0" y="0" width="10" height="40" fill="#1f6fff" fill-opacity="0.30"/>
+  <rect x="0" y="4" width="4" height="32" rx="2" fill="#00e5ff"/>
+</svg>

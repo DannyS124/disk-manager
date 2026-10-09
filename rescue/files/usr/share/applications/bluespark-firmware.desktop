@@ -3,5 +3,5 @@ Type=Application
 Name=Restart into Firmware Settings
 Comment=Restart and open the PC's UEFI setup (for Secure Boot, the boot order...)
 Exec=systemctl reboot --firmware-setup
-Icon=system-reboot
+Icon=bluespark-firmware
 Categories=System;

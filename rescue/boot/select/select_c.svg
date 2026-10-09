@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="8" height="40" viewBox="0 0 8 40">
+  <!-- Middle of the selection bar; GRUB stretches it to the entry's width. -->
+  <rect x="0" y="0" width="8" height="40" fill="#1f6fff" fill-opacity="0.30"/>
+</svg>

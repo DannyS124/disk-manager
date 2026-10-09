@@ -5,12 +5,6 @@ session=/run/bluespark/session
 # DiskForge writes its own log there, and the log saver picks it up.
 export DISKFORGE_LOG=$session/diskforge.log
 
-# The desktop's file manager only starts a launcher without asking when it's marked as
-# trusted, and that mark lives in the user's GVfs data, which starts empty on every boot.
-for launcher in ~/Desktop/*.desktop; do
-    gio set -t string "$launcher" metadata::trust true 2>> "$session/desktop.log"
-done
-
 for attempt in 1 2; do
     echo "== $(date '+%H:%M:%S') starting the desktop (try $attempt)" >> "$session/desktop.log"
     started=$(date +%s)

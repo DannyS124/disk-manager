@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ad8ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Format: a wand with a spark at its tip. -->
+  <path d="M4 20 14.5 9.5"/>
+  <path d="M13 8l3 3"/>
+  <path d="M18 2.5c.25 1.6.7 2 2.3 2.3-1.6.3-2.05.7-2.3 2.3-.25-1.6-.7-2-2.3-2.3 1.6-.3 2.05-.7 2.3-2.3z" fill="#00e5ff" stroke="#00e5ff" stroke-width="1"/>
+  <path d="M9 4.5v1.5M8.25 5.25h1.5M20 11v1.5M19.25 11.75h1.5" stroke="#00e5ff" stroke-width="1.25"/>
+</svg>

@@ -4,5 +4,5 @@ Name=Recover Files
 GenericName=PhotoRec
 Comment=Get deleted files back, or files from a formatted drive
 Exec=qterminal -e sudo photorec
-Icon=folder-recent
+Icon=bluespark-recover
 Categories=System;

@@ -3,5 +3,5 @@ Type=Application
 Name=Write an Image
 Comment=Put an ISO or a disk image on a USB stick (compressed ones too)
 Exec=diskforge --open write-image
-Icon=application-x-cd-image
+Icon=bluespark-writeimage
 Categories=System;

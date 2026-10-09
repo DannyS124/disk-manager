@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ad8ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Properties and settings: three sliders. -->
+  <path d="M4 6.5h16M4 12h16M4 17.5h16"/>
+  <circle cx="9" cy="6.5" r="2" fill="#060a16" stroke="#00e5ff"/>
+  <circle cx="15.5" cy="12" r="2" fill="#060a16" stroke="#00e5ff"/>
+  <circle cx="7.5" cy="17.5" r="2" fill="#060a16" stroke="#00e5ff"/>
+</svg>

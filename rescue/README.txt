@@ -23,7 +23,7 @@ What's in the menu
 Start Bluespark                       the normal way
 Safe graphics                         if the screen stays black or looks broken
 Text mode                             no desktop, just a command line
-Copy to memory first                  takes longer to start, then the stick can come out
+Copy to memory                        takes longer to start, then the stick can come out
 Tools and troubleshooting:
   Memory test                         memtest86+. It isn't signed for Secure Boot, so turn
                                       Secure Boot off in the PC's setup to use it
@@ -32,19 +32,26 @@ Tools and troubleshooting:
   Check the stick                     reads every file on the stick and checks it
   Firmware settings                   the PC's UEFI setup
 
-On the desktop
---------------
-DiskForge               partitions, health, wipe, back up, clone, rescue a failing
-                        drive, recover lost partitions
-Recover Files           PhotoRec: gets deleted files back, even from a formatted drive
-TestDisk                finds lost partitions and fixes boot sectors
-Files, Web Browser, Terminal, Task Manager, Text Editor
-Write an Image          an ISO or a disk image onto a USB stick (compressed ones too)
+The home screen
+---------------
+Bluespark opens on its home screen: big tiles for the jobs people bring the stick for, the
+everyday programs under them, and at the top whether Secure Boot is on, whether there's
+internet, and how many drives it found.
+
+Drives and Partitions   DiskForge: partitions, health, wipe, back up, clone, rescue a
+                        failing drive, recover lost partitions
+Get Files Back          PhotoRec: gets deleted files back, even from a formatted drive
+Find Lost Partitions    TestDisk: lost partitions and broken boot sectors
+Write an Image to USB   an ISO or a disk image onto a USB stick (compressed ones too)
 Make a Windows USB      a stick that installs Windows 10 or 11
 Check a USB Stick       bad spots, and sticks that are smaller than they say
-Copy This Rescue Stick  another stick like this one. After "Copy to memory" the stick
+Copy This Stick         another stick like this one. After "Copy to memory" the stick
                         isn't mounted: mount it in DiskForge first
-Save Logs               see below
+Programs                Files, Web Browser, Terminal, Task Manager, Text Editor, Save Logs
+                        (see below), Read Me, and Firmware Settings (restarts into the
+                        PC's setup, after asking)
+
+Everything is also in the start menu: the Bluespark button on the taskbar.
 
 Mount at Startup, Disk Cleanup, snapshots and the TRIM and scrub schedules are off in here:
 this system starts fresh from the stick every time, so they'd change nothing.

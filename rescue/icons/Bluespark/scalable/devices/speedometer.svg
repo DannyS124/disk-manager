@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ad8ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Benchmark: a speed gauge. -->
+  <path d="M4.5 17.5a8.5 8.5 0 1 1 15 0"/>
+  <path d="M12 14.5 16 9" stroke="#00e5ff"/>
+  <circle cx="12" cy="14.5" r="1.4" fill="#00e5ff" stroke="none"/>
+  <path d="M7 12h.01M12 7.5h.01M17 12h.01" stroke-width="2.2"/>
+</svg>

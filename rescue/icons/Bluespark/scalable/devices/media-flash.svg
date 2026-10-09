@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ad8ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Write an image to a USB stick: an arrow going into the stick. -->
+  <path d="M9.5 10V7.5h5V10"/>
+  <rect x="7" y="10" width="10" height="11.5" rx="2"/>
+  <path d="M10 17.5h4"/>
+  <path d="M12 1.5v4M10 3.75 12 5.75l2-2" stroke="#00e5ff"/>
+</svg>

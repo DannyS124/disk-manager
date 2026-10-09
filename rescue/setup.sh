@@ -18,6 +18,13 @@ locale-gen >/dev/null
 echo 'LANG=en_US.UTF-8' > /etc/default/locale
 echo bluespark > /etc/hostname
 
+# Openbox draws the window frames: Debian's own settings, with our theme and a bigger title font.
+mkdir -p /etc/skel/.config/openbox
+sed -e 's|<name>Clearlooks</name>|<name>Bluespark</name>|' \
+    -e 's|<name>sans</name>|<name>DejaVu Sans</name>|g' -e 's|<size>8</size>|<size>10</size>|g' \
+    /etc/xdg/openbox/rc.xml > /etc/skel/.config/openbox/rc.xml
+grep -q '<name>Bluespark</name>' /etc/skel/.config/openbox/rc.xml || { echo "Openbox's rc.xml has changed, the theme isn't set"; exit 1; }
+
 # The one user, without a password: whoever is at the PC owns it. sudo and polkit
 # (files/etc) don't ask either.
 useradd --create-home --shell /bin/bash --comment "Bluespark" rescue
@@ -27,40 +34,7 @@ for group in sudo netdev plugdev; do
 done
 chmod 0440 /etc/sudoers.d/bluespark
 
-# Desktop icons: rescue tools in the first column, everyday apps in the second, USB stick
-# tools in the third. The apps' own launchers are copied and given plain names. pcmanfm-qt
-# snaps the positions to its grid (about 124 pixels a row), so they're spaced a little wider
-# than that.
-desktop=/home/rescue/Desktop
-positions=/home/rescue/.config/pcmanfm-qt/lxqt/desktop-items-0.conf
-mkdir -p "$desktop" "$(dirname "$positions")"
-: > "$positions"
-place() { # place <launcher> <column> <row> [new name]
-    local file=$desktop/$1.desktop
-    cp "/usr/share/applications/$1.desktop" "$file"
-    if [ -n "${4:-}" ]; then
-        # Only the main section's name; translations of the old name go too.
-        awk -v name="$4" '/^\[/ { main = ($0 == "[Desktop Entry]") }
-            main && /^Name(\[[^]]*\])?=/ { if (!done && /^Name=/) { print "Name=" name; done = 1 }; next }
-            { print }' "/usr/share/applications/$1.desktop" > "$file"
-    fi
-    printf '[%s.desktop]\npos=@Point(%d %d)\n\n' "$1" $((12 + $2 * 130)) $((12 + $3 * 130)) >> "$positions"
-}
-place io.github.DannyS124.DiskForge 0 0
-place bluespark-photorec 0 1
-place bluespark-testdisk 0 2
-place bluespark-logs 0 3
-place bluespark-readme 0 4
-place pcmanfm-qt 1 0 Files
-place firefox-esr 1 1 "Web Browser"
-place qterminal 1 2 Terminal
-place qps 1 3 "Task Manager"
-place featherpad 1 4 "Text Editor"
-place bluespark-writeimage 2 0
-place bluespark-windowsusb 2 1
-place bluespark-checkstick 2 2
-place bluespark-copystick 2 3
-chmod +x "$desktop"/*.desktop
+# No desktop icons: the home screen (diskforge --home, started by the session) is the desktop.
 chown -R rescue:rescue /home/rescue
 
 # Everything DiskForge can use is here, so nothing it offers is missing in the rescue system.
@@ -79,6 +53,9 @@ systemctl enable bluespark-logs.service bluespark-logs.timer >/dev/null
 # Nothing that touches the PC's own drives on its own, or keeps the stick busy
 systemctl mask fstrim.timer e2scrub_all.timer e2scrub_reap.service smartmontools.service \
     apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer >/dev/null 2>&1
+
+# Our boot animation. The initrd below gets it, so it shows from the start.
+plymouth-set-default-theme bluespark
 
 # The build ID goes into the initrd too (hooks/bluespark), so this initrd only
 # starts from its own stick.

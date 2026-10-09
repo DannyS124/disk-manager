@@ -1,7 +1,9 @@
-# The boot menu's look. The background is drawn from rescue/art/boot.svg.
+# The boot menu's look, when GRUB can draw (Secure Boot off, and old BIOS PCs). The picture
+# behind it is rescue/art/boot.svg; the selection bar is boot/select/*.svg. The fonts are made
+# from DejaVu when the image is built (make-image.sh).
 title-text: ""
 desktop-image: "background.png"
-desktop-color: "#0b1220"
+desktop-color: "#060a16"
 terminal-font: "Unifont Regular 16"
 terminal-left: "10%"
 terminal-top: "30%"
@@ -9,27 +11,29 @@ terminal-width: "80%"
 terminal-height: "60%"
 
 + boot_menu {
-    left = 20%
-    top = 38%
+    left = 18%
+    top = 36%
     width = 64%
     height = 42%
-    item_font = "Unifont Regular 16"
-    item_color = "#c3cede"
-    selected_item_color = "#00b4ff"
-    item_height = 26
-    item_padding = 6
-    item_spacing = 6
+    item_font = "DejaVu Sans Regular 18"
+    item_color = "#9ad8ff"
+    selected_item_font = "DejaVu Sans Bold 18"
+    selected_item_color = "#ffffff"
+    item_height = 40
+    item_padding = 16
+    item_spacing = 4
+    selected_item_pixmap_style = "select_*.png"
     scrollbar = false
 }
 
 + label {
     id = "__timeout__"
     left = 20%
-    top = 84%
+    top = 82%
     width = 60%
     align = "center"
-    font = "Unifont Regular 16"
-    color = "#7f8ba0"
+    font = "DejaVu Sans Regular 16"
+    color = "#7f93b5"
     text = "Starting in %d seconds"
 }
 
@@ -38,7 +42,7 @@ terminal-height: "60%"
     top = 92%
     width = 100%
     align = "center"
-    font = "Unifont Regular 16"
-    color = "#5d6878"
-    text = "@VERSION@, built @BUILT@    Arrow keys to choose, Enter to start, e to edit"
+    font = "DejaVu Sans Regular 14"
+    color = "#4d5f80"
+    text = "Bluespark @VERSION@, built @BUILT@      Arrow keys to choose, Enter to start, e to edit"
 }

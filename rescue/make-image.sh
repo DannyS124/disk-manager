@@ -25,6 +25,20 @@ mkdir -p "$work" "$iso"
 mkdir -p "$work/art"
 rsvg-convert -w 1920 -h 1080 "$rescue/art/boot.svg" -o "$work/art/background.png"
 rsvg-convert -w 1920 -h 1080 "$rescue/art/desktop.svg" -o "$work/art/wallpaper.png"
+# The boot animation (Plymouth): its script, and its pictures from the SVGs.
+plymouth=$work/plymouth/bluespark
+mkdir -p "$plymouth"
+cp "$rescue/plymouth/bluespark.plymouth" "$rescue/plymouth/bluespark.script" "$plymouth/"
+rsvg-convert -w 160 -h 160 "$rescue/art/bluespark-icon.svg" -o "$plymouth/logo.png"
+for picture in glow name track fill; do
+    rsvg-convert "$rescue/plymouth/$picture.svg" -o "$plymouth/$picture.png"
+done
+# Our icons, with the logo as the start button and the app icon.
+mkdir -p "$work/icons"
+cp -a "$rescue/icons/Bluespark" "$work/icons/"
+cp "$rescue/art/bluespark-icon.svg" "$work/icons/Bluespark/scalable/apps/bluespark.svg"
+ln -sf bluespark.svg "$work/icons/Bluespark/scalable/apps/start-here-lxqt.svg"
+ln -sf bluespark.svg "$work/icons/Bluespark/scalable/apps/start-here.svg"
 
 echo "--> The live system"
 # Downloaded packages live in /cache between builds. The hooks run in order: our files, then
@@ -39,8 +53,11 @@ mmdebstrap --mode=root --variant=important \
     --setup-hook='mkdir -p "$1"/var/cache/apt/archives/' \
     --setup-hook='sync-in /cache /var/cache/apt/archives/' \
     --customize-hook="sync-in $rescue/files /" \
+    --customize-hook="sync-in $work/plymouth /usr/share/plymouth/themes" \
+    --customize-hook='mkdir -p "$1/usr/local/share/icons"' \
+    --customize-hook="sync-in $work/icons /usr/local/share/icons" \
     --customize-hook='mkdir -p "$1/usr/local/share/bluespark"' \
-    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt /usr/local/share/bluespark" \
+    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt $rescue/art/bluespark-icon.svg $rescue/art/bluespark-wordmark.svg /usr/local/share/bluespark" \
     --customize-hook="copy-in $deb /tmp" \
     --customize-hook="chroot \"\$1\" apt-get install -y -q /tmp/$(basename "$deb")" \
     --customize-hook='sync-out /var/cache/apt/archives /cache' \
@@ -89,6 +106,15 @@ grub-mkimage -O i386-pc -p /boot/grub -o "$work/core.img" biosdisk iso9660
 cat /usr/lib/grub/i386-pc/cdboot.img "$work/core.img" > "$iso/boot/grub/i386-pc/eltorito.img"
 
 cp /usr/share/grub/unicode.pf2 "$iso/boot/grub/fonts/"
+# The boot menu's own fonts (theme.txt names them) and its selection bar.
+dejavu=/usr/share/fonts/truetype/dejavu
+for size in 14 16 18; do
+    grub-mkfont -s $size -o "$iso/boot/grub/fonts/dejavu-$size.pf2" $dejavu/DejaVuSans.ttf
+done
+grub-mkfont -s 18 -o "$iso/boot/grub/fonts/dejavu-bold-18.pf2" $dejavu/DejaVuSans-Bold.ttf
+for part in w c e; do
+    rsvg-convert "$rescue/boot/select/select_$part.svg" -o "$iso/boot/grub/select_$part.png"
+done
 cp "$work/art/background.png" "$iso/boot/grub/"
 cp /boot/memtest86+x64.efi /boot/memtest86+x64.bin "$iso/boot/"
 memtest=$(dpkg-query -W -f '${Version}' memtest86+ | sed 's/-.*//')

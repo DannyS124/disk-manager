@@ -4,9 +4,16 @@ Bluespark is a USB stick that starts any PC into a small Linux desktop with Disk
 repair tools. It used to be called DiskForge Rescue; sticks made back then still work with DiskForge. It's for when the PC's own system won't start, when a drive is dying and you don't want to boot from
 it, or when it's a Windows PC and you'd rather not install anything on it.
 
-What's on the desktop: DiskForge, PhotoRec (Recover Files), TestDisk, a file manager, Firefox, a terminal, a
-task manager and a text editor, plus the USB stick tools: Write an Image, Make a Windows USB, Check a USB
-Stick and Copy This Rescue Stick. The boot menu also has memtest86+ for testing the memory.
+It opens on its home screen: big tiles for DiskForge, PhotoRec (Get Files Back), TestDisk (Find Lost
+Partitions) and the USB stick tools (Write an Image, Make a Windows USB, Check a USB Stick, Copy This Stick),
+the everyday programs under them (files, web browser, terminal, task manager, text editor), and a strip
+saying whether Secure Boot is on, whether there's internet and how many drives it found. The boot menu also
+has memtest86+ for testing the memory.
+
+Everything you see is Bluespark's own: the logo, the colours (`rescue/art/palette.txt`), the boot menu, the
+boot animation, the icons, the taskbar and window theme, and the home screen. The home screen is DiskForge
+itself (`diskforge --home`), so it's always in step with the app; on a PC the same tiles are in Tools →
+Quick Fixes.
 
 It's the same DiskForge as on a PC, built from the same source for every release, with everything it can use
 installed. The only things turned off are the few that change the running system itself (Mount at Startup,
@@ -21,7 +28,7 @@ In DiskForge: File → Make a Bluespark USB, pick the ISO and the stick. That ma
 the ISO's files onto it, checking each one. The stick stays readable everywhere (Windows too), there's room
 left over for files, and the rescue system writes its logs there.
 
-Inside the rescue system, Copy This Rescue Stick on the desktop (or Make a Bluespark USB) copies the stick it's
+Inside the rescue system, Copy This Stick on the home screen (or Make a Bluespark USB) copies the stick it's
 running from onto another one, checked against its sha256sum.txt. After "Copy to memory" the stick isn't
 mounted anymore: mount it in DiskForge and the dialog finds it.
 
@@ -82,11 +89,13 @@ What's where:
 | `rescue/build.sh` | builds DiskForge's .deb, the builder container, then runs `make-image.sh` in it |
 | `rescue/Containerfile` | the builder: Debian 13 with mmdebstrap, xorriso, GRUB, shim, memtest86+ |
 | `rescue/make-image.sh` | makes the system with mmdebstrap, packs it with squashfs, puts the ISO together |
-| `rescue/setup.sh` | runs inside the new system: the user, the desktop icons, services, the initrd |
+| `rescue/setup.sh` | runs inside the new system: the user, the window theme, services, the boot animation, the initrd |
 | `rescue/packages.txt` | everything that goes in, with notes |
-| `rescue/files/` | copied over the new system as-is (configs, the log saver, launchers) |
-| `rescue/boot/` | the boot menu |
-| `rescue/art/` | the boot menu and desktop pictures |
+| `rescue/files/` | copied over the new system as-is (configs, the log saver, launchers, the taskbar and window themes) |
+| `rescue/boot/` | the boot menu, its theme and its selection bar |
+| `rescue/art/` | the logo, the colours, the boot menu and desktop pictures |
+| `rescue/icons/` | Bluespark's icon theme, drawn for the stick (Breeze Dark fills in the rest) |
+| `rescue/plymouth/` | the boot animation |
 | `rescue/README.txt` | the README on the stick |
 
 Each build gets its own ID. The stick, the initrd and GRUB all check it, so a second live stick in the same
