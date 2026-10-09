@@ -341,7 +341,7 @@ bool extras(UDisks &udisks)
     bool written = false;
     QString writeMessage;
     {
-        ImageWriter writer(iso, fd, true, QString::fromLatin1(QCryptographicHash::hash(isoData, QCryptographicHash::Sha256).toHex()));
+        ImageWriter writer(iso, fd, true, checksums::parse(QString::fromLatin1(QCryptographicHash::hash(isoData, QCryptographicHash::Sha256).toHex())));
         QObject::connect(&writer, &ImageWriter::finished, [&](bool k, const QString &m) { written = k; writeMessage = m; });
         writer.run();
     }
@@ -921,6 +921,8 @@ int main(int argc, char *argv[])
         rescueUsbTests();
     } else if (args.contains(QStringLiteral("--stickcheck"))) {
         stickCheckTests();
+    } else if (args.contains(QStringLiteral("--images"))) {
+        imageTests();
     } else if (args.contains(QStringLiteral("--raid"))) {
         if (needsRoot("--raid"))
             return 2;

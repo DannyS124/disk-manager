@@ -3,17 +3,21 @@
 
 #pragma once
 
+#include "checksums.h"
+
 #include <QObject>
 
 #include <atomic>
 
-// Writes an image file (an ISO) to a device and reads it back to verify. Runs in a
-// worker thread; the fd comes from UDisks::openDevice and is closed when done.
+// Writes a disk image to a device and reads it back to verify: an ISO or an .img as it is, or
+// a compressed one (unpacked on the way, see ImageSource). With a checksum, the file is checked
+// against it first, so a broken download never gets written. Runs in a worker thread; the fd
+// comes from UDisks::openDevice and is closed when done.
 class ImageWriter : public QObject
 {
     Q_OBJECT
 public:
-    ImageWriter(const QString &imagePath, int fd, bool verify, const QString &expectedSha256 = {});
+    ImageWriter(const QString &imagePath, int fd, bool verify, const checksums::Expected &expected = {});
     ~ImageWriter() override;
 
     void cancel() { m_cancel = true; }
@@ -31,6 +35,6 @@ private:
     QString m_imagePath;
     int m_fd;
     bool m_verify;
-    QString m_expected;
+    checksums::Expected m_expected;
     std::atomic<bool> m_cancel{false};
 };

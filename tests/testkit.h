@@ -54,6 +54,7 @@ void jobsTests();
 void recoverTests();
 void rescueUsbTests();
 void stickCheckTests();
+void imageTests();
 void raidTests();
 void lvmTests();
 void stopTests();

@@ -9,7 +9,9 @@
 
 #include "benchmark.h"
 #include "dialogs.h"
+#include "checksums.h"
 #include "format.h"
+#include "imagesource.h"
 #include "imagewriter.h"
 #include "surfacescan.h"
 #include "health.h"
@@ -18,6 +20,7 @@
 #include "theme.h"
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDir>
 #include <QDialogButtonBox>
@@ -25,6 +28,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -734,6 +738,56 @@ void BenchmarkDialog::start()
 
 // --- Write image --------------------------------------------------------------
 
+// The four checksums of a file, worked out in one pass, each with Copy: to compare with what
+// a download page says by eye, or to note down.
+void showChecksums(QWidget *parent, const QString &path)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QObject::tr("Checksums of %1").arg(QFileInfo(path).fileName()));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *form = new QFormLayout;
+    QList<QLineEdit *> fields;
+    for (QCryptographicHash::Algorithm a : checksums::algorithms()) {
+        auto *field = new QLineEdit;
+        field->setReadOnly(true);
+        field->setPlaceholderText(QObject::tr("Working it out…"));
+        field->setMinimumWidth(field->fontMetrics().horizontalAdvance(QLatin1Char('0')) * 66);
+        auto *copy = new QPushButton(QObject::tr("Copy"));
+        QObject::connect(copy, &QPushButton::clicked, field, [field] { QGuiApplication::clipboard()->setText(field->text()); });
+        auto *row = new QHBoxLayout;
+        row->addWidget(field, 1);
+        row->addWidget(copy);
+        form->addRow(checksums::name(a) + QLatin1Char(':'), row);
+        fields.append(field);
+    }
+    auto *progress = new QProgressBar;
+    progress->setRange(0, 1000);
+    layout->addLayout(form);
+    layout->addWidget(progress);
+    auto *box = new QDialogButtonBox(QDialogButtonBox::Close);
+    QObject::connect(box, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(box);
+
+    auto *hasher = new checksums::Hasher(path);
+    QObject::connect(hasher, &checksums::Hasher::progress, progress, [progress](quint64 done, quint64 total) {
+        progress->setValue(total ? int(done * 1000 / total) : 0);
+    });
+    QThread *thread = nullptr;
+    QObject::connect(hasher, &checksums::Hasher::finished, &dialog, [&](bool ok, const QStringList &hex, const QString &error) {
+        progress->setVisible(false);
+        for (int i = 0; i < fields.size(); ++i)
+            fields[i]->setText(ok ? hex.value(i) : QString());
+        if (!ok)
+            fields.first()->setPlaceholderText(error);
+        thread->quit();
+    });
+    thread = startOnThread(&dialog, hasher);
+    dialog.exec();
+    hasher->cancel();
+    thread->quit();
+    thread->wait();
+}
+
 bool WriteImageDialog::allowLoopDevicesForTest = false;
 
 WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk, QWidget *parent)
@@ -757,7 +811,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     auto *browse = new QPushButton(tr("Browse…"));
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Choose an Image"), QDir::homePath() + QStringLiteral("/Downloads"),
-                                                          tr("Disk images (*.iso *.img *.raw);;All files (*)"));
+                                                          tr("Disk images (*.iso *.img *.raw *.xz *.gz *.bz2 *.zst *.lzma *.zip);;All files (*)"));
         if (!file.isEmpty())
             m_image->setText(file);
     });
@@ -765,7 +819,37 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     imageRow->addWidget(m_image, 1);
     imageRow->addWidget(browse);
     m_image->setPlaceholderText(tr("archlinux-x86_64.iso"));
-    m_sha->setPlaceholderText(tr("Optional: paste it from the download page to check the file first"));
+    m_sha->setPlaceholderText(tr("Optional: MD5, SHA-1, SHA-256 or SHA-512 from the download page"));
+    auto *fromFile = new QPushButton(tr("From a File…"));
+    fromFile->setToolTip(tr("Take it from a checksum file, like SHA256SUMS"));
+    connect(fromFile, &QPushButton::clicked, this, [this] {
+        const QString image = m_image->text().trimmed();
+        const QString file = QFileDialog::getOpenFileName(this, tr("Choose the Checksum File"),
+                                                          image.isEmpty() ? QDir::homePath() : QFileInfo(image).path(),
+                                                          tr("Checksum files (*SUMS* *.sha256 *.sha512 *.sha1 *.md5 *.txt);;All files (*)"));
+        if (file.isEmpty())
+            return;
+        QFile f(file);
+        if (!f.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, windowTitle(), f.errorString());
+            return;
+        }
+        // The checksum is for the file as it was downloaded.
+        checksums::Expected e = checksums::fromFile(f.read(1024 * 1024), QFileInfo(image).fileName());
+        if (!e.isSet())
+            return (void)QMessageBox::warning(this, windowTitle(), e.error);
+        m_sha->setText(QString::fromLatin1(e.hex));
+    });
+    auto *showAll = new QPushButton(tr("Checksums…"));
+    showAll->setToolTip(tr("Work out the MD5, SHA-1, SHA-256 and SHA-512 of the image"));
+    connect(showAll, &QPushButton::clicked, this, [this] {
+        if (QFileInfo(m_image->text().trimmed()).isFile())
+            showChecksums(this, m_image->text().trimmed());
+    });
+    auto *shaRow = new QHBoxLayout;
+    shaRow->addWidget(m_sha, 1);
+    shaRow->addWidget(fromFile);
+    shaRow->addWidget(showAll);
     m_verify->setChecked(true);
     m_warning->setWordWrap(true);
     m_warning->setTextFormat(Qt::RichText);
@@ -776,7 +860,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     form->addRow(tr("Image:"), imageRow);
     form->addRow(QString(), m_imageInfo);
     form->addRow(tr("Drive:"), m_targets);
-    form->addRow(tr("SHA-256:"), m_sha);
+    form->addRow(tr("Checksum:"), shaRow);
     form->addRow(QString(), m_verify);
 
     auto *layout = new QVBoxLayout(this);
@@ -799,6 +883,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     connect(m_image, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
     connect(m_targets, &QComboBox::currentIndexChanged, this, &WriteImageDialog::updateState);
     connect(m_confirm, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
+    connect(m_sha, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
     // Sticks plugged in while the dialog is open.
     connect(m_udisks, &UDisks::changed, this, [this] {
         if (m_running)
@@ -850,21 +935,56 @@ void WriteImageDialog::updateState()
 {
     if (m_running)
         return;
-    const QFileInfo image(m_image->text().trimmed());
+    const QString path = m_image->text().trimmed();
+    const QFileInfo image(path);
     const Disk *d = target();
     bool ok = image.isFile() && d;
-    if (!image.isFile())
-        m_imageInfo->setText(m_image->text().isEmpty() ? QString() : tr("File not found"));
-    else
-        m_imageInfo->setText(formatSize(quint64(image.size())));
 
+    // What the image is, looked at once per file: compressed or not, and its size once unpacked.
+    if (path != m_described) {
+        m_described = path;
+        m_unpacked = 0;
+        QString info;
+        if (image.isFile()) {
+            QString error;
+            const std::unique_ptr<ImageSource> source = ImageSource::open(path, &error);
+            if (!source) {
+                info = redText(error);
+            } else if (source->compression().isEmpty()) {
+                m_unpacked = quint64(image.size());
+                info = formatSize(m_unpacked).toHtmlEscaped();
+            } else {
+                m_unpacked = source->size();
+                const QString inside = source->innerName().isEmpty() ? QString() : tr(" (%1 inside)").arg(source->innerName());
+                info = (m_unpacked ? tr("Compressed (%1), %2. Unpacks to %3%4.").arg(source->compression(), formatSize(quint64(image.size())), formatSize(m_unpacked), inside)
+                                   : tr("Compressed (%1), %2%3. It's unpacked on the way to the drive.").arg(source->compression(), formatSize(quint64(image.size())), inside))
+                           .toHtmlEscaped();
+            }
+            if (source && !hasBootSignature(path))
+                info += QStringLiteral("<br><small>")
+                      + tr("It has no boot record, so a PC can't start from it as it is. That's fine for SD card images and "
+                           "data, not for an installer.").toHtmlEscaped()
+                      + QStringLiteral("</small>");
+        } else if (!path.isEmpty()) {
+            info = tr("File not found");
+        }
+        m_imageInfo->setText(info);
+    }
+
+    const checksums::Expected checksum = checksums::parse(m_sha->text());
     QString warning;
+    if (!checksum.error.isEmpty()) {
+        warning = redText(checksum.error) + QStringLiteral("<br>");
+        ok = false;
+    }
     if (d) {
-        if (image.isFile() && quint64(image.size()) > d->size) {
-            warning = redText(tr("The image (%1) is bigger than this drive.").arg(formatSize(quint64(image.size()))));
+        // Compressed and not saying its size: at least the file itself has to fit.
+        const quint64 needed = m_unpacked ? m_unpacked : quint64(image.size());
+        if (image.isFile() && needed > d->size) {
+            warning += redText(tr("The image (%1) is bigger than this drive.").arg(formatSize(needed)));
             ok = false;
         } else {
-            warning = redText(tr("Everything on %1 will be erased.").arg(diskTitle(*d)));
+            warning += redText(tr("Everything on %1 will be erased.").arg(diskTitle(*d)));
             if (!diskWarning(*d).isEmpty())
                 warning += QStringLiteral("<br>") + redText(diskWarning(*d));
             const QString name = shortDevice(d->device);
@@ -901,7 +1021,7 @@ void WriteImageDialog::start()
         return;
     const Disk disk = *d;
     const QString image = m_image->text().trimmed();
-    const QString sha = m_sha->text().trimmed();
+    const checksums::Expected sha = checksums::parse(m_sha->text());
     const bool verify = m_verify->isChecked();
 
     m_running = true;

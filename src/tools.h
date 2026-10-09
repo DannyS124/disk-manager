@@ -197,4 +197,6 @@ private:
     QObject *m_worker = nullptr;
     QMetaObject::Connection m_openConn;
     bool m_running = false;
+    QString m_described; // the image the info line is about
+    quint64 m_unpacked = 0; // its size once unpacked, 0 if it doesn't say
 };

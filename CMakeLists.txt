@@ -21,6 +21,7 @@ qt_standard_project_setup(I18N_SOURCE_LANGUAGE en)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 pkg_check_modules(BLKID REQUIRED IMPORTED_TARGET blkid) # util-linux, finds file systems for Recover Partitions
+pkg_check_modules(ARCHIVE REQUIRED IMPORTED_TARGET libarchive) # unpacks compressed disk images (.xz, .gz, .zip...)
 # Ed25519, for the signature on the online add-on list
 find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS Crypto)
 
@@ -46,6 +47,8 @@ add_library(diskforge-core STATIC
     src/blockio.cpp src/blockio.h
     src/systemd.cpp src/systemd.h
     src/imagewriter.cpp src/imagewriter.h
+    src/imagesource.cpp src/imagesource.h
+    src/checksums.cpp src/checksums.h
     src/benchmark.cpp src/benchmark.h
     src/addons.cpp src/addons.h
     src/surfacescan.cpp src/surfacescan.h
@@ -73,7 +76,7 @@ add_library(diskforge-core STATIC
     src/rescuestick.cpp src/rescuestick.h
     src/stickcheck.cpp src/stickcheck.h
 )
-target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID OpenSSL::Crypto)
+target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID PkgConfig::ARCHIVE OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
 target_compile_definitions(diskforge-core PUBLIC ${APP_DEFINITIONS})
 target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
@@ -133,7 +136,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_raid.cpp tests/test_lvm.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_images.cpp tests/test_raid.cpp tests/test_lvm.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

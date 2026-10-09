@@ -415,6 +415,22 @@ void previewTools(UDisks &udisks, const QDir &out)
         save(wipe, out.filePath(QStringLiteral("wipe.png")));
         WriteImageDialog write(&udisks, QString());
         save(write, out.filePath(QStringLiteral("write-image.png")));
+        // A compressed image, the way Raspberry Pi hands them out.
+        QTemporaryDir packed;
+        QFile raw(packed.filePath(QStringLiteral("raspios-lite-arm64.img")));
+        if (raw.open(QIODevice::WriteOnly)) {
+            QByteArray sector(512, '\0');
+            sector[510] = char(0x55);
+            sector[511] = char(0xAA);
+            raw.write(sector + QByteArray(2 * 1024 * 1024, 'x'));
+            raw.close();
+            QProcess::execute(QStringLiteral("xz"), {QStringLiteral("-q"), raw.fileName()});
+        }
+        if (auto *image = write.findChild<QLineEdit *>(QStringLiteral("image")))
+            image->setText(raw.fileName() + QStringLiteral(".xz"));
+        if (auto *checksum = write.findChild<QLineEdit *>(QStringLiteral("checksum")))
+            checksum->setText(QStringLiteral("sha256:0123abcd"));
+        save(write, out.filePath(QStringLiteral("write-image-xz.png")));
         StickCheckDialog stickCheck(&udisks, QString());
         save(stickCheck, out.filePath(QStringLiteral("check-stick.png")));
         stickcheck::Result fake;
