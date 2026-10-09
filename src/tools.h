@@ -75,6 +75,7 @@ private:
     QLabel *m_explain;
     QFormLayout *m_form;
     QTreeWidget *m_attributes;
+    QLabel *m_meaning; // what the selected attribute is
     QPushButton *m_selftest;
 };
 

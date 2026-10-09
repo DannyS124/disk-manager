@@ -199,6 +199,10 @@ table:
 void previewTools(UDisks &udisks, const QDir &out)
 {
     for (const Disk &d : udisks.disks()) {
+        if (d.health.nvme) {
+            HealthDialog nvme(&udisks, d.blockPath);
+            save(nvme, out.filePath(QStringLiteral("health-nvme.png")));
+        }
         if (d.health.state == Health::State::Warning || d.health.state == Health::State::Failing) {
             HealthDialog health(&udisks, d.blockPath);
             save(health, out.filePath(QStringLiteral("health.png")));

@@ -54,6 +54,15 @@ struct Volume {
     QString effectiveFsType() const { return encrypted && !cleartextFsType.isEmpty() ? cleartextFsType : fsType; }
 };
 
+// One thing that went into a drive's health verdict, worst first.
+struct HealthReason {
+    enum class Level { Note, Warning, Failing };
+    Level level = Level::Note;
+    QString code;      // stable ("pending", "crc", ...), so a dismissed warning is recognized
+    qint64 number = -1;
+    QString text;      // plain words
+};
+
 struct Health {
     enum class State { Unknown, Healthy, Warning, Failing };
     State state = State::Unknown; // Unknown = the drive doesn't report SMART (USB sticks, images)
@@ -69,6 +78,11 @@ struct Health {
     QString selftestStatus;
     int selftestPercentRemaining = -1;
     quint64 updated = 0;
+    QVector<HealthReason> reasons;
+    int lifeLeft = -1;          // percent, SSDs that report it
+    double warningTempC = -1;   // NVMe: the drive's own limits
+    double criticalTempC = -1;
+    bool usbNoData = false;     // a USB adapter that doesn't pass health data through
 };
 
 struct Disk {
@@ -258,7 +272,7 @@ private:
                      bool lockEncrypted = false);
     QVariantMap options(QVariantMap extra = {}) const;
     void detectFilesystems();
-    Health readHealth(const QString &drivePath, const QVariantMap &ata, const QVariantMap &nvme);
+    Health readHealth(const QString &drivePath, const QVariantMap &drive, const QVariantMap &ata, const QVariantMap &nvme);
 
     QVector<Disk> m_disks;
     QVector<Job> m_jobs;
@@ -268,6 +282,10 @@ private:
     int m_pending = 0;
     bool m_interactive = true;
     // SMART attribute details, refetched only when the drive's SmartUpdated changes.
-    struct HealthCache { quint64 updated = 0; qint64 badSectors = -1; qint64 reallocated = -1; qint64 pending = -1; qint64 mediaErrors = 0; int percentUsed = -1; bool attrFailing = false; };
+    struct HealthCache {
+        quint64 updated = 0;
+        QVector<SmartAttribute> attributes; // ATA
+        QVariantMap nvme;                   // NVMe SmartGetAttributes
+    };
     QMap<QString, HealthCache> m_healthCache;
 };

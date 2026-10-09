@@ -6,6 +6,7 @@
 
 #include "dbusnames.h"
 #include "format.h"
+#include "health.h"
 #include "udisks.h"
 
 #include <QDBusArgument>
@@ -73,6 +74,9 @@ QVector<SmartAttribute> decodeAta(const QDBusMessage &reply)
             a.raw = QStringLiteral("%1 °C").arg(pretty / 1000.0 - 273.15, 0, 'f', 0);
             break;
         default:
+            // Plain counts (errors, timeouts, retries). Seagate packs three counters into 188;
+            // the low 16 bits are the one that matters, like the sector counts above.
+            a.rawValue = id == 188 ? sectorCount(pretty) : pretty;
             a.raw = QString::number(pretty);
         }
         out.push_back(a);
@@ -104,10 +108,11 @@ const Disk *UDisks::diskByPath(const QString &blockPath) const
     return nullptr;
 }
 
-Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, const QVariantMap &nvme)
+Health UDisks::readHealth(const QString &drivePath, const QVariantMap &drive, const QVariantMap &ata, const QVariantMap &nvme)
 {
     Health h;
     HealthCache &cache = m_healthCache[drivePath];
+    const QString driveKey = drivePath.section(QLatin1Char('/'), -1);
 
     if (!ata.isEmpty() && ata.value(QStringLiteral("SmartSupported")).toBool()) {
         if (!ata.value(QStringLiteral("SmartEnabled")).toBool()) {
@@ -127,40 +132,34 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
         if (cache.updated != h.updated) {
             cache = {};
             cache.updated = h.updated;
-            const QVector<SmartAttribute> attrs = decodeAta(blockingCall(drivePath, kAta, QStringLiteral("SmartGetAttributes"), {QVariantMap()}));
-            qint64 reallocated = 0, pending = 0;
-            for (const SmartAttribute &a : attrs) {
-                if (a.id == 5 && a.rawValue > 0)
-                    reallocated = a.rawValue;
-                if (a.id == 197 && a.rawValue > 0)
-                    pending = a.rawValue;
-                cache.attrFailing = cache.attrFailing || a.failing;
+            cache.attributes = decodeAta(blockingCall(drivePath, kAta, QStringLiteral("SmartGetAttributes"), {QVariantMap()}));
+            health::remember(driveKey, cache.attributes);
+        }
+        auto raw = [&cache](int id) {
+            for (const SmartAttribute &a : std::as_const(cache.attributes)) {
+                if (a.id == id)
+                    return qMax<qint64>(0, a.rawValue);
             }
-            cache.reallocated = attrs.isEmpty() ? -1 : reallocated;
-            cache.pending = attrs.isEmpty() ? -1 : pending;
-            cache.badSectors = attrs.isEmpty() ? -1 : reallocated + pending;
-        }
-        h.badSectors = cache.badSectors;
-        h.reallocatedSectors = cache.reallocated;
-        h.pendingSectors = cache.pending;
-        const bool failing = ata.value(QStringLiteral("SmartFailing")).toBool()
-            || ata.value(QStringLiteral("SmartNumAttributesFailing")).toInt() > 0 || cache.attrFailing;
-        if (failing) {
-            h.state = Health::State::Failing;
-            h.summary = tr("Failing, back up now");
-        } else if (h.pendingSectors > 0) {
-            h.state = Health::State::Warning;
-            h.summary = tr("%n unreadable sector(s)", nullptr, int(h.pendingSectors));
-        } else if (h.reallocatedSectors > 0) {
-            h.state = Health::State::Warning;
-            h.summary = tr("%n sector(s) replaced", nullptr, int(h.reallocatedSectors));
-        } else if (ata.value(QStringLiteral("SmartNumAttributesFailedInThePast")).toInt() > 0) {
-            h.state = Health::State::Warning;
-            h.summary = tr("Had problems in the past");
-        } else {
-            h.state = Health::State::Healthy;
-            h.summary = tr("Healthy");
-        }
+            return qint64(cache.attributes.isEmpty() ? -1 : 0);
+        };
+        h.reallocatedSectors = raw(5);
+        h.pendingSectors = raw(197);
+        h.badSectors = cache.attributes.isEmpty() ? -1 : h.reallocatedSectors + h.pendingSectors;
+
+        health::AtaInput in;
+        in.driveSaysFailing = ata.value(QStringLiteral("SmartFailing")).toBool();
+        const auto failing = std::count_if(cache.attributes.cbegin(), cache.attributes.cend(), [](const SmartAttribute &a) { return a.failing; });
+        in.failingNow = qMax(ata.value(QStringLiteral("SmartNumAttributesFailing")).toInt(), int(failing));
+        in.failedBefore = ata.value(QStringLiteral("SmartNumAttributesFailedInThePast")).toInt();
+        in.attributes = cache.attributes;
+        in.seen = health::seen(driveKey);
+        in.temperatureC = h.temperatureC;
+        in.ssd = drive.value(QStringLiteral("RotationRate"), -1).toInt() == 0;
+        const health::Verdict v = health::ata(in);
+        h.state = v.state;
+        h.summary = v.summary;
+        h.reasons = v.reasons;
+        h.lifeLeft = v.lifeLeft;
         return h;
     }
 
@@ -181,38 +180,34 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &ata, cons
             cache = {};
             cache.updated = h.updated;
             const QDBusMessage reply = blockingCall(drivePath, kNvme, QStringLiteral("SmartGetAttributes"), {QVariantMap()});
-            if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
-                QVariantMap attrs;
-                reply.arguments().constFirst().value<QDBusArgument>() >> attrs;
-                cache.percentUsed = attrs.value(QStringLiteral("percent_used"), -1).toInt();
-                cache.mediaErrors = attrs.value(QStringLiteral("media_errors")).toLongLong();
-                cache.attrFailing = attrs.contains(QStringLiteral("avail_spare"))
-                    && attrs.value(QStringLiteral("avail_spare")).toInt() < attrs.value(QStringLiteral("spare_thresh")).toInt();
-            }
+            if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+                reply.arguments().constFirst().value<QDBusArgument>() >> cache.nvme;
         }
-        h.percentUsed = cache.percentUsed;
-        static const QStringList serious = {QStringLiteral("spare"), QStringLiteral("degraded"), QStringLiteral("readonly"),
-                                            QStringLiteral("volatile_mem"), QStringLiteral("pmr_readonly")};
-        bool failing = cache.attrFailing;
-        for (const QString &w : h.criticalWarnings)
-            failing = failing || serious.contains(w);
-        if (failing) {
-            h.state = Health::State::Failing;
-            h.summary = tr("Failing, back up now");
-        } else if (h.criticalWarnings.contains(QStringLiteral("temperature"))) {
-            h.state = Health::State::Warning;
-            h.summary = tr("Running too hot");
-        } else if (h.percentUsed >= 100) {
-            h.state = Health::State::Warning;
-            h.summary = tr("Worn out (%1% used)").arg(h.percentUsed);
-        } else if (cache.mediaErrors > 0) {
-            h.state = Health::State::Warning;
-            h.summary = tr("%n media error(s)", nullptr, int(cache.mediaErrors));
-        } else {
-            h.state = Health::State::Healthy;
-            h.summary = tr("Healthy");
-        }
+        const QVariantMap &a = cache.nvme;
+        h.percentUsed = a.value(QStringLiteral("percent_used"), -1).toInt();
+        const int wctemp = a.value(QStringLiteral("wctemp")).toInt(), cctemp = a.value(QStringLiteral("cctemp")).toInt();
+        h.warningTempC = wctemp > 0 ? wctemp - 273.15 : -1;
+        h.criticalTempC = cctemp > 0 ? cctemp - 273.15 : -1;
+
+        health::NvmeInput in;
+        in.criticalWarnings = h.criticalWarnings;
+        in.availableSpare = a.contains(QStringLiteral("avail_spare")) ? a.value(QStringLiteral("avail_spare")).toInt() : -1;
+        in.spareThreshold = a.value(QStringLiteral("spare_thresh"), -1).toInt();
+        in.percentUsed = h.percentUsed;
+        in.mediaErrors = a.value(QStringLiteral("media_errors")).toLongLong();
+        in.temperatureC = h.temperatureC;
+        in.warningTempC = h.warningTempC;
+        const health::Verdict v = health::nvme(in);
+        h.state = v.state;
+        h.summary = v.summary;
+        h.reasons = v.reasons;
+        h.lifeLeft = h.percentUsed >= 0 ? qMax(0, 100 - h.percentUsed) : -1;
+        return h;
     }
+
+    // Many USB adapters don't pass the drive's health data through.
+    h.usbNoData = drive.value(QStringLiteral("ConnectionBus")).toString() == QLatin1String("usb")
+        && !drive.value(QStringLiteral("Removable")).toBool();
     return h;
 }
 
@@ -247,6 +242,26 @@ QVector<SmartAttribute> UDisks::smartAttributes(const Disk &disk)
     add("num_err_log_entries", tr("Error log entries"), number);
     add("warning_temp_time", tr("Minutes above warning temperature"), number);
     add("critical_temp_time", tr("Minutes above critical temperature"), number);
+    // Every temperature sensor (Kelvin; 0 = not there), and the drive's own limits.
+    QStringList sensors;
+    const QVariant temps = a.value(QStringLiteral("temp_sensors"));
+    if (temps.canConvert<QDBusArgument>()) {
+        const QDBusArgument arg = temps.value<QDBusArgument>();
+        arg.beginArray();
+        while (!arg.atEnd()) {
+            quint16 kelvin = 0;
+            arg >> kelvin;
+            if (kelvin > 0)
+                sensors << QStringLiteral("%1 °C").arg(qRound(kelvin - 273.15));
+        }
+        arg.endArray();
+    }
+    if (!sensors.isEmpty())
+        out.push_back({0, tr("Temperature sensors"), -1, -1, -1, sensors.join(QStringLiteral(", ")), -1, false});
+    const int wctemp = a.value(QStringLiteral("wctemp")).toInt(), cctemp = a.value(QStringLiteral("cctemp")).toInt();
+    if (wctemp > 0 && cctemp > 0)
+        out.push_back({0, tr("Temperature limits"), -1, -1, -1,
+                       tr("warning at %1 °C, critical at %2 °C").arg(qRound(wctemp - 273.15)).arg(qRound(cctemp - 273.15)), -1, false});
     return out;
 }
 

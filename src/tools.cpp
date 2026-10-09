@@ -11,6 +11,7 @@
 #include "format.h"
 #include "imagewriter.h"
 #include "surfacescan.h"
+#include "health.h"
 #include "theme.h"
 
 #include <QCheckBox>
@@ -29,6 +30,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QThread>
+#include <QTextDocument>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -208,11 +210,18 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
     , m_explain(new QLabel)
     , m_form(new QFormLayout)
     , m_attributes(new QTreeWidget)
+    , m_meaning(new QLabel)
     , m_selftest(new QPushButton(tr("Run Short Self-Test")))
 {
     m_explain->setWordWrap(true);
+    m_explain->setTextFormat(Qt::RichText);
+    m_meaning->setWordWrap(true);
+    m_meaning->setTextFormat(Qt::PlainText);
     m_attributes->setRootIsDecorated(false);
     m_attributes->setAlternatingRowColors(true);
+    connect(m_attributes, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        m_meaning->setText(item ? item->data(0, Qt::UserRole).toString() : QString());
+    });
 
     auto *refresh = new QPushButton(tr("Refresh"));
     auto *close = new QPushButton(tr("Close"));
@@ -248,6 +257,7 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
     layout->addWidget(m_explain);
     layout->addLayout(m_form);
     layout->addWidget(m_attributes, 1);
+    layout->addWidget(m_meaning);
     layout->addLayout(buttons);
 
     connect(m_udisks, &UDisks::changed, this, &HealthDialog::reload);
@@ -267,55 +277,79 @@ void HealthDialog::reload()
     m_state->setText(QStringLiteral("<span style=\"font-size:16pt; font-weight:bold; color:%1\">%2</span><br>%3")
                          .arg(healthColor(h.state), h.summary.toHtmlEscaped(), diskTitle(*disk).toHtmlEscaped()));
 
+    // Every reason behind the verdict, worst first; notes in the normal text color.
+    const Theme &theme = Theme::instance();
     QString explain;
-    if (h.state == Health::State::Failing)
-        explain = tr("The drive itself reports that it's failing. Copy anything you want to keep to another drive now.");
-    else if (h.state == Health::State::Warning && h.pendingSectors > 0)
-        explain = tr("The drive can't read some sectors. Scan for Bad Sectors finds them and can repair them; whatever "
-                     "was stored there is already lost. Keep backups of anything important on this drive.");
-    else if (h.state == Health::State::Warning && h.reallocatedSectors > 0)
-        explain = tr("The drive has swapped some weak sectors for spares. That's what drives are built to do and it still "
-                     "works fine, but keep backups and watch whether the number grows.");
-    else if (h.state == Health::State::Warning)
-        explain = tr("Something isn't quite right. Keep backups of anything important on this drive.");
-    else if (h.state == Health::State::Healthy)
-        explain = tr("No problems reported.");
+    for (const HealthReason &r : h.reasons) {
+        const QString color = r.level == HealthReason::Level::Failing ? theme.html(Theme::Role::Danger)
+            : r.level == HealthReason::Level::Warning              ? theme.html(Theme::Role::Warning)
+                                                                    : QString();
+        explain += color.isEmpty() ? QStringLiteral("<p>%1</p>").arg(r.text.toHtmlEscaped())
+                                   : QStringLiteral("<p style=\"color:%1\"><b>%2</b></p>").arg(color, r.text.toHtmlEscaped());
+    }
+    if (h.state == Health::State::Healthy && h.reasons.isEmpty())
+        explain = QStringLiteral("<p>%1</p>").arg(tr("No problems reported.").toHtmlEscaped());
+    if (h.usbNoData)
+        explain = QStringLiteral("<p>%1</p>").arg(tr("This USB adapter doesn't pass the drive's health data through. Connected "
+                                                     "directly (SATA or NVMe), DiskForge can read it.").toHtmlEscaped());
     m_explain->setText(explain);
     m_explain->setVisible(!explain.isEmpty());
 
     while (m_form->rowCount() > 0)
         m_form->removeRow(0);
-    if (h.temperatureC > 0)
-        m_form->addRow(tr("Temperature:"), new QLabel(QStringLiteral("%1 °C").arg(qRound(h.temperatureC))));
+    auto row = [this](const QString &name, const QString &value) {
+        auto *label = new QLabel(value);
+        label->setTextFormat(Qt::PlainText);
+        m_form->addRow(name, label);
+    };
+    if (h.temperatureC > 0) {
+        QString temp = QStringLiteral("%1 °C").arg(qRound(h.temperatureC));
+        if (h.warningTempC > 0)
+            temp += tr(" (its own limits: warning at %1 °C, critical at %2 °C)").arg(qRound(h.warningTempC)).arg(qRound(h.criticalTempC));
+        row(tr("Temperature:"), temp);
+    }
     if (h.powerOnHours > 0)
-        m_form->addRow(tr("Powered on:"), new QLabel(tr("%L1 hours (%L2 days)").arg(h.powerOnHours).arg(h.powerOnHours / 24)));
+        row(tr("Powered on:"), tr("%L1 hours (%L2 days)").arg(h.powerOnHours).arg(h.powerOnHours / 24));
+    if (h.lifeLeft >= 0)
+        row(tr("Life left:"), QStringLiteral("%1%").arg(h.lifeLeft));
     if (h.reallocatedSectors >= 0)
-        m_form->addRow(tr("Replaced sectors:"), new QLabel(QString::number(h.reallocatedSectors)));
+        row(tr("Replaced sectors:"), QString::number(h.reallocatedSectors));
     if (h.pendingSectors >= 0)
-        m_form->addRow(tr("Unreadable sectors:"), new QLabel(QString::number(h.pendingSectors)));
-    if (h.percentUsed >= 0)
-        m_form->addRow(tr("Life used:"), new QLabel(QStringLiteral("%1%").arg(h.percentUsed)));
+        row(tr("Unreadable sectors:"), QString::number(h.pendingSectors));
     if (!h.criticalWarnings.isEmpty())
-        m_form->addRow(tr("Warnings:"), new QLabel(h.criticalWarnings.join(QStringLiteral(", "))));
-    m_form->addRow(tr("Self-test:"), new QLabel(selftestText(h)));
+        row(tr("Warnings:"), h.criticalWarnings.join(QStringLiteral(", ")));
+    row(tr("Self-test:"), selftestText(h));
     m_selftest->setEnabled(h.selftestStatus != QLatin1String("inprogress"));
 
     const QVector<SmartAttribute> attrs = m_udisks->smartAttributes(*disk);
     m_attributes->clear();
     const bool ata = !h.nvme;
-    m_attributes->setHeaderLabels(ata ? QStringList{tr("ID"), tr("Attribute"), tr("Value"), tr("Worst"), tr("Threshold"), tr("Raw")}
+    m_attributes->setHeaderLabels(ata ? QStringList{tr("ID"), tr("Attribute"), tr("What it is"), tr("Value"), tr("Worst"), tr("Threshold"), tr("Raw")}
                                       : QStringList{tr("Attribute"), tr("Value")});
     for (const SmartAttribute &a : attrs) {
-        auto *item = ata ? new QTreeWidgetItem(m_attributes, {QString::number(a.id), a.name, QString::number(a.value),
+        const health::AttributeInfo info = ata ? health::describe(a.id) : health::AttributeInfo();
+        auto *item = ata ? new QTreeWidgetItem(m_attributes, {QString::number(a.id), a.name, info.name, QString::number(a.value),
                                                                QString::number(a.worst), QString::number(a.threshold), a.raw})
                          : new QTreeWidgetItem(m_attributes, {a.name, a.raw});
+        item->setData(0, Qt::UserRole, info.meaning);
+        if (!info.meaning.isEmpty())
+            for (int c = 0; c < item->columnCount(); ++c)
+                item->setToolTip(c, Qt::convertFromPlainText(info.meaning, Qt::WhiteSpaceNormal));
+        if (info.counts) {
+            // The ones that go into the verdict.
+            QFont bold = item->font(0);
+            bold.setBold(true);
+            for (int c = 0; c < item->columnCount(); ++c)
+                item->setFont(c, bold);
+        }
         if (a.failing) {
             for (int c = 0; c < item->columnCount(); ++c)
-                item->setForeground(c, Theme::instance().color(Theme::Role::Danger));
+                item->setForeground(c, theme.color(Theme::Role::Danger));
         }
     }
     for (int c = 0; c < m_attributes->columnCount(); ++c)
         m_attributes->resizeColumnToContents(c);
+    m_meaning->setText(ata ? tr("Bold ones count toward the verdict. Select one to see what it means.") : QString());
 }
 
 // --- Benchmark ----------------------------------------------------------------

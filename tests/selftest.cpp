@@ -892,6 +892,8 @@ int main(int argc, char *argv[])
         catalogTests();
     } else if (args.contains(QStringLiteral("--fuzz"))) {
         fuzzTests();
+    } else if (args.contains(QStringLiteral("--health"))) {
+        healthTests();
     } else if (args.contains(QStringLiteral("--cleanup"))) {
         cleanupTests();
         snapperTests();

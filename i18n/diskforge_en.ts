@@ -2,9 +2,20 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en" sourcelanguage="en">
 <context>
+    <name>AddonOutputWindow</name>
+    <message numerus="yes">
+        <location filename="../src/addonoutput.cpp" line="156"/>
+        <source>… (%n line(s) skipped)</source>
+        <translation>
+            <numerusform>… (%n line skipped)</numerusform>
+            <numerusform>… (%n lines skipped)</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="840"/>
+        <location filename="../src/tools.cpp" line="876"/>
         <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
         <translation>
             <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
@@ -12,7 +23,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="868"/>
+        <location filename="../src/tools.cpp" line="904"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -20,7 +31,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="913"/>
+        <location filename="../src/tools.cpp" line="949"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -31,7 +42,7 @@
 <context>
     <name>BlockMapWidget</name>
     <message numerus="yes">
-        <location filename="../src/blockmapwidget.cpp" line="99"/>
+        <location filename="../src/blockmapwidget.cpp" line="102"/>
         <source>Slow (%n area(s))</source>
         <translation>
             <numerusform>Slow (%n area)</numerusform>
@@ -62,6 +73,17 @@
     </message>
 </context>
 <context>
+    <name>MainWindow</name>
+    <message numerus="yes">
+        <location filename="../src/mainwindow.cpp" line="1271"/>
+        <source>%n add-on command(s) still running. Stop them and quit?</source>
+        <translation>
+            <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
+            <numerusform>%n add-on commands still running. Stop them and quit?</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>QObject</name>
     <message numerus="yes">
         <location filename="../src/jobui.cpp" line="21"/>
@@ -80,7 +102,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="64"/>
+        <location filename="../src/tools.cpp" line="68"/>
         <source>%n sector(s)</source>
         <translation>
             <numerusform>%n sector</numerusform>
@@ -96,7 +118,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/usagedialog.cpp" line="49"/>
+        <location filename="../src/usagedialog.cpp" line="50"/>
         <source>%n file(s)</source>
         <translation>
             <numerusform>%n file</numerusform>
@@ -104,11 +126,99 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/addons.cpp" line="661"/>
+        <location filename="../src/addons.cpp" line="1061"/>
         <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
         <translation>
             <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
             <numerusform>%n entrys in the list were left out because they didn't check out</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="118"/>
+        <source>%n of its health numbers is past the limit its maker set. Copy what you want to keep to another drive now.</source>
+        <translation>
+            <numerusform>%n of its health numbers is past the limit its maker set. Copy what you want to keep to another drive now.</numerusform>
+            <numerusform>%n of its health numbers is past the limit its maker set. Copy what you want to keep to another drive now.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="125"/>
+        <source>%n unreadable sector(s). Scan for Bad Sectors can repair them; what was stored there is already lost.</source>
+        <translation>
+            <numerusform>%n unreadable sector. Scan for Bad Sectors can repair them; what was stored there is already lost.</numerusform>
+            <numerusform>%n unreadable sectors. Scan for Bad Sectors can repair them; what was stored there is already lost.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="127"/>
+        <source>%n sector(s) its own scan couldn&apos;t read. Keep backups.</source>
+        <translation>
+            <numerusform>%n sector its own scan couldn't read. Keep backups.</numerusform>
+            <numerusform>%n sectors its own scan couldn't read. Keep backups.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="130"/>
+        <source>%n read error(s) it couldn&apos;t fix. Drives that have had these fail far more often: keep backups and think about replacing it.</source>
+        <translation>
+            <numerusform>%n read error it couldn't fix. Drives that have had these fail far more often: keep backups and think about replacing it.</numerusform>
+            <numerusform>%n read errors it couldn't fix. Drives that have had these fail far more often: keep backups and think about replacing it.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="134"/>
+        <source>%n sector(s) replaced. That&apos;s what drives are built to do, but keep backups and watch whether the number grows.</source>
+        <translation>
+            <numerusform>%n sector replaced. That's what drives are built to do, but keep backups and watch whether the number grows.</numerusform>
+            <numerusform>%n sectors replaced. That's what drives are built to do, but keep backups and watch whether the number grows.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="137"/>
+        <source>%n spin-up retry(s): a mechanical or power problem.</source>
+        <translation>
+            <numerusform>%n spin-up retry: a mechanical or power problem.</numerusform>
+            <numerusform>%n spin-up retrys: a mechanical or power problem.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="144"/>
+        <source>%n end-to-end error(s): data damaged inside the drive.</source>
+        <translation>
+            <numerusform>%n end-to-end error: data damaged inside the drive.</numerusform>
+            <numerusform>%n end-to-end errors: data damaged inside the drive.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="147"/>
+        <source>Connection problems: %n new error(s) between the drive and the PC. Check the cable or try another port; the drive itself may be fine.</source>
+        <translation>
+            <numerusform>Connection problems: %n new error between the drive and the PC. Check the cable or try another port; the drive itself may be fine.</numerusform>
+            <numerusform>Connection problems: %n new errors between the drive and the PC. Check the cable or try another port; the drive itself may be fine.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="149"/>
+        <source>%n connection error(s) in the past (cable or port).</source>
+        <translation>
+            <numerusform>%n connection error in the past (cable or port).</numerusform>
+            <numerusform>%n connection errors in the past (cable or port).</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="152"/>
+        <source>%n command timeout(s).</source>
+        <translation>
+            <numerusform>%n command timeout.</numerusform>
+            <numerusform>%n command timeouts.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/health.cpp" line="193"/>
+        <source>%n media error(s): data it couldn&apos;t read back correctly. Keep backups.</source>
+        <translation>
+            <numerusform>%n media error: data it couldn't read back correctly. Keep backups.</numerusform>
+            <numerusform>%n media errors: data it couldn't read back correctly. Keep backups.</numerusform>
         </translation>
     </message>
 </context>
@@ -126,7 +236,6 @@
 <context>
     <name>UDisks</name>
     <message numerus="yes">
-        <location filename="../src/operations.cpp" line="153"/>
         <source>%n unreadable sector(s)</source>
         <translation>
             <numerusform>%n unreadable sector</numerusform>
@@ -134,7 +243,6 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/operations.cpp" line="156"/>
         <source>%n sector(s) replaced</source>
         <translation>
             <numerusform>%n sector replaced</numerusform>
@@ -142,7 +250,6 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/operations.cpp" line="210"/>
         <source>%n media error(s)</source>
         <translation>
             <numerusform>%n media error</numerusform>
@@ -153,7 +260,7 @@
 <context>
     <name>UsageDialog</name>
     <message numerus="yes">
-        <location filename="../src/usagedialog.cpp" line="335"/>
+        <location filename="../src/usagedialog.cpp" line="337"/>
         <source>%n folder(s) couldn&apos;t be opened (they belong to the system or other users), so the total may be a little low.</source>
         <translation>
             <numerusform>%n folder couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>

@@ -271,7 +271,7 @@ void UDisks::refresh()
                 d.sectorSize = std::max(512, sector.readAll().trimmed().toInt());
         }
         if (!d.isLoop)
-            d.health = readHealth(d.drivePath, driveIfaces.value(kAta), driveIfaces.value(kNvme));
+            d.health = readHealth(d.drivePath, drive, driveIfaces.value(kAta), driveIfaces.value(kNvme));
 
         if (ifaces.contains(kPartitionTable))
             d.tableType = ifaces.value(kPartitionTable).value(QStringLiteral("Type")).toString();

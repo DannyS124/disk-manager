@@ -17,6 +17,7 @@
 #include "../src/clone.h"
 #include "../src/format.h"
 #include "../src/gpt.h"
+#include "../src/health.h"
 #include "../src/imagebackup.h"
 #include "../src/outputfilter.h"
 #include "../src/rescuecopy.h"
@@ -495,6 +496,53 @@ void commandOutput()
     report(bad.isEmpty(), QStringLiteral("%1 streams of junk output: shown as plain, short lines").arg(rounds()), bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void healthVerdicts()
+{
+    // Random SMART values: never a crash, and the verdict always matches its worst reason.
+    const QList<qint64> extremes = {-1, 0, 1, 15, 16, 17, 0xFFFF, 0x10000, 0x7fffffffffffffffLL};
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        health::AtaInput ata;
+        for (int n = int(rng.bounded(12)); n > 0; --n) {
+            SmartAttribute a;
+            a.id = int(rng.bounded(256));
+            a.rawValue = rng.bounded(3) ? extremes[qsizetype(rng.bounded(quint32(extremes.size())))] : qint64(rng.generate64() >> 1);
+            a.value = int(rng.bounded(256));
+            a.threshold = int(rng.bounded(256));
+            a.failing = a.threshold > 0 && a.value <= a.threshold;
+            ata.attributes << a;
+        }
+        ata.driveSaysFailing = rng.bounded(10) == 0;
+        ata.failingNow = int(rng.bounded(3));
+        ata.temperatureC = double(rng.bounded(120)) - 20;
+        ata.ssd = rng.bounded(2);
+        if (rng.bounded(2))
+            ata.seen.insert(199, qint64(rng.bounded(100)));
+        health::NvmeInput nvme;
+        nvme.availableSpare = int(rng.bounded(300)) - 100;
+        nvme.spareThreshold = int(rng.bounded(300)) - 100;
+        nvme.percentUsed = int(rng.bounded(300)) - 10;
+        nvme.mediaErrors = rng.bounded(3) ? 0 : qint64(rng.generate64() >> 1);
+        nvme.temperatureC = double(rng.bounded(150)) - 20;
+        nvme.warningTempC = double(rng.bounded(100));
+        if (rng.bounded(4) == 0)
+            nvme.criticalWarnings << QStringList{QStringLiteral("spare"), QStringLiteral("temperature"), QStringLiteral("x")}[rng.bounded(3)];
+        for (const health::Verdict &v : {health::ata(ata), health::nvme(nvme)}) {
+            const HealthReason::Level worst = v.reasons.isEmpty() ? HealthReason::Level::Note : v.reasons.first().level;
+            const Health::State expected = worst == HealthReason::Level::Failing ? Health::State::Failing
+                : worst == HealthReason::Level::Warning                       ? Health::State::Warning
+                                                                              : Health::State::Healthy;
+            bool sorted = true;
+            for (int k = 1; k < v.reasons.size(); ++k)
+                sorted = sorted && v.reasons[k - 1].level >= v.reasons[k].level;
+            if (v.state != expected || !sorted || v.summary.isEmpty())
+                bad << QString::number(i);
+        }
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 random SMART readings: the verdict always matches its worst reason").arg(rounds()),
+           bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void driveNames()
 {
     // Names made of the characters that cause trouble, through the backup add-on's command.
@@ -564,5 +612,6 @@ void fuzzTests()
     clonePlans();
     driveNames();
     commandOutput();
+    healthVerdicts();
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

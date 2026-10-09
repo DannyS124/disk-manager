@@ -49,3 +49,4 @@ void btrfsTests();
 void optimizeTests();
 void catalogTests();
 void fuzzTests();
+void healthTests();
