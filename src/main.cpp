@@ -56,6 +56,13 @@ void dump(const QVector<Disk> &disks)
 
 int main(int argc, char *argv[])
 {
+    // These never open a window, so they shouldn't need a screen (over SSH, on a text console).
+    for (int i = 1; i < argc; ++i) {
+        const QByteArray arg(argv[i]);
+        if ((arg == "--dump" || arg == "--help" || arg == "-h" || arg == "--version" || arg == "-v")
+            && qEnvironmentVariableIsEmpty("DISPLAY") && qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY"))
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
     QApplication app(argc, argv);
     installTranslations();
     QApplication::setApplicationName(QStringLiteral("diskforge"));
