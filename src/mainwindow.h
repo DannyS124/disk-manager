@@ -28,6 +28,9 @@ public:
     bool selectDevice(const QString &device); // e.g. /dev/sdb1, or /dev/sdb for the whole drive
     void buildContextMenu(QMenu *menu); // the right-click menu for the current selection
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private:
     void createActions();
     void rebuild();
@@ -49,7 +52,7 @@ private:
     void newPartitionTable();
     void checkForUpdates();
     bool addAddonActions(QMenu *menu); // false if none apply
-    void runAddon(const Addon &addon, const AddonAction &action);
+    void runAddon(const QString &addonId, const QString &label);
     int selectedDiskNumber() const;
 
     const Disk *selectedDisk() const;

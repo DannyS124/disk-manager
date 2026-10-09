@@ -9,6 +9,7 @@
 // - Back Up a partition, damage it, Restore it, and it's back exactly.
 // sudo QT_QPA_PLATFORM=offscreen build/diskforge-uitest
 
+#include "../src/addonoutput.h"
 #include "../src/copydialogs.h"
 #include "../src/format.h"
 #include "../src/mainwindow.h"
@@ -21,6 +22,7 @@
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
@@ -31,6 +33,8 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+
+#include <memory>
 
 #include <unistd.h>
 
@@ -313,13 +317,69 @@ void backupAndRestore(MainWindow &window, UDisks &udisks, const QTemporaryDir &d
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
 }
 
+// The add-on output window: real output and exit code, Stop ends everything the command
+// started, and the command gets no open files besides its output.
+void outputWindow()
+{
+    auto run = [](const QString &script) {
+        auto *window = new AddonOutputWindow(QStringLiteral("test"), {QStringLiteral("sh"), QStringLiteral("-c"), script});
+        window->setAttribute(Qt::WA_DeleteOnClose, false);
+        window->show();
+        return window;
+    };
+    {
+        std::unique_ptr<AddonOutputWindow> w(run(QStringLiteral("printf 'one\\ntwo\\n'; ls /proc/$$/fd | tr '\\n' ' '; exit 3")));
+        waitUntil([&] { return !w->isRunning(); }, 5000);
+        QApplication::processEvents();
+        QThread::msleep(150);
+        QApplication::processEvents();
+        const QString shown = w->text();
+        report(shown.startsWith(QLatin1String("one\ntwo\n")) && w->findChild<QLabel *>()->text().contains(QLatin1String("3")),
+               QStringLiteral("the output window shows what the command printed, and its exit code"), shown.simplified());
+        report(shown.contains(QLatin1String("0 1 2")) && !shown.contains(QLatin1String("0 1 2 3")),
+               QStringLiteral("the command only gets its own input and output"), shown.section(QLatin1Char('\n'), 2).simplified());
+    }
+    {
+        // A background child too: Stop has to end the whole group.
+        std::unique_ptr<AddonOutputWindow> w(run(QStringLiteral("sleep 60 & echo started; sleep 60")));
+        waitUntil([&] {
+            QThread::msleep(150);
+            QApplication::processEvents();
+            return w->text().contains(QLatin1String("started"));
+        }, 5000);
+        QProcess pids;
+        QElapsedTimer timer;
+        timer.start();
+        w->stop();
+        waitUntil([&] { return !w->isRunning(); }, 6000);
+        QThread::msleep(300);
+        pids.start(QStringLiteral("pgrep"), {QStringLiteral("-f"), QStringLiteral("^sleep 60$")});
+        pids.waitForFinished();
+        report(!w->isRunning() && timer.elapsed() < 5000 && pids.readAllStandardOutput().trimmed().isEmpty(),
+               QStringLiteral("Stop ends the command and everything it started"), QString::number(timer.elapsed()) + QStringLiteral(" ms"));
+    }
+}
+
+int userScenarios()
+{
+    QTemporaryDir home;
+    qputenv("XDG_DATA_HOME", QFile::encodeName(home.filePath(QStringLiteral("data"))));
+    qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral("config"))));
+    outputWindow();
+    out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
+    return failures ? 1 : 0;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    // As the user: the add-on, menu and theme parts, which need no test disks.
+    if (app.arguments().contains(QStringLiteral("--user")))
+        return userScenarios();
     if (geteuid() != 0) {
-        out << "Run as root: it creates a loop device." << Qt::endl;
+        out << "Run as root: it creates a loop device (or use --user for the parts that don't)." << Qt::endl;
         return 2;
     }
 

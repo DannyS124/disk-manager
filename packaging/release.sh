@@ -85,6 +85,7 @@ case "$cmd" in
     for suite in guard addons gpt copy usage backup rescuemap cleanup catalog fuzz; do
         run_tests $suite ./build/diskforge-selftest --$suite
     done
+    run_tests window-user env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest --user
     # As root: test devices made with losetup and dmsetup.
     run_tests disks sudo ./build/diskforge-selftest
     for suite in badsectors blockmap rescue clone btrfs optimize; do

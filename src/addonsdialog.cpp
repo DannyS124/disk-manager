@@ -87,7 +87,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
         if (!askPlain(this, windowTitle(), tr("Did you put \"%1\" in the add-on folder (or change it) yourself?\n\n"
                                                "Only say yes if you did. DiskForge stops warning about this version of it.").arg(a.name)))
             return;
-        m_addons->accept(a.id);
+        m_addons->accept(a.id, a.fileHash);
         fill();
         m_list->setCurrentItem(m_list->topLevelItem(row));
     });
@@ -178,7 +178,7 @@ void AddonsDialog::showDetails()
         html += outsideNote();
     for (const AddonAction &act : a.actions) {
         html += QStringLiteral("<p><b>%1</b> <small>(%2%3)</small><br><code>%4</code></p>")
-                    .arg(act.label.toHtmlEscaped(), act.appliesTo.toHtmlEscaped(), act.terminal ? tr(", in a terminal") : QString(),
+                    .arg(act.label.toHtmlEscaped(), act.appliesTo.toHtmlEscaped(), act.terminal ? tr(", in a terminal") : act.window ? tr(", in a DiskForge window") : QString(),
                          act.command.join(QLatin1Char(' ')).toHtmlEscaped())
             + addonNotes(act);
     }

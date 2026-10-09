@@ -58,6 +58,7 @@ add_library(diskforge-core STATIC
     src/cleanup.cpp src/cleanup.h
     src/snapper.cpp src/snapper.h
     src/signature.cpp src/signature.h
+    src/outputfilter.cpp src/outputfilter.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
@@ -78,6 +79,8 @@ add_library(diskforge-ui STATIC
     src/erasedialog.cpp src/erasedialog.h
     src/addonsdialog.cpp src/addonsdialog.h
     src/addonprompt.cpp src/addonprompt.h
+    src/addonform.cpp src/addonform.h
+    src/addonoutput.cpp src/addonoutput.h
     src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
@@ -117,6 +120,7 @@ if(DISKFORGE_SELFTEST)
     qt_add_executable(diskforge-uitest tests/uitest.cpp)
     diskforge_add_data(diskforge-uitest)
     target_link_libraries(diskforge-uitest PRIVATE diskforge-ui)
+    target_compile_definitions(diskforge-uitest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 endif()
 
 # English plural forms ("1 sector", "2 sectors"); other languages get their own

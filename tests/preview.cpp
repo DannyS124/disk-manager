@@ -4,6 +4,8 @@
 // Renders the dialogs to PNGs: QT_QPA_PLATFORM=offscreen diskforge-preview <dir>
 
 #include "../src/about.h"
+#include "../src/addonform.h"
+#include "../src/addonoutput.h"
 #include "../src/addonprompt.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
@@ -30,6 +32,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QProgressBar>
@@ -96,6 +99,30 @@ int main(int argc, char *argv[])
     askRunAddon(nullptr, backup, backup.actions.value(0),
                 {QStringLiteral("rsync"), QStringLiteral("-a"), QStringLiteral("--info=progress2"), QStringLiteral("--mkpath"),
                  QStringLiteral("/run/media/me/My Stuff/"), QDir::homePath() + QStringLiteral("/Backups/My Stuff/")}, nullptr);
+    {
+        const Addon full = Addons::parseData(R"json({"id":"backup","name":"Back Up","actions":[{"label":"Back Up to a Folder","output":"window",
+            "command":["rsync","-a","{ask:check}","{mountpoint}/","{ask:dest}/"],
+            "ask":[{"id":"dest","type":"folder","label":"Back up to","default":"{home}/Backups"},
+                   {"id":"check","type":"check","label":"Compare file contents (slower)","on":"--checksum","off":""},
+                   {"id":"mode","type":"choice","label":"When a file exists","choices":[{"label":"Replace it","value":"--inplace"},{"label":"Keep both","value":"--backup"}]},
+                   {"id":"limit","type":"number","label":"Speed limit (MB/s, 0 = none)","min":0,"max":1000}]}]})json", QString());
+        QMap<QString, QString> values;
+        for (const AddonField &f : full.actions.value(0).ask)
+            values.insert(f.id, QString(f.defaultValue).replace(QStringLiteral("{home}"), QDir::homePath()));
+        AddonFormDialog form(QStringLiteral("Back Up to a Folder"), QStringLiteral("\"Back Up to a Folder\" from the add-on \"Back Up\" needs a few things first:"),
+                             full.actions.value(0).ask, values, QStringLiteral("Continue"));
+        save(form, out.filePath(QStringLiteral("addon-form.png")));
+        AddonOutputWindow output(QStringLiteral("Show Folder Sizes"),
+                                 {QStringLiteral("sh"), QStringLiteral("-c"), QStringLiteral("printf '4.0K\\t/run/media/me/STICK/notes\\n1.2G\\t/run/media/me/STICK/photos\\n\\033[1;31m3.4G\\033[0m\\t/run/media/me/STICK/videos\\n'; exit 0")});
+        output.setAttribute(Qt::WA_DeleteOnClose, false);
+        QElapsedTimer wait;
+        wait.start();
+        while (output.isRunning() && wait.elapsed() < 3000)
+            QApplication::processEvents(QEventLoop::AllEvents, 50);
+        QThread::msleep(200);
+        QApplication::processEvents();
+        save(output, out.filePath(QStringLiteral("addon-output.png")));
+    }
     grabDialog(out.filePath(QStringLiteral("addon-run-lookonly.png")));
     askRunAddon(nullptr, sizes, sizes.actions.value(0),
                 {QStringLiteral("sh"), QStringLiteral("-c"), sizes.actions.value(0).command.value(2), QStringLiteral("sh"), QStringLiteral("/")}, nullptr);

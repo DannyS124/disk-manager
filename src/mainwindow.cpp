@@ -4,6 +4,8 @@
 #include "mainwindow.h"
 
 #include "about.h"
+#include "addonform.h"
+#include "addonoutput.h"
 #include "addonprompt.h"
 #include "addonsdialog.h"
 #include "copydialogs.h"
@@ -27,6 +29,7 @@
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QProgressBar>
@@ -409,7 +412,7 @@ void MainWindow::createActions()
 
     auto *quit = new QAction(themeIcon("application-exit", "window-close"), tr("&Quit"), this);
     quit->setShortcut(QKeySequence::Quit);
-    connect(quit, &QAction::triggered, qApp, &QApplication::quit);
+    connect(quit, &QAction::triggered, this, &QWidget::close); // closeEvent asks about running add-ons
 
     QMenu *file = menuBar()->addMenu(tr("&File"));
     file->addActions({m_openImage, m_writeImage});
@@ -1024,48 +1027,105 @@ bool MainWindow::addAddonActions(QMenu *menu)
     const auto kind = m_map->selection().kind;
     const auto actions = m_addons.actionsFor(*d, selectedVolume(), kind == DiskMap::Selection::Kind::Free);
     for (const auto &[addon, action] : actions) {
-        // Copies: the selection or the add-on list may change before the menu item is clicked.
-        const Addon a = *addon;
-        const AddonAction act = *action;
+        // By id and label: the add-on list may be reloaded before the item is clicked.
+        const QString id = addon->id, label = action->label;
         // "&&" so an "&" in the label shows as one instead of making a shortcut letter.
-        menu->addAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))),
-                        QString(act.label).replace(QLatin1Char('&'), QStringLiteral("&&")), this,
-                        [this, a, act] { runAddon(a, act); });
+        menu->addAction(QIcon::fromTheme(action->icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))),
+                        QString(label).replace(QLatin1Char('&'), QStringLiteral("&&")), this, [this, id, label] { runAddon(id, label); });
     }
     return !actions.isEmpty();
 }
 
-void MainWindow::runAddon(const Addon &addon, const AddonAction &action)
+void MainWindow::runAddon(const QString &addonId, const QString &label)
 {
+    // Copies: the form and the questions below run their own event loops.
+    Addon addon;
+    AddonAction action;
+    for (const Addon &a : m_addons.all()) {
+        for (const AddonAction &act : a.actions) {
+            if (a.id == addonId && act.label == label) {
+                addon = a;
+                action = act;
+            }
+        }
+    }
     const Disk *d = selectedDisk();
-    if (!d)
+    if (addon.id.isEmpty() || !d)
         return;
+    // Paths, not pointers: a refresh while the form is open rebuilds the disk list.
+    const QString diskPath = d->blockPath;
+    const QString volumePath = selectedVolume() ? selectedVolume()->objectPath : QString();
+
+    QMap<QString, QString> answers;
+    if (!action.ask.isEmpty()) {
+        QMap<QString, QString> defaults;
+        for (const AddonField &f : std::as_const(action.ask))
+            defaults.insert(f.id, Addons::fieldDefault(f, *d, selectedVolume()));
+        AddonFormDialog form(action.label, tr("\"%1\" from the add-on \"%2\" needs a few things first:").arg(action.label, addon.name),
+                             action.ask, defaults, tr("Continue"), this);
+        if (form.exec() != QDialog::Accepted)
+            return;
+        answers = form.values();
+    }
+    d = m_udisks->diskByPath(diskPath);
+    const Volume *v = volumePath.isEmpty() ? nullptr : volumeByPath(volumePath);
+    if (!d || (!volumePath.isEmpty() && !v)) {
+        warnPlain(this, action.label, tr("The drive isn't there anymore."));
+        return;
+    }
     QString error;
-    const QStringList argv = Addons::expand(action.command, *d, selectedVolume(), &error);
+    const QStringList argv = Addons::fillCommand(addon, action, *d, v, answers, &error);
     if (argv.isEmpty()) {
         warnPlain(this, action.label, error);
         return;
     }
-    const QString confirmText = action.confirm.isEmpty() ? QString() : Addons::expandText(action.confirm, *d, selectedVolume(), &error);
+    const QString confirmText = action.confirm.isEmpty() ? QString() : Addons::expandText(action.confirm, *d, v, &error);
     if (!action.confirm.isEmpty() && confirmText.isEmpty()) {
         warnPlain(this, action.label, error);
         return;
     }
-    if (!Addons::isTrusted(addon, action)) {
+    if (!Addons::isTrusted(addon, action, argv)) {
         bool remember = false;
         if (!askRunAddon(this, addon, action, argv, &remember))
             return;
         if (remember) {
             Addons::trust(addon, action);
-            m_addons.accept(addon.id); // they've seen it and said yes, so it's theirs now
+            m_addons.accept(addon.id, addon.fileHash); // they've seen it and said yes, so it's theirs now
         }
     }
     if (!confirmText.isEmpty() && !askPlain(this, action.label, confirmText))
         return;
+    if (action.window) {
+        if (!Addons::prepare(action, argv, &error)) {
+            warnPlain(this, action.label, error);
+            return;
+        }
+        auto *window = new AddonOutputWindow(action.label, Addons::processCommand(action, argv), this);
+        window->show();
+        return;
+    }
     if (!Addons::run(action, argv, &error))
         warnPlain(this, action.label, error);
     else
         statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // Add-on commands shown in a window belong to DiskForge; ask before ending them.
+    QList<AddonOutputWindow *> running;
+    for (AddonOutputWindow *w : findChildren<AddonOutputWindow *>()) {
+        if (w->isRunning())
+            running << w;
+    }
+    if (!running.isEmpty()
+        && !askPlain(this, tr("Quit"), tr("%n add-on command(s) still running. Stop them and quit?", nullptr, int(running.size())))) {
+        event->ignore();
+        return;
+    }
+    for (AddonOutputWindow *w : std::as_const(running))
+        w->stop();
+    event->accept();
 }
 
 // Dialogs run their own event loop, and a UDisks refresh meanwhile replaces the disk

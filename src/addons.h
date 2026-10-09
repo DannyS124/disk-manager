@@ -123,8 +123,9 @@ public:
     void load();
     const QVector<Addon> &all() const { return m_addons; }
     void setEnabled(const QString &id, bool enabled);
-    // "I put it there myself": clears the added-outside flag for this exact file.
-    void accept(const QString &id);
+    // "I put it there myself": clears the added-outside flag, but only for the file version
+    // the user saw (fileHash); one changed since isn't accepted along with it.
+    void accept(const QString &id, const QByteArray &fileHash);
 
     // Add-on actions that fit the selection (disk always set; volume null for a disk or free space).
     QVector<QPair<const Addon *, const AddonAction *>> actionsFor(const Disk &disk, const Volume *volume, bool freeSpace) const;
@@ -163,7 +164,14 @@ public:
     // The command as it really runs: in the sandbox for look-only actions, in a terminal
     // if asked for. Empty with error set if it can't run.
     static QStringList commandLine(const AddonAction &action, const QStringList &argv, QString *error);
-    static QStringList sandboxed(const QStringList &argv);
+    // endWithParent: the sandbox goes when the program that started it does (the output window).
+    static QStringList sandboxed(const QStringList &argv, bool endWithParent = false);
+    // Checks the command can run here: the Flatpak permission, the program, the sandbox.
+    static bool prepare(const AddonAction &action, const QStringList &argv, QString *error);
+    // The command for the output window, which runs it itself: in the sandbox for look-only
+    // actions, through flatpak-spawn in a Flatpak, never in a terminal.
+    static QStringList processCommand(const AddonAction &action, const QStringList &argv);
+    // Starts it on its own (terminal or no output), after prepare().
     static bool run(const AddonAction &action, const QStringList &argv, QString *error);
 
     // Saves exactly these bytes (after parsing them) into the user's add-on folder and notes

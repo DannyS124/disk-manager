@@ -24,6 +24,7 @@
 #include <QThread>
 
 #include "../src/addons.h"
+#include "../src/outputfilter.h"
 #include "../src/benchmark.h"
 #include "../src/surfacescan.h"
 
@@ -623,7 +624,12 @@ void addonTests()
     report(find(QStringLiteral("planted")).outside, QStringLiteral("an add-on copied in by hand is flagged as added from outside"));
     a = find(QStringLiteral("mine"));
     report(a.outside && !Addons::isTrusted(a, a.actions[0]), QStringLiteral("a changed add-on is flagged and asks again"));
-    addons.accept(QStringLiteral("planted"));
+    const QByteArray seen = find(QStringLiteral("planted")).fileHash;
+    write(planted, R"({"id":"planted","name":"Planted","actions":[{"label":"Hi","command":["echo","swapped"]}]})");
+    addons.load();
+    addons.accept(QStringLiteral("planted"), seen);
+    report(find(QStringLiteral("planted")).outside, QStringLiteral("'I Added It' doesn't accept a file that changed after it was shown"));
+    addons.accept(QStringLiteral("planted"), find(QStringLiteral("planted")).fileHash);
     addons.load();
     report(!find(QStringLiteral("planted")).outside, QStringLiteral("'I Added It' clears the flag"));
     AddonAction shell = a.actions[0];
@@ -742,6 +748,23 @@ void addonTests()
                    && Addons::whyNot(mountedOnly, usb, nullptr, false) == QLatin1String("Pick a partition first")
                    && Addons::whyNot(mountedOnly, system, &system.volumes[0], false).contains(QLatin1String("system disk")),
                QStringLiteral("the reasons an action isn't offered are plain"), Addons::whyNot(mountedOnly, usb, &usb.volumes[0], false));
+    }
+
+    // What the output window makes of a command's raw output.
+    {
+        OutputFilter f;
+        QStringList lines = f.feed("caf\xc3");
+        lines += f.feed("\xa9 \x1b[31mred\x1b[0m\x1b]0;window title\x07!\n");
+        lines += f.feed("10%\r20%\r30%\nab\b\nx\xe2\x80\xaey\xe2\x80\x8bz\n\x1b[3");
+        lines += f.feed("1mtail\n");
+        lines += f.feed(QByteArray(3000, 'x') + "\n4.0K\tnotes\n50%\r");
+        lines += f.feed("60%");
+        const QStringList expected = {QStringLiteral("café red!"), QStringLiteral("30%"), QStringLiteral("a"), QStringLiteral("xyz"),
+                                      QStringLiteral("tail"), QString(OutputFilter::kMaxLine, QLatin1Char('x')) + QChar(0x2026),
+                                      QStringLiteral("4.0K    notes")};
+        report(lines == expected && f.current() == QLatin1String("60%"),
+               QStringLiteral("output shows as plain text: split characters, colors, progress bars, hidden characters, long lines"),
+               lines.mid(0, 5).join(QStringLiteral(" | ")) + QStringLiteral(" | current: ") + f.current());
     }
 
     // The look-only sandbox: really read-only, and other programs' sockets aren't there.

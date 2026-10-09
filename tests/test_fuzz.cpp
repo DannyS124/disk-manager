@@ -18,6 +18,7 @@
 #include "../src/format.h"
 #include "../src/gpt.h"
 #include "../src/imagebackup.h"
+#include "../src/outputfilter.h"
 #include "../src/rescuecopy.h"
 #include "../src/signature.h"
 #include "../src/snapper.h"
@@ -469,6 +470,31 @@ void clonePlans()
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void commandOutput()
+{
+    // Random bytes, escape codes cut anywhere, broken UTF-8: never a crash, never a hidden
+    // character or an overlong line in what's shown.
+    const QList<QByteArray> pieces = {"\x1b", "[", "31m", "]", "0;t", "\x07", "\\", "\r", "\n", "\b", "\t", "\xc3", "\xa9",
+                                      "\xe2\x80\xae", "\xff", "abc", "%", "\x00"};
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        OutputFilter filter;
+        QStringList lines;
+        for (int n = int(rng.bounded(20)); n > 0; --n) {
+            QByteArray chunk;
+            for (int k = int(rng.bounded(8)); k > 0; --k)
+                chunk += rng.bounded(4) ? pieces[qsizetype(rng.bounded(quint32(pieces.size())))] : QByteArray(1, char(rng.bounded(256)));
+            lines += filter.feed(chunk);
+        }
+        lines << filter.current();
+        for (const QString &line : std::as_const(lines)) {
+            if (hasHiddenCharacters(line) || line.size() > OutputFilter::kMaxLine + 1)
+                bad << QString::number(i);
+        }
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 streams of junk output: shown as plain, short lines").arg(rounds()), bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void driveNames()
 {
     // Names made of the characters that cause trouble, through the backup add-on's command.
@@ -537,5 +563,6 @@ void fuzzTests()
     mountTables();
     clonePlans();
     driveNames();
+    commandOutput();
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

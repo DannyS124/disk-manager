@@ -670,11 +670,11 @@ void Addons::setEnabled(const QString &id, bool enabled)
     }
 }
 
-void Addons::accept(const QString &id)
+void Addons::accept(const QString &id, const QByteArray &fileHash)
 {
     QSettings s = settings();
     for (Addon &a : m_addons) {
-        if (a.id == id && !a.systemWide && a.error.isEmpty()) {
+        if (a.id == id && a.fileHash == fileHash && !a.systemWide && a.error.isEmpty()) {
             s.setValue(QStringLiteral("installed/") + a.id, hashText(a));
             a.outside = false;
         }
@@ -850,7 +850,7 @@ void Addons::trust(const Addon &addon, const AddonAction &action)
     s.setValue(QStringLiteral("allowed/%1-%2").arg(hashText(addon)).arg(action.index), true);
 }
 
-QStringList Addons::sandboxed(const QStringList &argv)
+QStringList Addons::sandboxed(const QStringList &argv, bool endWithParent)
 {
     // Everything read-only, with its own empty /tmp and /run, so the sockets other programs
     // listen on (the session bus, Wayland, X11, ssh-agent...) aren't there. No network, a
@@ -867,8 +867,7 @@ QStringList Addons::sandboxed(const QStringList &argv)
         QStringLiteral("--ro-bind-try"), QStringLiteral("/run/udev"), QStringLiteral("/run/udev"),
         QStringLiteral("--unshare-all"),
         QStringLiteral("--new-session"),
-        QStringLiteral("--"),
-    } + argv;
+    } + (endWithParent ? QStringList{QStringLiteral("--die-with-parent")} : QStringList()) + QStringList{QStringLiteral("--")} + argv;
 }
 
 QStringList Addons::commandLine(const AddonAction &action, const QStringList &argv, QString *error)
@@ -882,33 +881,44 @@ QStringList Addons::commandLine(const AddonAction &action, const QStringList &ar
     return command;
 }
 
+bool Addons::prepare(const AddonAction &action, const QStringList &argv, QString *error)
+{
+    auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (argv.isEmpty())
+        return fail(QObject::tr("There's nothing to run"));
+    if (inFlatpak() && QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("true")}) != 0)
+        return fail(QObject::tr("Add-ons run programs outside the Flatpak, which it isn't allowed to do yet. To allow it, run:\n"
+                                "flatpak override --user --talk-name=org.freedesktop.Flatpak " APP_ID));
+    if (!programExists(argv.first()))
+        return fail(QObject::tr("%1 isn't installed").arg(argv.first()));
+    if (action.lookOnly) {
+        if (!programExists(QStringLiteral("bwrap")))
+            return fail(QObject::tr("Look-only add-ons run in a sandbox made with bubblewrap, which isn't installed.\n"
+                                    "Install it with: sudo pacman -S bubblewrap"));
+        // Some kernels don't allow sandboxes for normal users; then it doesn't run at all.
+        if (runOnHost(sandboxed({QStringLiteral("true")})) != 0)
+            return fail(QObject::tr("The sandbox for look-only add-ons doesn't work on this system, so it wasn't run."));
+    }
+    return true;
+}
+
+QStringList Addons::processCommand(const AddonAction &action, const QStringList &argv)
+{
+    QStringList command = action.lookOnly ? sandboxed(argv, true) : argv;
+    // --watch-bus: the host side stops when DiskForge goes away.
+    if (inFlatpak())
+        command = QStringList{QStringLiteral("flatpak-spawn"), QStringLiteral("--host"), QStringLiteral("--watch-bus")} + command;
+    return command;
+}
+
 bool Addons::run(const AddonAction &action, const QStringList &argv, QString *error)
 {
-    if (inFlatpak() && QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("true")}) != 0) {
-        if (error)
-            *error = QObject::tr("Add-ons run programs outside the Flatpak, which it isn't allowed to do yet. To allow it, run:\n"
-                                 "flatpak override --user --talk-name=org.freedesktop.Flatpak " APP_ID);
+    if (!prepare(action, argv, error))
         return false;
-    }
-    if (!programExists(argv.first())) {
-        if (error)
-            *error = QObject::tr("%1 isn't installed").arg(argv.first());
-        return false;
-    }
-    if (action.lookOnly) {
-        if (!programExists(QStringLiteral("bwrap"))) {
-            if (error)
-                *error = QObject::tr("Look-only add-ons run in a sandbox made with bubblewrap, which isn't installed.\n"
-                                     "Install it with: sudo pacman -S bubblewrap");
-            return false;
-        }
-        // Some kernels don't allow sandboxes for normal users; then it doesn't run at all.
-        if (runOnHost(sandboxed({QStringLiteral("true")})) != 0) {
-            if (error)
-                *error = QObject::tr("The sandbox for look-only add-ons doesn't work on this system, so it wasn't run.");
-            return false;
-        }
-    }
     QStringList full = commandLine(action, argv, error);
     if (full.isEmpty())
         return false;

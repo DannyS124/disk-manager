@@ -66,12 +66,16 @@ const QString kOrange = QStringLiteral("#e08a1e");
 
 QString addonNotes(const AddonAction &action)
 {
+    return addonNotes(action, Addons::risks(action));
+}
+
+QString addonNotes(const AddonAction &action, const AddonRisks &r)
+{
     QString html;
     if (action.lookOnly) {
         html += note({}, QObject::tr("Look-only: runs in a read-only sandbox. It can look at your files and drives, but can't "
                                      "change anything, use the network or reach other programs."));
     } else {
-        const AddonRisks r = Addons::risks(action);
         if (!r.admin.isEmpty())
             html += note(kRed, QObject::tr("Runs as admin (root) through %1: it can change anything on this PC, including the "
                                            "drive your system runs from.").arg(r.admin));
@@ -108,7 +112,7 @@ bool askInstallAddon(QWidget *parent, const Addon &addon)
             parts << shown(part);
         if (!lines.isEmpty())
             lines << QString();
-        lines << act.label + (act.terminal ? QObject::tr("  (in a terminal)") : QString());
+        lines << act.label + (act.terminal ? QObject::tr("  (in a terminal)") : act.window ? QObject::tr("  (in a DiskForge window)") : QString());
         lines << QStringLiteral("  ") + parts.join(QLatin1Char(' '));
         const QString actionNotes = addonNotes(act);
         if (!actionNotes.isEmpty())
@@ -136,14 +140,15 @@ bool askRunAddon(QWidget *parent, const Addon &addon, const AddonAction &action,
         parts << shown(part);
     layout->addWidget(commandBox(parts.join(QLatin1Char('\n')), int(parts.size())));
 
-    const AddonRisks risks = Addons::risks(action);
-    const QString notes = (addon.outside ? outsideNote() : QString()) + addonNotes(action);
+    // What this run will really do, with the form's answers in.
+    const AddonRisks risks = action.lookOnly ? AddonRisks() : Addons::risksOf(argv);
+    const QString notes = (addon.outside ? outsideNote() : QString()) + addonNotes(action, risks);
     if (!notes.isEmpty())
         layout->addWidget(wrappingLabel(notes));
     layout->addWidget(plainLabel(risks.admin.isEmpty() ? QObject::tr("Only run add-ons you trust. It runs as you, not as root.")
                                                        : QObject::tr("Only run add-ons you trust.")));
     QCheckBox *again = nullptr;
-    if (risks.alwaysAsk()) {
+    if (risks.alwaysAsk() || Addons::risks(action, addon.settings).alwaysAsk()) {
         layout->addWidget(plainLabel(QObject::tr("Actions with admin power or that run other commands ask every time.")));
     } else {
         again = new QCheckBox(QObject::tr("Don't ask again for this action"));
