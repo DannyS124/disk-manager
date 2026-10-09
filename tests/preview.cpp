@@ -244,7 +244,7 @@ int main(int argc, char *argv[])
             RecoverDialog recoverDialog(&udisks, fake, gpt::Report());
             save(recoverDialog, out.filePath(QStringLiteral("recover.png")));
         }
-        for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
+        for (const char *id : {"classic", "deadshadow", "bluespark", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);
             save(window, out.filePath(QStringLiteral("main-%1.png").arg(QLatin1String(id))));
         }

@@ -16,7 +16,7 @@
 namespace {
 
 // Built-in themes; their names are translated here, not taken from the files.
-const QStringList kBuiltIn = {QStringLiteral("classic"), QStringLiteral("deadshadow"), QStringLiteral("high-contrast")};
+const QStringList kBuiltIn = {QStringLiteral("classic"), QStringLiteral("deadshadow"), QStringLiteral("bluespark"), QStringLiteral("high-contrast")};
 
 QString builtInName(const QString &id)
 {
@@ -24,6 +24,8 @@ QString builtInName(const QString &id)
         return QCoreApplication::translate("theme", "Classic");
     if (id == QLatin1String("deadshadow"))
         return QCoreApplication::translate("theme", "Deadshadow");
+    if (id == QLatin1String("bluespark"))
+        return QCoreApplication::translate("theme", "Bluespark");
     if (id == QLatin1String("high-contrast"))
         return QCoreApplication::translate("theme", "High Contrast");
     return id;
