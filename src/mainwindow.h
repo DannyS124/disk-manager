@@ -36,6 +36,7 @@ public:
     // Opens one of the USB tools by name, for --open: write-image, windows-usb, rescue-usb,
     // check-stick. False for a name it doesn't know.
     bool openTool(const QString &name);
+    QWidget *toolParent(); // the parent for the USB tools' dialogs
     void buildContextMenu(QMenu *menu); // the right-click menu for the current selection
     // Sets up add-on toolbar pins and shortcuts again, after add-ons or their settings changed.
     void refreshAddons();
@@ -87,6 +88,7 @@ private:
     QTreeWidget *m_table;
     DiskMap *m_map;
     bool m_syncing = false;
+    bool m_toolOnly = false; // started with --open: only the tool shows
 
     QAction *m_refresh = nullptr;
     QAction *m_open = nullptr;

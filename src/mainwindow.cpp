@@ -401,19 +401,19 @@ void MainWindow::createActions()
     m_writeImage = new QAction(themeIcon("media-flash", "document-save"), tr("&Write Image to USB…"), this);
     connect(m_writeImage, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
-        WriteImageDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+        WriteImageDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
     });
 
     m_rescueUsb = new QAction(themeIcon("tools-media-optical-burn", "media-flash"), tr("Make a &Bluespark USB…"), this);
     connect(m_rescueUsb, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
-        RescueUsbDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+        RescueUsbDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
     });
 
     m_windowsUsb = new QAction(themeIcon("windows", "media-flash"), tr("Make a W&indows USB…"), this);
     connect(m_windowsUsb, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
-        WindowsUsbDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+        WindowsUsbDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
     });
 
     m_wipe = new QAction(themeIcon("edit-clear-all", "edit-clear"), tr("&Wipe Disk…"), this);
@@ -463,7 +463,7 @@ void MainWindow::createActions()
     m_checkStick = new QAction(themeIcon("drive-removable-media-usb", "drive-removable-media"), tr("Check a USB Stic&k…"), this);
     connect(m_checkStick, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
-        StickCheckDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+        StickCheckDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
     });
 
     m_benchmark = new QAction(themeIcon("speedometer", "chronometer"), tr("&Benchmark…"), this);
@@ -1163,6 +1163,13 @@ void MainWindow::updateActions()
     updateProgress();
 }
 
+QWidget *MainWindow::toolParent()
+{
+    // Opened on its own (--open), this window stays hidden, and a dialog that belongs to a
+    // hidden window gets no taskbar button: then the tool is a window of its own.
+    return m_toolOnly ? nullptr : this;
+}
+
 bool MainWindow::openTool(const QString &name)
 {
     const QHash<QString, QAction *> tools = {{QStringLiteral("write-image"), m_writeImage},
@@ -1172,6 +1179,7 @@ bool MainWindow::openTool(const QString &name)
     QAction *action = tools.value(name);
     if (!action)
         return false;
+    m_toolOnly = true;
     action->trigger();
     return true;
 }

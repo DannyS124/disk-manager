@@ -140,6 +140,8 @@ HomeWindow::HomeWindow(UDisks *udisks, Mode mode, QWidget *parent)
         if (QScreen *screen = QGuiApplication::primaryScreen()) {
             setGeometry(screen->geometry());
             connect(screen, &QScreen::geometryChanged, this, [this](const QRect &area) { setGeometry(area); });
+            // The taskbar claims its strip after we're up: keep the bottom row above it.
+            connect(screen, &QScreen::availableGeometryChanged, this, [this] { resizeEvent(nullptr); });
         }
         m_wallpaper.load(QStringLiteral("/usr/local/share/bluespark/wallpaper.png"));
         setWindowTitle(QStringLiteral("Bluespark"));
@@ -379,7 +381,8 @@ void HomeWindow::layoutTiles()
 
 void HomeWindow::resizeEvent(QResizeEvent *event)
 {
-    QWidget::resizeEvent(event);
+    if (event)
+        QWidget::resizeEvent(event);
     if (m_mode == Mode::Desktop) {
         // The taskbar sits on top of the desktop: keep the programs row above it.
         if (QScreen *screen = this->screen()) {

@@ -134,6 +134,8 @@ int main(int argc, char *argv[])
     if (parser.isSet(homeOption)) {
         HomeWindow home(&udisks, HomeWindow::Mode::Desktop);
         home.show();
+        // A desktop window only gets the keyboard when asked; Tab then walks the tiles.
+        QTimer::singleShot(500, &home, [&home] { home.activateWindow(); });
         const int status = app.exec();
         qCInfo(lcOps).noquote() << "Home screen closed";
         return status;
