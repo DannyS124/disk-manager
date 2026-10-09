@@ -88,6 +88,8 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     m_targets->setObjectName(QStringLiteral("targets"));
     m_warning->setObjectName(QStringLiteral("warning"));
     auto *browse = new QPushButton(tr("Browse…"));
+    browse->setAutoDefault(false);
+    m_openLogs->setAutoDefault(false);
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString start = m_image->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
                                                         : QFileInfo(m_image->text()).path();

@@ -830,6 +830,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     m_sha->setObjectName(QStringLiteral("checksum"));
     m_confirm->setObjectName(QStringLiteral("confirm"));
     auto *browse = new QPushButton(tr("Browse…"));
+    browse->setAutoDefault(false);
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Choose an Image"), QDir::homePath() + QStringLiteral("/Downloads"),
                                                           tr("Disk images (*.iso *.img *.raw *.xz *.gz *.bz2 *.zst *.lzma *.zip);;All files (*)"));
@@ -842,6 +843,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     m_image->setPlaceholderText(tr("archlinux-x86_64.iso"));
     m_sha->setPlaceholderText(tr("Optional: MD5, SHA-1, SHA-256 or SHA-512 from the download page"));
     auto *fromFile = new QPushButton(tr("From a File…"));
+    fromFile->setAutoDefault(false);
     fromFile->setToolTip(tr("Take it from a checksum file, like SHA256SUMS"));
     connect(fromFile, &QPushButton::clicked, this, [this] {
         const QString image = m_image->text().trimmed();
@@ -862,6 +864,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
         m_sha->setText(QString::fromLatin1(e.hex));
     });
     auto *showAll = new QPushButton(tr("Checksums…"));
+    showAll->setAutoDefault(false);
     showAll->setToolTip(tr("Work out the MD5, SHA-1, SHA-256 and SHA-512 of the image"));
     connect(showAll, &QPushButton::clicked, this, [this] {
         if (QFileInfo(m_image->text().trimmed()).isFile())
@@ -912,6 +915,7 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     layout->addWidget(m_warning);
     m_toWindows = new QPushButton(tr("Make a Windows USB From It…"));
     m_toWindows->setVisible(false);
+    m_toWindows->setAutoDefault(false);
     connect(m_toWindows, &QPushButton::clicked, this, [this] {
         const QString iso = m_image->text().trimmed();
         const QString disk = m_targets->currentData().toString();

@@ -39,6 +39,8 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QFileDialog>
+#include <QKeyEvent>
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QFile>
@@ -1990,6 +1992,57 @@ void windowsUsb()
     cleanUpLoop(udisks, loopPath);
 }
 
+// Enter in a USB dialog goes to Close or Cancel, never to the button that erases the stick, and
+// not to Browse either, even after Browse had the focus (it used to open the file picker).
+void enterKey()
+{
+    UDisks udisks;
+    udisks.setInteractive(false);
+    QStringList pickers;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *picker = qobject_cast<QFileDialog *>(modal)) {
+            pickers << picker->windowTitle();
+            picker->reject();
+            return true;
+        }
+        return false;
+    };
+    auto check = [&](QDialog &dialog, const QString &name) {
+        pickers.clear();
+        dialog.show();
+        QCoreApplication::processEvents();
+        QPushButton *browse = findButton(&dialog, QStringLiteral("Browse…"));
+        auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("confirm"));
+        if (!browse || !confirm) {
+            report(false, QStringLiteral("%1: Browse and the name field are there").arg(name));
+            return;
+        }
+        browse->setFocus();
+        QCoreApplication::processEvents();
+        confirm->setVisible(true);
+        confirm->setFocus();
+        QCoreApplication::processEvents();
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QCoreApplication::sendEvent(confirm, &press);
+        waitUntil([&] { return !dialog.isVisible(); }, 5000);
+        report(pickers.isEmpty() && !dialog.isVisible(), QStringLiteral("%1: Enter closes it, it doesn't open the file picker").arg(name),
+               pickers.join(QStringLiteral(", ")));
+    };
+    {
+        RescueUsbDialog dialog(&udisks, QString());
+        check(dialog, QStringLiteral("Make a Rescue USB"));
+    }
+    {
+        WindowsUsbDialog dialog(&udisks, QString(), nullptr, QStringLiteral("/nonexistent/Win11.iso"));
+        check(dialog, QStringLiteral("Make a Windows USB"));
+    }
+    {
+        WriteImageDialog dialog(&udisks, QString());
+        check(dialog, QStringLiteral("Write Image to USB"));
+    }
+}
+
 // In DiskForge Rescue the few things that only change the running system are off and say why;
 // the USB tools and everything else stay on.
 void rescueMode()
@@ -2069,6 +2122,7 @@ int userScenarios()
     isoCopy();
     windowsUsb();
     rescueMode();
+    enterKey();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

@@ -79,6 +79,7 @@ WindowsUsbDialog::WindowsUsbDialog(UDisks *udisks, const QString &preferredDisk,
     m_progress->setVisible(false);
 
     auto *browse = new QPushButton(tr("Browse…"));
+    browse->setAutoDefault(false);
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Choose the Windows ISO"),
                                                           QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),

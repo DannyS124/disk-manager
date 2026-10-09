@@ -486,6 +486,7 @@ BackupDialog::BackupDialog(UDisks *udisks, const QString &objectPath, QWidget *p
     m_file->setText(folder + safeName(name) + QDate::currentDate().toString(QStringLiteral("-yyyy-MM-dd")) + QStringLiteral(".img.zst"));
 
     auto *browse = new QPushButton(tr("Browse…"));
+    browse->setAutoDefault(false);
     connect(browse, &QPushButton::clicked, this, [this] {
         QDir().mkpath(QFileInfo(m_file->text()).absolutePath());
         QString file = QFileDialog::getSaveFileName(this, tr("Save Backup As"), m_file->text(), tr("Compressed disk images (*.img.zst)"));
@@ -665,6 +666,7 @@ RestoreDialog::RestoreDialog(UDisks *udisks, const QString &objectPath, QWidget 
     setWindowTitle(tr("Restore Backup"));
     const Found f = lookUp(udisks, objectPath);
     auto *browse = new QPushButton(tr("Browse…"));
+    browse->setAutoDefault(false);
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString start = m_file->text().isEmpty() ? QDir::homePath() + QStringLiteral("/Backups") : m_file->text();
         const QString file = QFileDialog::getOpenFileName(this, tr("Choose a Backup"), start,
@@ -869,6 +871,7 @@ RescueDialog::RescueDialog(UDisks *udisks, const QString &sourceBlockPath, QWidg
     setWindowTitle(tr("Rescue Copy"));
     const Disk *source = udisks->diskByPath(sourceBlockPath);
     m_file->setText(QDir::homePath() + QStringLiteral("/Rescue/") + safeName(source ? source->model : QString()) + QStringLiteral(".img"));
+    m_browse->setAutoDefault(false);
     connect(m_browse, &QPushButton::clicked, this, [this] {
         QDir().mkpath(QFileInfo(m_file->text()).absolutePath());
         const QString file = QFileDialog::getSaveFileName(this, tr("Save the Copy As"), m_file->text(), tr("Disk images (*.img)"),
