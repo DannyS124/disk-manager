@@ -4,6 +4,7 @@
 // UDisks operations beyond partitioning: safe removal, check/repair, fstab, disk images,
 // LUKS, wiping, SMART and raw device access.
 
+#include "applog.h"
 #include "dbusnames.h"
 #include "format.h"
 #include "health.h"
@@ -642,11 +643,13 @@ void UDisks::openBlock(const QString &objectPath, OpenMode mode)
             message << (mode == OpenMode::Read ? QStringLiteral("r") : QStringLiteral("rw")) << options({{QStringLiteral("flags"), flags}});
         }
         message.setInteractiveAuthorizationAllowed(m_interactive);
+        qCInfo(lcOps).noquote() << message.member() << objectPath << "mode" << int(mode);
         ++m_pending;
         auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
         connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, objectPath, failure](QDBusPendingCallWatcher *w) {
             w->deleteLater();
             --m_pending;
+            qCInfo(lcOps).noquote() << "open" << objectPath << (w->isError() ? QStringLiteral("failed: ") + w->error().message() : QStringLiteral("done"));
             if (w->isError()) {
                 emit operationFinished(false, failure + QStringLiteral(": ") + w->error().message());
                 emit deviceOpened(objectPath, -1);

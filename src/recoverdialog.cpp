@@ -3,6 +3,7 @@
 
 #include "recoverdialog.h"
 
+#include "applog.h"
 #include "blockio.h"
 #include "dialogs.h"
 #include "diskmap.h"
@@ -400,6 +401,8 @@ void RecoverDialog::write()
         }
         const gpt::Result result = source.backup ? gpt::restoreFromBackup(fd) : recover::write(fd, source.layout);
         ::close(fd);
+        qCInfo(lcOps).noquote() << "Recover Partitions on" << m_blockPath << (source.backup ? "from the backup GPT" : "from a layout")
+                                << (result.ok ? QStringLiteral("done") : QStringLiteral("failed: ") + result.error);
         if (!result.ok) {
             m_busy = false;
             m_problem->setText(redText(result.error));

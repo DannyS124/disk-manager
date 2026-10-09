@@ -66,6 +66,7 @@ add_library(diskforge-core STATIC
     src/drivepower.cpp src/drivepower.h
     src/partrecover.cpp src/partrecover.h
     src/partscan.cpp src/partscan.h
+    src/applog.cpp src/applog.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)

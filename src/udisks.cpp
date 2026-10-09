@@ -3,6 +3,7 @@
 
 #include "udisks.h"
 
+#include "applog.h"
 #include "dbusnames.h"
 #include "btrfscheck.h"
 #include "format.h"
@@ -588,12 +589,18 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
     QDBusMessage message = QDBusMessage::createMethodCall(kService, path, interface, method);
     message.setArguments(args);
     message.setInteractiveAuthorizationAllowed(m_interactive);
+    // The arguments stay out of the log: passphrases travel in them.
+    qCInfo(lcOps).noquote() << method << path;
 
     ++m_pending;
     auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, failure, next](QDBusPendingCallWatcher *w) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, method, path, failure, next](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         --m_pending;
+        if (w->isError())
+            qCInfo(lcOps).noquote() << method << path << "failed:" << w->error().name() << w->error().message();
+        else
+            qCInfo(lcOps).noquote() << method << path << "done";
         if (w->isError() && w->error().name() == QLatin1String("org.freedesktop.UDisks2.Error.Cancelled")) {
             // Stopped on purpose (Stop, or another program): not an error.
             m_stopped = true;

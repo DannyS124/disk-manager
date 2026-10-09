@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Danny S
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "applog.h"
 #include "format.h"
 #include "mainwindow.h"
 #include "translations.h"
@@ -11,6 +12,7 @@
 #include <QIcon>
 #include <QMenu>
 #include <QMessageBox>
+#include <QSysInfo>
 #include <QTextStream>
 #include <QTimer>
 
@@ -75,14 +77,24 @@ int main(int argc, char *argv[])
                                           QStringLiteral("device"));
     const QCommandLineOption menuOption(QStringLiteral("menu"),
                                         QStringLiteral("With --screenshot: render the right-click menu of the selection."));
-    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption});
+    const QCommandLineOption logOption(QStringLiteral("log"),
+                                       QStringLiteral("Write what DiskForge does to <file>. DISKFORGE_LOG=<file> does the same."),
+                                       QStringLiteral("file"));
+    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
+
+    const QString logFile = parser.isSet(logOption) ? parser.value(logOption) : qEnvironmentVariable("DISKFORGE_LOG");
+    if (!logFile.isEmpty() && applog::start(logFile)) {
+        qCInfo(lcOps).noquote() << "DiskForge" << APP_VERSION << "started, Qt" << qVersion() << "on"
+                                << QSysInfo::prettyProductName() << QSysInfo::kernelVersion();
+    }
 
     UDisks udisks;
     if (!udisks.isAvailable()) {
         const QString message = QStringLiteral("Can't reach UDisks2: %1\nIs udisks2 installed and running?")
                                     .arg(udisks.lastError());
+        qCCritical(lcOps).noquote() << message;
         if (parser.isSet(dumpOption)) {
             QTextStream(stderr) << message << "\n";
             return 1;
@@ -94,6 +106,16 @@ int main(int argc, char *argv[])
     if (parser.isSet(dumpOption)) {
         dump(udisks.disks());
         return 0;
+    }
+    if (applog::enabled()) {
+        qCInfo(lcOps).noquote() << QStringLiteral("UDisks %1, %2 drives").arg(udisks.daemonVersion()).arg(udisks.disks().size());
+        for (const Disk &d : udisks.disks()) {
+            qCInfo(lcOps).noquote() << " " << d.device << d.model << formatSize(d.size) << tableName(d)
+                                    << (d.isSystem ? QStringLiteral("[system: %1]").arg(d.systemReason) : QString());
+        }
+        QObject::connect(&udisks, &UDisks::operationFinished, &app, [](bool ok, const QString &message) {
+            qCInfo(lcOps).noquote() << (ok ? "result:" : "failed:") << message;
+        });
     }
 
     MainWindow window(&udisks);
@@ -120,5 +142,7 @@ int main(int argc, char *argv[])
             QApplication::quit();
         });
     }
-    return app.exec();
+    const int status = app.exec();
+    qCInfo(lcOps).noquote() << "DiskForge closed";
+    return status;
 }

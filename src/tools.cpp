@@ -3,6 +3,7 @@
 
 #include "tools.h"
 
+#include "applog.h"
 #include "blockmapwidget.h"
 #include "jobui.h"
 
@@ -929,6 +930,7 @@ void WriteImageDialog::start()
             m_phase->setText(text);
         });
         connect(writer, &ImageWriter::finished, this, [this, clock](bool ok, const QString &message) {
+            qCInfo(lcOps).noquote() << "Write Image" << (ok ? "finished:" : "failed:") << message;
             delete clock;
             m_thread->quit();
             m_thread->wait();
@@ -1112,6 +1114,7 @@ void BadSectorsDialog::startScan()
                                   .arg(bad));
         });
         connect(scan, &SurfaceScan::finished, this, [this, clock](bool completed, const QVector<quint64> &bad, int logical) {
+            qCInfo(lcOps).noquote() << "Bad sector scan" << (completed ? "finished," : "stopped,") << bad.size() << "bad";
             delete clock;
             m_thread->quit();
             m_thread->wait();
@@ -1185,6 +1188,8 @@ void BadSectorsDialog::startRepair()
             m_status->setText(tr("Rewriting block %1 of %2…").arg(done).arg(total));
         });
         connect(repair, &SectorRepair::finished, this, [this](const RepairResult &r) {
+            qCInfo(lcOps).noquote() << "Sector repair: rewrote" << r.blocks << "blocks," << r.recovered << "recovered,"
+                                    << r.zeroed << "zeroed," << r.stillBad << "still bad" << r.error;
             m_thread->quit();
             m_thread->wait();
             m_thread = nullptr;

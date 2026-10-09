@@ -36,6 +36,14 @@ Render the main window to
 and exit. Works with
 .BR QT_QPA_PLATFORM=offscreen .
 .TP
+.BI \-\-log " file"
+Write what DiskForge does to
+.IR file :
+every request to UDisks2 and its result, every result shown, and Qt's warnings, one timestamped
+line each. What a request carries (passphrases among it) is never written.
+.B DISKFORGE_LOG=\fIfile\fP
+in the environment does the same.
+.TP
 .BR \-h ", " \-\-help
 Show the available options.
 .TP

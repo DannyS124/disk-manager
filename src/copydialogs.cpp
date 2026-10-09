@@ -3,6 +3,7 @@
 
 #include "copydialogs.h"
 
+#include "applog.h"
 #include "blockio.h"
 #include "blockmapwidget.h"
 #include "dialogs.h"
@@ -444,6 +445,7 @@ void CloneDialog::waitForPartitions()
 
 void CloneDialog::finish(bool ok, const QString &message)
 {
+    qCInfo(lcOps).noquote() << "Clone" << (ok ? "finished:" : "failed:") << message;
     setRunning(false);
     m_udisks->refresh();
     QString text = message;
@@ -623,6 +625,7 @@ void BackupDialog::start()
             m_meter.update(phase, done, total);
         });
         connect(m_job, &BackupJob::finished, this, [this](bool ok, const QString &message) {
+            qCInfo(lcOps).noquote() << "Back Up" << (ok ? "finished:" : "failed:") << message;
             m_thread->quit();
             m_thread->wait();
             m_thread = nullptr;
@@ -817,6 +820,7 @@ void RestoreDialog::start()
             m_meter.update(phase, done, total);
         });
         connect(m_job, &RestoreJob::finished, this, [=, this](bool ok, const QString &message, bool wrote) {
+            qCInfo(lcOps).noquote() << "Restore" << (ok ? "finished:" : "failed:") << message;
             m_thread->quit();
             m_thread->wait();
             m_thread = nullptr;
@@ -1218,6 +1222,7 @@ void RescueDialog::start()
                              + (rate > 0 ? QLatin1Char(' ') + tr("%1/s.").arg(formatSize(quint64(rate))) : QString()));
         });
         connect(m_job, &RescueCopy::finished, this, [=, this](bool completed, const QString &message) {
+            qCInfo(lcOps).noquote() << "Rescue copy" << (completed ? "finished:" : "stopped:") << message;
             delete clock;
             delete startedAt;
             m_thread->quit();
