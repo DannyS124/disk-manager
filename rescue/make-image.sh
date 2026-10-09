@@ -12,7 +12,7 @@ chroot=$work/chroot
 iso=$work/iso
 built=$(date -u +%Y-%m-%d)
 build_id=$(cat /proc/sys/kernel/random/uuid)
-name=diskforge-rescue-$version-$(date -u +%Y%m%d)
+name=bluespark-$version-$(date -u +%Y%m%d)
 deb=/src/packaging/deb/out/diskforge_${version}_amd64.deb
 [ -f "$deb" ] || { echo "No DiskForge package at $deb"; exit 1; }
 
@@ -39,8 +39,8 @@ mmdebstrap --mode=root --variant=important \
     --setup-hook='mkdir -p "$1"/var/cache/apt/archives/' \
     --setup-hook='sync-in /cache /var/cache/apt/archives/' \
     --customize-hook="sync-in $rescue/files /" \
-    --customize-hook='mkdir -p "$1/usr/local/share/diskforge-rescue"' \
-    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt /usr/local/share/diskforge-rescue" \
+    --customize-hook='mkdir -p "$1/usr/local/share/bluespark"' \
+    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt /usr/local/share/bluespark" \
     --customize-hook="copy-in $deb /tmp" \
     --customize-hook="chroot \"\$1\" apt-get install -y -q /tmp/$(basename "$deb")" \
     --customize-hook='sync-out /var/cache/apt/archives /cache' \
@@ -67,11 +67,11 @@ mksquashfs "$chroot" "$iso/live/filesystem.squashfs" -noappend -no-progress -qui
 
 echo "--> Boot files"
 # How the stick is recognized: GRUB looks for the build's own file, live-boot compares
-# live-uuid with the copy in its initrd, DiskForge reads diskforge-rescue.
-echo "DiskForge Rescue $version ($built)" > "$iso/.disk/info"
+# live-uuid with the copy in its initrd, DiskForge reads .disk/bluespark.
+echo "Bluespark $version ($built)" > "$iso/.disk/info"
 echo "$build_id" > "$iso/.disk/live-uuid-amd64"
-printf 'DiskForge Rescue\nversion=%s\nbuilt=%s\nid=%s\n' "$version" "$built" "$build_id" > "$iso/.disk/diskforge-rescue"
-: > "$iso/.disk/diskforge-$build_id"
+printf 'Bluespark\nversion=%s\nbuilt=%s\nid=%s\n' "$version" "$built" "$build_id" > "$iso/.disk/bluespark"
+: > "$iso/.disk/bluespark-$build_id"
 cp "$rescue/README.txt" "$iso/README.txt"
 
 # UEFI: shim (signed by Microsoft) starts GRUB (signed by Debian), which starts the kernel
@@ -98,7 +98,7 @@ sed -e "s/@VERSION@/$version/g" -e "s/@BUILT@/$built/g" "$rescue/boot/theme.txt"
 
 # The FAT image a PC's firmware boots from when the ISO is a CD (or a VM's CD drive).
 efi=$iso/boot/grub/efi.img
-mkfs.vfat -C -n DFR-EFI "$efi" 8192 >/dev/null
+mkfs.vfat -C -n BSPARK-EFI "$efi" 8192 >/dev/null
 mmd -i "$efi" ::/EFI ::/EFI/BOOT ::/EFI/debian
 mcopy -i "$efi" "$iso"/EFI/BOOT/* ::/EFI/BOOT/
 mcopy -i "$efi" "$iso/EFI/debian/grub.cfg" ::/EFI/debian/
@@ -114,7 +114,7 @@ echo "--> The ISO"
 # Hybrid: boots as a CD or written straight to a USB stick, on UEFI and BIOS.
 xorriso -as mkisofs -quiet \
     -iso-level 3 -full-iso9660-filenames -joliet -joliet-long -rational-rock \
-    -volid DFRESCUE -appid "DiskForge Rescue $version" -publisher DiskForge \
+    -volid BLUESPARK -appid "Bluespark $version" -publisher Bluespark \
     -eltorito-boot boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table \
     --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
     -eltorito-catalog boot/grub/boot.cat \

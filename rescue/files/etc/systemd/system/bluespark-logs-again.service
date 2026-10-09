@@ -1,9 +1,9 @@
 [Unit]
-Description=Save the DiskForge Rescue logs to the stick (every few minutes)
+Description=Save the Bluespark logs to the stick (every few minutes)
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/diskforge-rescue-logs --quiet
+ExecStart=/usr/local/bin/bluespark-logs --quiet
 TimeoutSec=90
-# 2: no stick to write to (started from the ISO). The logs stay in /run/diskforge-rescue.
+# 2: no stick to write to (started from the ISO). The logs stay in /run/bluespark.
 SuccessExitStatus=2

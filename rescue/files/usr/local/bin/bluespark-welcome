@@ -1,9 +1,9 @@
 #!/bin/bash
 # What's on the text console: the boot menu's "text mode", or when the desktop won't start.
-. /etc/diskforge-rescue.conf
+. /etc/bluespark.conf
 [ "${1:-}" = --short ] || cat <<TEXT
 
-DiskForge Rescue $VERSION, text mode
+Bluespark $VERSION, text mode
 
 TEXT
 cat <<'TEXT'
@@ -14,7 +14,7 @@ Some things that work from here (sudo doesn't ask for a password):
   sudo ddrescue -h            copy a failing drive
   lsblk                       list the drives
   nmtui                       connect to Wi-Fi
-  diskforge-rescue-logs       save the logs to the stick
+  bluespark-logs       save the logs to the stick
   startx                      try the desktop anyway
   reboot, poweroff
 

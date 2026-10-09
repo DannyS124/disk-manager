@@ -20,11 +20,11 @@ class QPushButton;
 class QThread;
 class UsbPrep;
 
-// Make a Rescue USB: turns a USB stick into a DiskForge Rescue stick from the rescue ISO.
+// Make a Bluespark USB: turns a USB stick into a Bluespark stick from the Bluespark ISO.
 // Unlike Write Image to USB, the stick gets a normal FAT32 partition with the ISO's files on
 // it, so the rescue system can keep its logs there and any PC can read them. The steps:
 // a new MBR table, one FAT32 partition marked bootable, mount it, copy and check the files,
-// unmount. It also opens the logs folder of a stick that already has DiskForge Rescue on it.
+// unmount. It also opens the logs folder of a stick that already has Bluespark on it.
 class RescueUsbDialog : public QDialog
 {
     Q_OBJECT
@@ -46,7 +46,7 @@ private:
     void updateState();
     void openLogs();
     const Disk *target() const;
-    const Volume *rescueVolume(const Disk &disk) const; // a FAT32 "DFRESCUE" partition
+    const Volume *rescueVolume(const Disk &disk) const; // a FAT32 "BLUESPARK" (or older "DFRESCUE") partition
 
     void start();
     void copyFiles(const QString &mountPoint);

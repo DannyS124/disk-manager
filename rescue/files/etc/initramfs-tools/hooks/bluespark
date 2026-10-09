@@ -5,6 +5,6 @@ case "$1" in
 prereqs) exit 0 ;;
 esac
 . /usr/share/initramfs-tools/hook-functions
-. /etc/diskforge-rescue.conf
+. /etc/bluespark.conf
 mkdir -p "$DESTDIR/conf"
 echo "$BUILD_ID" > "$DESTDIR/conf/uuid.conf"

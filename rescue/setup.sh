@@ -5,7 +5,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 version=$1 build_id=$2 built=$3
 export DEBIAN_FRONTEND=noninteractive
 
-cat > /etc/diskforge-rescue.conf <<CONF
+cat > /etc/bluespark.conf <<CONF
 VERSION=$version
 BUILD_ID=$build_id
 BUILT=$built
@@ -16,16 +16,16 @@ CONF
 sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
 locale-gen >/dev/null
 echo 'LANG=en_US.UTF-8' > /etc/default/locale
-echo diskforge-rescue > /etc/hostname
+echo bluespark > /etc/hostname
 
 # The one user, without a password: whoever is at the PC owns it. sudo and polkit
 # (files/etc) don't ask either.
-useradd --create-home --shell /bin/bash --comment "DiskForge Rescue" rescue
+useradd --create-home --shell /bin/bash --comment "Bluespark" rescue
 passwd --delete rescue >/dev/null
 for group in sudo netdev plugdev; do
     if getent group "$group" >/dev/null; then usermod -aG "$group" rescue; fi
 done
-chmod 0440 /etc/sudoers.d/diskforge-rescue
+chmod 0440 /etc/sudoers.d/bluespark
 
 # Desktop icons: rescue tools in the first column, everyday apps in the second, USB stick
 # tools in the third. The apps' own launchers are copied and given plain names. pcmanfm-qt
@@ -47,19 +47,19 @@ place() { # place <launcher> <column> <row> [new name]
     printf '[%s.desktop]\npos=@Point(%d %d)\n\n' "$1" $((12 + $2 * 130)) $((12 + $3 * 130)) >> "$positions"
 }
 place io.github.DannyS124.DiskForge 0 0
-place diskforge-rescue-photorec 0 1
-place diskforge-rescue-testdisk 0 2
-place diskforge-rescue-logs 0 3
-place diskforge-rescue-readme 0 4
+place bluespark-photorec 0 1
+place bluespark-testdisk 0 2
+place bluespark-logs 0 3
+place bluespark-readme 0 4
 place pcmanfm-qt 1 0 Files
 place firefox-esr 1 1 "Web Browser"
 place qterminal 1 2 Terminal
 place qps 1 3 "Task Manager"
 place featherpad 1 4 "Text Editor"
-place diskforge-rescue-writeimage 2 0
-place diskforge-rescue-windowsusb 2 1
-place diskforge-rescue-checkstick 2 2
-place diskforge-rescue-copystick 2 3
+place bluespark-writeimage 2 0
+place bluespark-windowsusb 2 1
+place bluespark-checkstick 2 2
+place bluespark-copystick 2 3
 chmod +x "$desktop"/*.desktop
 chown -R rescue:rescue /home/rescue
 
@@ -75,12 +75,12 @@ if [ -n "$missing" ]; then
 fi
 
 # Started on every boot
-systemctl enable diskforge-rescue-logs.service diskforge-rescue-logs.timer >/dev/null
+systemctl enable bluespark-logs.service bluespark-logs.timer >/dev/null
 # Nothing that touches the PC's own drives on its own, or keeps the stick busy
 systemctl mask fstrim.timer e2scrub_all.timer e2scrub_reap.service smartmontools.service \
     apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer >/dev/null 2>&1
 
-# The build ID goes into the initrd too (hooks/diskforge-rescue), so this initrd only
+# The build ID goes into the initrd too (hooks/bluespark), so this initrd only
 # starts from its own stick.
 update-initramfs -u -k all
 

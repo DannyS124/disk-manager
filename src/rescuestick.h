@@ -11,11 +11,11 @@
 
 #include <atomic>
 
-// DiskForge Rescue images (the ISO rescue/build.sh makes) and the USB sticks made from them.
+// Bluespark images (the ISO rescue/build.sh makes) and the USB sticks made from them.
 namespace rescue {
 
-// /.disk/diskforge-rescue, on the image and on a stick:
-//   DiskForge Rescue
+// /.disk/bluespark (/.disk/diskforge-rescue before the rename), on the image and on a stick:
+//   Bluespark
 //   version=0.5.0
 //   built=2026-10-09
 //   id=<build id>
@@ -35,11 +35,11 @@ struct Image {
     isofs::Listing listing;
     Info info;
     quint64 bytes = 0; // the files that go onto the stick
-    QString error;     // set when it isn't a DiskForge Rescue image (or can't be read)
+    QString error;     // set when it isn't a Bluespark image (or can't be read)
 };
 Image inspect(const QString &isoPath);
 
-// Whether DiskForge itself is running from DiskForge Rescue. Everything works the same there,
+// Whether DiskForge itself is running from Bluespark. Everything works the same there,
 // except what changes the running system itself (mounting at startup, cleaning it up, its
 // snapshots and schedules): that system starts fresh from the stick every time.
 bool runningInRescue();
@@ -49,14 +49,14 @@ QString runningBuildId();
 // For the tests: where runningInRescue() looks.
 extern QString rescueConfPath;
 
-// A mounted stick (or any folder) with DiskForge Rescue on it: its info, and how many boots
+// A mounted stick (or any folder) with Bluespark on it: its info, and how many boots
 // have left logs there.
 Info stickInfo(const QString &root);
 int logFolders(const QString &root);
 
 // Copies a rescue image's files onto a mounted, empty FAT32 stick, with filecopy: each file
 // is checked against the image's sha256sum.txt while it's copied, then read back from the
-// stick and checked again. The source is the ISO file, or (from inside DiskForge Rescue) the
+// stick and checked again. The source is the ISO file, or (from inside Bluespark) the
 // folder of a running rescue stick. Runs in a worker thread.
 class StickWriter : public QObject
 {

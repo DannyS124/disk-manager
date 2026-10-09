@@ -1,7 +1,7 @@
-# DiskForge Rescue
+# Bluespark
 
-A USB stick that starts any PC into a small Linux desktop with DiskForge on it, plus a few other repair
-tools. It's for when the PC's own system won't start, when a drive is dying and you don't want to boot from
+Bluespark is a USB stick that starts any PC into a small Linux desktop with DiskForge on it, plus a few other
+repair tools. It used to be called DiskForge Rescue; sticks made back then still work with DiskForge. It's for when the PC's own system won't start, when a drive is dying and you don't want to boot from
 it, or when it's a Windows PC and you'd rather not install anything on it.
 
 What's on the desktop: DiskForge, PhotoRec (Recover Files), TestDisk, a file manager, Firefox, a terminal, a
@@ -17,11 +17,11 @@ Nothing on the PC changes unless you tell it to. It doesn't mount the PC's drive
 swap, doesn't TRIM anything, and closing a laptop's lid doesn't put it to sleep in the middle of a copy.
 
 ## Making the stick
-In DiskForge: File → Make a Rescue USB, pick the ISO and the stick. That makes one FAT32 partition and copies
+In DiskForge: File → Make a Bluespark USB, pick the ISO and the stick. That makes one FAT32 partition and copies
 the ISO's files onto it, checking each one. The stick stays readable everywhere (Windows too), there's room
 left over for files, and the rescue system writes its logs there.
 
-Inside the rescue system, Copy This Rescue Stick on the desktop (or Make a Rescue USB) copies the stick it's
+Inside the rescue system, Copy This Rescue Stick on the desktop (or Make a Bluespark USB) copies the stick it's
 running from onto another one, checked against its sha256sum.txt. After "Copy to memory" the stick isn't
 mounted anymore: mount it in DiskForge and the dialog finds it.
 
@@ -71,7 +71,7 @@ rescue/build.sh
 ```
 It needs podman and about 10 GB free. No root: it all happens in a rootless container, nothing gets
 installed on your PC. The first build downloads about 1.5 GB of Debian packages and keeps them in
-`~/.cache/diskforge-rescue`. The ISO ends up in `rescue/out/`, about 1.2 GB.
+`~/.cache/bluespark`. The ISO ends up in `rescue/out/`, about 900 MB.
 
 `rescue/build.sh --no-app` reuses the DiskForge .deb from the last build, when only the rescue files changed.
 
@@ -101,9 +101,9 @@ qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -machine q35,smm=on \
   -global driver=cfi.pflash01,property=secure,value=on \
   -drive if=pflash,format=raw,unit=0,readonly=on,file=OVMF_CODE_4M.secboot.fd \
   -drive if=pflash,format=raw,unit=1,file=vars.fd \
-  -cdrom rescue/out/diskforge-rescue-*.iso -serial file:serial.log
+  -cdrom rescue/out/bluespark-*.iso -serial file:serial.log
 ```
-A stick made with Make a Rescue USB can be tested the same way: make it on an image file (as a loop device,
+A stick made with Make a Bluespark USB can be tested the same way: make it on an image file (as a loop device,
 see `rescueUsb()` in `tests/uitest.cpp`), then give QEMU
 `-drive file=stick.img,format=raw,if=none,id=s -device qemu-xhci -device usb-storage,drive=s`.
 

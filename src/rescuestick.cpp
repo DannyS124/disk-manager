@@ -17,7 +17,8 @@ namespace {
 
 constexpr quint64 kMaxSmallFile = 4 * 1024 * 1024; // sha256sum.txt and the info file
 
-const QString kInfoPath = QStringLiteral(".disk/diskforge-rescue");
+// Sticks and images made before the rename to Bluespark have the old name. Both work.
+const QStringList kInfoPaths = {QStringLiteral(".disk/bluespark"), QStringLiteral(".disk/diskforge-rescue")};
 const QString kSumsPath = QStringLiteral("sha256sum.txt");
 
 QByteArray readEntry(int fd, const isofs::Entry &entry)
@@ -39,7 +40,7 @@ QByteArray readEntry(int fd, const isofs::Entry &entry)
 
 } // namespace
 
-QString rescue::rescueConfPath = QStringLiteral("/etc/diskforge-rescue.conf");
+QString rescue::rescueConfPath = QStringLiteral("/etc/bluespark.conf");
 
 bool rescue::runningInRescue()
 {
@@ -48,7 +49,7 @@ bool rescue::runningInRescue()
 
 QString rescue::notInRescueReason()
 {
-    return QObject::tr("DiskForge Rescue starts fresh from the stick every time, so this would only change the copy in memory.");
+    return QObject::tr("Bluespark starts fresh from the stick every time, so this would only change the copy in memory.");
 }
 
 QString rescue::runningBuildId()
@@ -67,7 +68,8 @@ rescue::Info rescue::parseInfo(const QByteArray &text)
 {
     Info info;
     const QList<QByteArray> lines = text.split('\n');
-    if (lines.value(0).trimmed() != "DiskForge Rescue")
+    const QByteArray header = lines.value(0).trimmed();
+    if (header != "Bluespark" && header != "DiskForge Rescue")
         return info;
     for (const QByteArray &line : lines) {
         const qsizetype eq = line.indexOf('=');
@@ -115,7 +117,7 @@ rescue::Image rescue::inspect(const QString &isoPath)
         image.info = stickInfo(isoPath);
         QFile sums(isoPath + QLatin1Char('/') + kSumsPath);
         if (!image.info.valid() || !sums.open(QIODevice::ReadOnly)) {
-            image.error = QObject::tr("This folder doesn't hold DiskForge Rescue.");
+            image.error = QObject::tr("This folder doesn't hold Bluespark.");
             return image;
         }
         const QHash<QString, QByteArray> listed = parseSums(sums.read(kMaxSmallFile));
@@ -134,13 +136,15 @@ rescue::Image rescue::inspect(const QString &isoPath)
         ::close(fd);
         return image;
     }
-    const isofs::Entry *info = isofs::find(image.listing, kInfoPath);
+    const isofs::Entry *info = nullptr;
+    for (const QString &path : kInfoPaths)
+        info = info ? info : isofs::find(image.listing, path);
     const isofs::Entry *sums = isofs::find(image.listing, kSumsPath);
     if (info && !info->isDir)
         image.info = parseInfo(readEntry(fd, *info));
     ::close(fd);
     if (!image.info.valid() || !sums) {
-        image.error = QObject::tr("This isn't a DiskForge Rescue image. For other ISOs, use Write Image to USB.");
+        image.error = QObject::tr("This isn't a Bluespark image. For other ISOs, use Write Image to USB.");
         return image;
     }
     for (const isofs::Entry &e : image.listing.entries) {
@@ -152,10 +156,12 @@ rescue::Image rescue::inspect(const QString &isoPath)
 
 rescue::Info rescue::stickInfo(const QString &root)
 {
-    QFile file(root + QLatin1Char('/') + kInfoPath);
-    if (!file.open(QIODevice::ReadOnly))
-        return {};
-    return parseInfo(file.read(4096));
+    for (const QString &path : kInfoPaths) {
+        QFile file(root + QLatin1Char('/') + path);
+        if (file.open(QIODevice::ReadOnly))
+            return parseInfo(file.read(4096));
+    }
+    return {};
 }
 
 int rescue::logFolders(const QString &root)
@@ -178,7 +184,7 @@ void rescue::StickWriter::cancel()
 
 void rescue::StickWriter::finish(bool ok, const QString &message)
 {
-    qCInfo(lcOps).noquote() << "Make a Rescue USB" << (ok ? "finished:" : "failed:") << message;
+    qCInfo(lcOps).noquote() << "Make a Bluespark USB" << (ok ? "finished:" : "failed:") << message;
     emit finished(ok, message);
 }
 
@@ -205,8 +211,8 @@ void rescue::StickWriter::run()
         return data;
     };
     const QHash<QString, QByteArray> sums = parseSums(readSmall(find(kSumsPath)));
-    if (sums.isEmpty() || !find(kInfoPath))
-        return finish(false, tr("This isn't a DiskForge Rescue image."));
+    if (sums.isEmpty() || (!find(kInfoPaths[0]) && !find(kInfoPaths[1])))
+        return finish(false, tr("This isn't a Bluespark image."));
     for (auto it = sums.cbegin(); it != sums.cend(); ++it) {
         if (!find(it.key()))
             return finish(false, tr("The image is damaged: %1 is missing. Download it again.").arg(it.key()));
@@ -225,7 +231,7 @@ void rescue::StickWriter::run()
         ok = copied;
         message = text;
     });
-    qCInfo(lcOps).noquote() << "Make a Rescue USB: copying from" << m_source << "to" << m_root;
+    qCInfo(lcOps).noquote() << "Make a Bluespark USB: copying from" << m_source << "to" << m_root;
     m_copier = &copier;
     if (m_cancel)
         copier.cancel();
@@ -238,7 +244,7 @@ void rescue::StickWriter::run()
     QDir(m_root).mkpath(QStringLiteral("logs"));
     QFile note(m_root + QStringLiteral("/logs/README.txt"));
     if (note.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        note.write("DiskForge Rescue keeps its notes here: one folder for each time this stick started a PC,\n"
+        note.write("Bluespark keeps its notes here: one folder for each time this stick started a PC,\n"
                    "named by the date and the PC's model. summary.txt in each one is the place to start.\n");
         note.close();
     }

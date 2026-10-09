@@ -1,15 +1,15 @@
 # Saves the logs once the system is up and again on the way down.
 [Unit]
-Description=Save the DiskForge Rescue logs to the stick
+Description=Save the Bluespark logs to the stick
 After=local-fs.target systemd-journald.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/diskforge-rescue-logs --quiet
-ExecStop=/usr/local/bin/diskforge-rescue-logs --quiet --final
+ExecStart=/usr/local/bin/bluespark-logs --quiet
+ExecStop=/usr/local/bin/bluespark-logs --quiet --final
 TimeoutSec=90
-# 2: no stick to write to (started from the ISO). The logs stay in /run/diskforge-rescue.
+# 2: no stick to write to (started from the ISO). The logs stay in /run/bluespark.
 SuccessExitStatus=2
 
 [Install]

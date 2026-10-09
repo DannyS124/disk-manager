@@ -1,7 +1,7 @@
 #!/bin/bash
 # Starts the desktop on the first screen (~/.bash_profile runs this). If it won't start, it
 # says so, saves the logs and leaves a text console to work in.
-session=/run/diskforge-rescue/session
+session=/run/bluespark/session
 # DiskForge writes its own log there, and the log saver picks it up.
 export DISKFORGE_LOG=$session/diskforge.log
 
@@ -32,6 +32,6 @@ menu.
 
 The details are going to the stick now, in its logs folder.
 TEXT
-diskforge-rescue-logs
+bluespark-logs
 echo
-diskforge-rescue-welcome --short
+bluespark-welcome --short

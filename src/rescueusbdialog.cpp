@@ -33,7 +33,8 @@
 
 namespace {
 
-const QString kLabel = QStringLiteral("DFRESCUE");
+const QString kLabel = QStringLiteral("BLUESPARK");
+const QString kOldLabel = QStringLiteral("DFRESCUE"); // sticks made before the rename
 constexpr quint64 kRoomForLogs = 64 * 1024 * 1024;
 
 } // namespace
@@ -42,7 +43,7 @@ bool RescueUsbDialog::allowLoopDevicesForTest = false;
 
 QString RescueUsbDialog::findImage()
 {
-    // Inside DiskForge Rescue: the stick it's running from, the same build there's no ISO of.
+    // Inside Bluespark: the stick it's running from, the same build there's no ISO of.
     // After Copy to Memory it's not at /run/live/medium, but it can be mounted like any stick.
     if (rescue::runningInRescue()) {
         const QString running = QStringLiteral("/run/live/medium");
@@ -59,7 +60,7 @@ QString RescueUsbDialog::findImage()
                            QCoreApplication::applicationDirPath() + QStringLiteral("/../rescue/out")};
     QFileInfo newest;
     for (const QString &folder : folders) {
-        const QFileInfoList found = QDir(folder).entryInfoList({QStringLiteral("diskforge-rescue-*.iso")}, QDir::Files, QDir::Time);
+        const QFileInfoList found = QDir(folder).entryInfoList({QStringLiteral("bluespark-*.iso"), QStringLiteral("diskforge-rescue-*.iso")}, QDir::Files, QDir::Time);
         if (!found.isEmpty() && (!newest.exists() || found.first().lastModified() > newest.lastModified()))
             newest = found.first();
     }
@@ -80,7 +81,7 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     , m_phase(new QLabel)
     , m_meter(m_progress, m_phase)
 {
-    setWindowTitle(tr("Make a Rescue USB"));
+    setWindowTitle(tr("Make a Bluespark USB"));
     m_image->setObjectName(QStringLiteral("image"));
     m_imageInfo->setObjectName(QStringLiteral("imageInfo"));
     m_stickInfo->setObjectName(QStringLiteral("stickInfo"));
@@ -93,15 +94,15 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString start = m_image->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
                                                         : QFileInfo(m_image->text()).path();
-        const QString file = QFileDialog::getOpenFileName(this, tr("Choose the Rescue Image"), start,
-                                                          tr("DiskForge Rescue (diskforge-rescue-*.iso);;ISO images (*.iso)"));
+        const QString file = QFileDialog::getOpenFileName(this, tr("Choose the Bluespark Image"), start,
+                                                          tr("Bluespark (bluespark-*.iso diskforge-rescue-*.iso);;ISO images (*.iso)"));
         if (!file.isEmpty())
             m_image->setText(file);
     });
     auto *imageRow = new QHBoxLayout;
     imageRow->addWidget(m_image, 1);
     imageRow->addWidget(browse);
-    m_image->setPlaceholderText(QStringLiteral("diskforge-rescue-%1.iso").arg(QStringLiteral(APP_VERSION)));
+    m_image->setPlaceholderText(QStringLiteral("bluespark-%1.iso").arg(QStringLiteral(APP_VERSION)));
     m_imageInfo->setWordWrap(true);
     m_imageInfo->setTextFormat(Qt::RichText);
     auto *stickRow = new QHBoxLayout;
@@ -116,13 +117,13 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     m_progress->setVisible(false);
 
     auto *form = new QFormLayout;
-    form->addRow(tr("Rescue image:"), imageRow);
+    form->addRow(tr("Bluespark image:"), imageRow);
     form->addRow(QString(), m_imageInfo);
     form->addRow(tr("USB stick:"), m_targets);
     form->addRow(QString(), stickRow);
 
     auto *layout = new QVBoxLayout(this);
-    layout->addWidget(wrappingLabel(tr("DiskForge Rescue starts any PC from a USB stick, with DiskForge and other repair tools, "
+    layout->addWidget(wrappingLabel(tr("Bluespark starts any PC from a USB stick, with DiskForge and other repair tools, "
                                        "even when the PC's own system won't start. The stick stays readable on any PC, and "
                                        "the rescue system keeps its logs on it.")));
     layout->addLayout(form);
@@ -131,7 +132,7 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     layout->addWidget(m_phase);
     layout->addWidget(m_progress);
     auto *box = new QDialogButtonBox(QDialogButtonBox::Close);
-    m_make = box->addButton(tr("Make the Rescue USB"), QDialogButtonBox::ActionRole);
+    m_make = box->addButton(tr("Make the Bluespark USB"), QDialogButtonBox::ActionRole);
     m_make->setAutoDefault(false);
     box->button(QDialogButtonBox::Close)->setDefault(true);
     connect(m_make, &QPushButton::clicked, this, &RescueUsbDialog::start);
@@ -199,7 +200,7 @@ const Disk *RescueUsbDialog::target() const
 const Volume *RescueUsbDialog::rescueVolume(const Disk &disk) const
 {
     for (const Volume &v : disk.volumes) {
-        if (v.fsType == QLatin1String("vfat") && v.label == kLabel)
+        if (v.fsType == QLatin1String("vfat") && (v.label == kLabel || v.label == kOldLabel))
             return &v;
     }
     return nullptr;
@@ -214,8 +215,8 @@ void RescueUsbDialog::inspectImage()
     m_inspected = rescue::Image();
     if (path.isEmpty()) {
         m_inspected.error = rescue::runningInRescue()
-            ? tr("After Copy to Memory the rescue stick isn't mounted: mount its %1 partition and it shows up here. Or choose the DiskForge Rescue ISO.").arg(kLabel)
-            : tr("Choose the DiskForge Rescue ISO. It's on the DiskForge releases page on GitHub.");
+            ? tr("After Copy to Memory the rescue stick isn't mounted: mount its %1 partition and it shows up here. Or choose the Bluespark ISO.").arg(kLabel)
+            : tr("Choose the Bluespark ISO. It's on the DiskForge releases page on GitHub.");
         m_imageInfo->setText(m_inspected.error.toHtmlEscaped());
         return;
     }
@@ -230,8 +231,8 @@ void RescueUsbDialog::inspectImage()
         m_imageInfo->setText(redText(m_inspected.error));
         return;
     }
-    const QString what = QFileInfo(path).isDir() ? tr("A copy of the rescue stick DiskForge is running from: DiskForge Rescue %1, built %2 (%3)")
-                                                 : tr("DiskForge Rescue %1, built %2 (%3)");
+    const QString what = QFileInfo(path).isDir() ? tr("A copy of the rescue stick DiskForge is running from: Bluespark %1, built %2 (%3)")
+                                                 : tr("Bluespark %1, built %2 (%3)");
     m_imageInfo->setText(what.arg(m_inspected.info.version, m_inspected.info.built, formatSize(m_inspected.bytes)).toHtmlEscaped());
 }
 
@@ -246,16 +247,16 @@ void RescueUsbDialog::updateState()
         const QString root = existing->mounts().first();
         const rescue::Info info = rescue::stickInfo(root);
         const int boots = rescue::logFolders(root);
-        QString text = tr("This stick looks like a DiskForge Rescue stick.");
+        QString text = tr("This stick looks like a Bluespark stick.");
         if (info.valid() && boots == 0)
-            text = tr("This stick has DiskForge Rescue %1 on it, with no logs yet.").arg(info.version);
+            text = tr("This stick has Bluespark %1 on it, with no logs yet.").arg(info.version);
         else if (info.valid() && boots == 1)
-            text = tr("This stick has DiskForge Rescue %1 on it, with logs from one start.").arg(info.version);
+            text = tr("This stick has Bluespark %1 on it, with logs from one start.").arg(info.version);
         else if (info.valid())
-            text = tr("This stick has DiskForge Rescue %1 on it, with logs from %2 starts.").arg(info.version).arg(boots);
+            text = tr("This stick has Bluespark %1 on it, with logs from %2 starts.").arg(info.version).arg(boots);
         m_stickInfo->setText(text);
     } else {
-        m_stickInfo->setText(existing ? tr("This stick has DiskForge Rescue on it. Open Logs shows what it saved.") : QString());
+        m_stickInfo->setText(existing ? tr("This stick has Bluespark on it. Open Logs shows what it saved.") : QString());
     }
     m_stickInfo->setVisible(existing != nullptr);
 
@@ -276,7 +277,7 @@ void RescueUsbDialog::updateState()
     } else if (d && m_inspected.error.isEmpty()) {
         const quint64 needed = m_inspected.bytes + kRoomForLogs;
         if (d->size < needed) {
-            warning = redText(tr("This stick is too small: DiskForge Rescue needs at least %1.").arg(formatSize(needed)));
+            warning = redText(tr("This stick is too small: Bluespark needs at least %1.").arg(formatSize(needed)));
             ok = false;
         } else {
             warning = redText(tr("Everything on %1 will be erased.").arg(diskTitle(*d)));
@@ -343,7 +344,7 @@ void RescueUsbDialog::reject()
             return;
         }
         const auto answer = QMessageBox::warning(this, windowTitle(),
-                                                 tr("Stop making the rescue USB? The stick won't start anything until it's made again."),
+                                                 tr("Stop making the Bluespark USB? The stick won't start anything until it's made again."),
                                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (answer == QMessageBox::Yes && m_writer)
             m_writer->cancel(); // finish() runs when the copy stops
@@ -365,7 +366,7 @@ void RescueUsbDialog::start()
         w->setEnabled(false);
     m_progress->setRange(0, 0);
     m_progress->setVisible(true);
-    qCInfo(lcOps).noquote() << "Make a Rescue USB on" << d->device << d->model << "from" << m_inspectedPath
+    qCInfo(lcOps).noquote() << "Make a Bluespark USB on" << d->device << d->model << "from" << m_inspectedPath
                             << "version" << m_inspected.info.version << "build" << m_inspected.info.id;
 
     // One FAT32 partition, marked bootable: some PCs only offer a USB stick in their boot menu then.
@@ -378,7 +379,7 @@ void RescueUsbDialog::start()
     connect(m_prep, &UsbPrep::done, this, [this] {
         if (!m_copyDone)
             return finish(false, m_failure.isEmpty() ? tr("The files couldn't be copied.") : m_failure);
-        finish(true, tr("The rescue USB is ready.\n\n"
+        finish(true, tr("The Bluespark USB is ready.\n\n"
                         "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot "
                         "menu key (usually F12, F11, F9 or Esc), then pick the USB stick. Secure Boot can stay on.\n\n"
                         "Every start leaves its logs in the logs folder on the stick."));
@@ -415,7 +416,7 @@ void RescueUsbDialog::finish(bool ok, const QString &message, bool alreadyShown)
     }
     m_running = false;
     if (!ok)
-        qCInfo(lcOps).noquote() << "Make a Rescue USB failed:" << message;
+        qCInfo(lcOps).noquote() << "Make a Bluespark USB failed:" << message;
     m_progress->setVisible(false);
     m_udisks->refresh();
     if (ok) {

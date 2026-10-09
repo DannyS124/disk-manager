@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Danny S
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Make a Rescue USB without a USB stick: real ISOs made by xorriso from a test folder, read
+// Make a Bluespark USB without a USB stick: real ISOs made by xorriso from a test folder, read
 // back with isofs, then copied into a plain folder (standing in for the mounted stick) by
 // the same StickWriter the dialog uses. Damaged images and random corruption on top.
 
@@ -50,8 +50,8 @@ QByteArray sha(const QByteArray &data)
 QMap<QString, QByteArray> sampleFiles()
 {
     QMap<QString, QByteArray> files;
-    files[QStringLiteral(".disk/diskforge-rescue")] = "DiskForge Rescue\nversion=9.8.7\nbuilt=2026-10-09\nid=1234-abcd\n";
-    files[QStringLiteral(".disk/info")] = "DiskForge Rescue 9.8.7\n";
+    files[QStringLiteral(".disk/bluespark")] = "Bluespark\nversion=9.8.7\nbuilt=2026-10-09\nid=1234-abcd\n";
+    files[QStringLiteral(".disk/info")] = "Bluespark 9.8.7\n";
     files[QStringLiteral("README.txt")] = "read me\n";
     files[QStringLiteral("live/vmlinuz")] = randomBytes(3 * 1024 * 1024 + 17, 1);
     files[QStringLiteral("live/filesystem.squashfs")] = randomBytes(4 * 1024 * 1024, 2); // one copy chunk exactly
@@ -90,7 +90,7 @@ QString makeIso(const QString &dir, const QString &name, const QMap<QString, QBy
     // where xorriso would turn them into something else for Joliet).
     QStringList args = {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-input-charset"),
                         QStringLiteral("UTF-8"), QStringLiteral("-iso-level"), QStringLiteral("3"), QStringLiteral("-R"),
-                        QStringLiteral("-V"), QStringLiteral("DFRESCUE")};
+                        QStringLiteral("-V"), QStringLiteral("BLUESPARK")};
     if (joliet)
         args << QStringLiteral("-J") << QStringLiteral("-joliet-long");
     args << QStringLiteral("-o") << iso << tree;
@@ -137,7 +137,7 @@ void isoTests(const QString &dir)
     const int fd = ::open(QFile::encodeName(iso).constData(), O_RDONLY | O_CLOEXEC);
     const isofs::Listing listing = isofs::list(fd);
     report(listing.ok(), QStringLiteral("the image is listed"), listing.error);
-    report(listing.volumeId == QLatin1String("DFRESCUE"), QStringLiteral("with its volume name"), listing.volumeId);
+    report(listing.volumeId == QLatin1String("BLUESPARK"), QStringLiteral("with its volume name"), listing.volumeId);
     bool allThere = true, sizesRight = true, contentsRight = true;
     for (auto it = files.cbegin(); it != files.cend(); ++it) {
         const isofs::Entry *e = isofs::find(listing, it.key());
@@ -188,7 +188,7 @@ void isoTests(const QString &dir)
     report(copiedSums.open(QIODevice::ReadOnly) && copiedSums.readAll() == sums, QStringLiteral("sha256sum.txt goes along (Check the stick needs it)"));
     report(QFileInfo::exists(stick + QStringLiteral("/logs/README.txt")), QStringLiteral("the logs folder is there, with a note"));
     const rescue::Info info = rescue::stickInfo(stick);
-    report(info.valid() && info.version == QLatin1String("9.8.7"), QStringLiteral("the stick is recognized as DiskForge Rescue"));
+    report(info.valid() && info.version == QLatin1String("9.8.7"), QStringLiteral("the stick is recognized as Bluespark"));
     QDir().mkpath(stick + QStringLiteral("/logs/2026-10-09_101500_LENOVO-20XY"));
     QDir().mkpath(stick + QStringLiteral("/logs/2026-10-09_111500_VMware"));
     report(rescue::logFolders(stick) == 2, QStringLiteral("and its logs are counted"), QString::number(rescue::logFolders(stick)));
@@ -215,9 +215,20 @@ void isoTests(const QString &dir)
     report(!written.ok && written.message.contains(QLatin1String("README.txt")), QStringLiteral("a missing file is refused, naming it"),
            written.message);
 
+    // Made before the rename: the old info file still counts, on an image and on a stick.
+    QMap<QString, QByteArray> old = files;
+    old.remove(QStringLiteral(".disk/bluespark"));
+    old[QStringLiteral(".disk/diskforge-rescue")] = "DiskForge Rescue\nversion=0.5.0\nbuilt=2026-10-09\nid=old-1\n";
+    const rescue::Image oldImage = rescue::inspect(makeIso(dir, QStringLiteral("old"), old, sumsFor(old)));
+    report(oldImage.error.isEmpty() && oldImage.info.version == QLatin1String("0.5.0"),
+           QStringLiteral("an image from before the rename to Bluespark is still taken"), oldImage.error);
+    const QString oldStick = dir + QStringLiteral("/oldstick");
+    writeFile(oldStick + QStringLiteral("/.disk/diskforge-rescue"), old.value(QStringLiteral(".disk/diskforge-rescue")));
+    report(rescue::stickInfo(oldStick).id == QLatin1String("old-1"), QStringLiteral("and so is a stick made from one"));
+
     // Not a rescue image at all.
     QMap<QString, QByteArray> other = files;
-    other.remove(QStringLiteral(".disk/diskforge-rescue"));
+    other.remove(QStringLiteral(".disk/bluespark"));
     const rescue::Image notRescue = rescue::inspect(makeIso(dir, QStringLiteral("other"), other, sumsFor(other)));
     report(!notRescue.error.isEmpty() && notRescue.error.contains(QLatin1String("Write Image")),
            QStringLiteral("another ISO is pointed to Write Image to USB"), notRescue.error);
@@ -250,7 +261,7 @@ void parserTests()
            QStringList(sums.keys()).join(QLatin1Char(' ')));
 
     report(!rescue::parseInfo("Something Else\nversion=1\nid=2\n").valid(), QStringLiteral("an info file from something else isn't taken"));
-    const rescue::Info odd = rescue::parseInfo("DiskForge Rescue\nversion=1.2<b>3</b>\nid=x\n");
+    const rescue::Info odd = rescue::parseInfo("Bluespark\nversion=1.2<b>3</b>\nid=x\n");
     report(odd.valid() && odd.version == QLatin1String("1.2b3b"), QStringLiteral("only plain characters come out of the info file"), odd.version);
 }
 

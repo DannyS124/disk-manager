@@ -1,5 +1,5 @@
-DiskForge Rescue
-================
+Bluespark
+=========
 
 A USB stick that starts any PC into its own small Linux desktop with DiskForge and some
 other repair tools. Nothing on the PC changes unless you tell it to, so it's safe to use
@@ -12,7 +12,7 @@ Starting a PC from the stick
 2. Press the boot menu key right away. It's usually F12, F11, F10, F9, F8 or Esc,
    depending on the maker (Dell F12, HP F9, Lenovo F12, ASUS F8 or Esc, Acer F12,
    MSI F11). Pick the USB stick, the "UEFI" entry if there are two.
-3. The DiskForge Rescue menu shows up. Enter starts it. The desktop opens with DiskForge
+3. The Bluespark menu shows up. Enter starts it. The desktop opens with DiskForge
    after a minute or so.
 
 Secure Boot can stay on. The stick starts the same way Debian does, through boot files
@@ -20,7 +20,7 @@ signed for Secure Boot.
 
 What's in the menu
 ------------------
-Start DiskForge Rescue                the normal way
+Start Bluespark                       the normal way
 Safe graphics                         if the screen stays black or looks broken
 Text mode                             no desktop, just a command line
 Copy to memory first                  takes longer to start, then the stick can come out

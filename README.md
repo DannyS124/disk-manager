@@ -28,8 +28,8 @@ a while and wanted something simple for managing drives without going to the ter
   for Ubuntu and Debian live sticks)
 - Make a Windows 10 or 11 install stick, with the Windows 11 options (no TPM check, no Microsoft account...)
 - Check a USB stick for bad spots and for being fake (smaller than it says)
-- Make a DiskForge Rescue USB: start any PC from it (Secure Boot is fine) and fix its drives, get files back, test the
-  memory. See [docs/RESCUE.md](docs/RESCUE.md)
+- Make a Bluespark USB: Bluespark is a rescue stick that starts any PC (Secure Boot is fine) with DiskForge on it, to
+  fix its drives, get files back and test the memory. See [docs/BLUESPARK.md](docs/BLUESPARK.md)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
 - Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md)), and there's a list to install them from.

@@ -21,7 +21,7 @@ namespace isomode {
 enum class Persistence {
     None,
     Casper,   // Ubuntu and friends: an ext4 partition called casper-rw, "persistent" on the kernel line
-    LiveBoot, // Debian live (and DiskForge Rescue): one called persistence, with persistence.conf
+    LiveBoot, // Debian live (and Bluespark): one called persistence, with persistence.conf
 };
 
 struct Analysis {
