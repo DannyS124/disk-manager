@@ -52,6 +52,16 @@ case "$cmd" in
     grep -q "^## $v\$" CHANGELOG.md || die "add a '## $v' section to CHANGELOG.md first"
     ! on_github "$v" || die "v$v is already on GitHub, use a new version"
 
+    # DiskForge never takes orders from other programs: no sockets, no D-Bus service of its
+    # own, nothing listening. Keep it that way.
+    if grep -rnE 'QLocalServer|QTcpServer|QUdpSocket|QWebSocketServer|QSctpServer|registerService|registerObject|QDBusAbstractAdaptor|\blisten\(' src; then
+        die "something in src/ listens for other programs (above); DiskForge mustn't"
+    fi
+    # Invisible characters (zero-width, text direction) can make code read differently than it runs.
+    if grep -rnP '[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]' src tests data docs examples; then
+        die "invisible characters in the files above; use escapes like \\u202E instead"
+    fi
+
     echo "==> building and running the self-tests"
     cmake -S . -B build >/dev/null
     cmake --build build -j"$(nproc)" >/dev/null
@@ -72,8 +82,14 @@ case "$cmd" in
         fi
     }
     # As you: the system-disk guard and everything that works on plain files.
-    for suite in guard addons gpt copy usage backup rescuemap cleanup catalog; do
+    for suite in guard addons gpt copy usage backup rescuemap cleanup catalog fuzz; do
         run_tests $suite ./build/diskforge-selftest --$suite
+    done
+    # The same again with AddressSanitizer and UBSan, which catch memory errors that don't crash.
+    cmake -S . -B build-asan -DDISKFORGE_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug >/dev/null
+    cmake --build build-asan -j"$(nproc)" --target diskforge-selftest >/dev/null
+    for suite in addons gpt copy usage backup rescuemap catalog fuzz; do
+        run_tests asan-$suite env ASAN_OPTIONS=detect_leaks=0 ./build-asan/diskforge-selftest --$suite
     done
     # As root: test devices made with losetup and dmsetup.
     run_tests disks sudo ./build/diskforge-selftest
@@ -130,6 +146,9 @@ Install it and try it:
 On a USB stick you don't need: mount, unmount, format, new partition, resize, rename, delete,
 Back Up and Restore, Clone Drive (onto another spare stick), Rescue Copy.
 Then Disk Usage, Disk Cleanup, Optimize Drives, Btrfs Snapshots, Help, About and Check for Updates.
+Add-ons: install examples/addons/folder-sizes from a file, run it on the system disk (look-only),
+run your own add-on (it should say it was added outside DiskForge), and check what the
+run question shows.
 
 All good:  packaging/release.sh --publish $v
 Problem:   fix it, commit, and run --stage $v again

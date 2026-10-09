@@ -23,6 +23,13 @@ pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 # Ed25519, for the signature on the online add-on list
 find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS Crypto)
 
+# Memory and undefined-behaviour checks for the crash tests (release.sh builds this in build-asan).
+option(DISKFORGE_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
+if(DISKFORGE_SANITIZE)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 set(APP_DEFINITIONS
     APP_VERSION="${PROJECT_VERSION}"
     APP_ID="${APP_ID}"
@@ -97,8 +104,8 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp)
-    target_link_libraries(diskforge-selftest PRIVATE diskforge-core)
+        tests/test_catalog.cpp tests/test_fuzz.cpp)
+    target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     qt_add_executable(diskforge-preview tests/preview.cpp)
