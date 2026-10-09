@@ -30,6 +30,7 @@
 #include "../src/copydialogs.h"
 #include "../src/format.h"
 #include "../src/mainwindow.h"
+#include "../src/systemtools.h"
 #include "../src/theme.h"
 #include "../src/tools.h"
 #include "../src/udisks.h"
@@ -1327,6 +1328,136 @@ void cleanUpLoop(UDisks &udisks, const QString &loopPath)
     report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"), removed.errorMessage());
 }
 
+// A loop device of the user's own for `image` (UDisks sets those up without a password).
+QString userLoop(const QString &image)
+{
+    QFile backing(image);
+    if (!backing.open(QIODevice::ReadWrite))
+        return {};
+    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                                       QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("LoopSetup"));
+    call << QVariant::fromValue(QDBusUnixFileDescriptor(backing.handle())) << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+    const QDBusMessage reply = QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
+    return reply.arguments().value(0).value<QDBusObjectPath>().path();
+}
+
+// Mounts the stick's partition labelled `label` and gives back where.
+QString mountStick(UDisks &udisks, const QString &loopPath, const QString &label)
+{
+    QString root;
+    bool asked = false;
+    waitUntil([&] {
+        udisks.refresh();
+        const Disk *d = udisks.diskByPath(loopPath);
+        for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
+            if (v.label != label)
+                continue;
+            if (!v.mountPoints.isEmpty())
+                root = v.mountPoints.first();
+            else if (!asked) {
+                udisks.mount(v);
+                asked = true;
+            }
+        }
+        return !root.isEmpty();
+    }, 15000);
+    return root;
+}
+
+// How many files under `root` match its sha256sum.txt; `listed` gets how many it lists.
+int filesMatchingSums(const QString &root, int *listed)
+{
+    QFile sumsFile(root + QStringLiteral("/sha256sum.txt"));
+    const QHash<QString, QByteArray> sums = sumsFile.open(QIODevice::ReadOnly) ? rescue::parseSums(sumsFile.readAll()) : QHash<QString, QByteArray>();
+    int good = 0;
+    for (auto it = sums.cbegin(); it != sums.cend(); ++it) {
+        QFile f(root + QLatin1Char('/') + it.key());
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        if (f.open(QIODevice::ReadOnly) && hash.addData(&f) && hash.result().toHex() == it.value())
+            ++good;
+    }
+    *listed = int(sums.size());
+    return good;
+}
+
+// Inside DiskForge Rescue, Make a Rescue USB copies the stick it runs from. Here the stick
+// made a moment ago (mounted at `sourceRoot`, build ID "test") stands in for it, with a fake
+// rescue conf: the dialog finds it by its build ID, won't copy it onto itself, and copies it
+// onto a second stick with every file checked.
+void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &sourceRoot, const QTemporaryDir &dir)
+{
+    const QString realConf = rescue::rescueConfPath;
+    rescue::rescueConfPath = dir.filePath(QStringLiteral("diskforge-rescue.conf"));
+    QFile conf(rescue::rescueConfPath);
+    if (!conf.open(QIODevice::WriteOnly) || conf.write("VERSION=0.0.1\nBUILD_ID=test\n") < 0) {
+        report(false, QStringLiteral("write a test rescue conf"), conf.errorString());
+        rescue::rescueConfPath = realConf;
+        return;
+    }
+    conf.close();
+    report(RescueUsbDialog::findImage() == sourceRoot, QStringLiteral("in the rescue, it finds the stick it runs from by its build ID"),
+           RescueUsbDialog::findImage());
+
+    const QString image = dir.filePath(QStringLiteral("second.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("600M"), image});
+    const QString loopPath = userLoop(image);
+    const Disk *second = nullptr;
+    waitUntil([&] {
+        udisks.refresh();
+        second = udisks.diskByPath(loopPath);
+        return second != nullptr;
+    }, 15000);
+    report(second != nullptr, QStringLiteral("a second loop device for the copy"));
+    if (!second) {
+        rescue::rescueConfPath = realConf;
+        return;
+    }
+    const QString device = second->device;
+
+    QStringList boxes;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            boxes << box->text();
+            box->accept();
+            return true;
+        }
+        return false;
+    };
+    {
+        RescueUsbDialog dialog(&udisks, sourceLoop);
+        dialog.show();
+        QCoreApplication::processEvents();
+        auto *imageEdit = dialog.findChild<QLineEdit *>(QStringLiteral("image"));
+        auto *info = dialog.findChild<QLabel *>(QStringLiteral("imageInfo"));
+        auto *targets = dialog.findChild<QComboBox *>(QStringLiteral("targets"));
+        auto *warning = dialog.findChild<QLabel *>(QStringLiteral("warning"));
+        auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("confirm"));
+        QPushButton *make = findButton(&dialog, QStringLiteral("Make the Rescue USB"));
+        report(imageEdit->text() == sourceRoot && info->text().startsWith(QLatin1String("A copy of the rescue stick")),
+               QStringLiteral("the dialog starts with the running stick"), info->text());
+        report(targets->currentData().toString() == sourceLoop && warning->text().contains(QLatin1String("being copied"))
+                   && make && !make->isEnabled() && !confirm->isVisibleTo(&dialog),
+               QStringLiteral("it won't copy the stick onto itself"), warning->text());
+        targets->setCurrentIndex(targets->findData(loopPath));
+        confirm->setText(shortDevice(device));
+        report(make && make->isEnabled(), QStringLiteral("onto the second stick, typing its name unlocks the button"), warning->text());
+        if (make)
+            make->click();
+        waitUntil([&] { return !dialog.isVisible() || boxes.size() > 0; }, 120000);
+        waitUntil([&] { return !dialog.isVisible(); }, 5000);
+        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The rescue USB is ready")), QStringLiteral("the copy is ready"),
+               boxes.join(QStringLiteral(" | ")));
+    }
+    const QString root = mountStick(udisks, loopPath, QStringLiteral("DFRESCUE"));
+    int listed = 0;
+    const int good = filesMatchingSums(root, &listed);
+    report(listed > 0 && good == listed && rescue::stickInfo(root).id == QLatin1String("test"),
+           QStringLiteral("the copy has every file, matching sha256sum.txt"), QStringLiteral("%1 of %2").arg(good).arg(listed));
+    rescue::rescueConfPath = realConf;
+    cleanUpLoop(udisks, loopPath);
+}
+
 // Make a Rescue USB on a loop device of the user's own (UDisks lets you set those up and
 // change them without a password), through the dialog like a user would.
 // DISKFORGE_TEST_RESCUE_ISO uses a real rescue image instead of a small made-up one, and
@@ -1367,16 +1498,7 @@ void rescueUsb()
     QFile::remove(stickImage);
     sh(QStringLiteral("truncate"), {QStringLiteral("-s"), big ? QStringLiteral("3G") : QStringLiteral("600M"), stickImage});
 
-    QFile backing(stickImage);
-    QString loopPath;
-    if (backing.open(QIODevice::ReadWrite)) {
-        QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
-                                                           QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("LoopSetup"));
-        call << QVariant::fromValue(QDBusUnixFileDescriptor(backing.handle())) << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
-        const QDBusMessage reply = QDBusConnection::systemBus().call(call, QDBus::Block, 30000);
-        loopPath = reply.arguments().value(0).value<QDBusObjectPath>().path();
-        backing.close();
-    }
+    const QString loopPath = userLoop(stickImage);
     report(!loopPath.isEmpty(), QStringLiteral("Make a Rescue USB: a loop device stands in for the stick"));
     if (loopPath.isEmpty())
         return;
@@ -1396,17 +1518,17 @@ void rescueUsb()
     const auto stepConn = QObject::connect(&udisks, &UDisks::operationFinished, [&](bool ok, const QString &m) {
         steps << (ok ? QString() : QStringLiteral("FAILED ")) + m;
     });
-    QStringList boxes;
-    Answerer answerer;
-    answerer.answer = [&](QWidget *modal) {
-        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
-            boxes << box->text();
-            box->accept();
-            return true;
-        }
-        return false;
-    };
     {
+        QStringList boxes;
+        Answerer answerer;
+        answerer.answer = [&](QWidget *modal) {
+            if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+                boxes << box->text();
+                box->accept();
+                return true;
+            }
+            return false;
+        };
         RescueUsbDialog dialog(&udisks, loopPath);
         dialog.show();
         auto *image = dialog.findChild<QLineEdit *>(QStringLiteral("image"));
@@ -1444,29 +1566,13 @@ void rescueUsb()
            QStringLiteral("FAT32, type 0x0c, marked bootable"),
            part ? QStringLiteral("%1 %2 %3").arg(part->fsType, part->partType).arg(part->partFlags, 0, 16) : QString());
     report(part && part->mountPoints.isEmpty(), QStringLiteral("and it's unmounted at the end"));
-    if (part) {
-        udisks.mount(*part);
-        QString root;
-        waitUntil([&] {
-            udisks.refresh();
-            const Disk *d = udisks.diskByPath(loopPath);
-            for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
-                if (!v.mountPoints.isEmpty())
-                    root = v.mountPoints.first();
-            }
-            return !root.isEmpty();
-        }, 15000);
-        QFile sumsFile(root + QStringLiteral("/sha256sum.txt"));
-        const QHash<QString, QByteArray> sums = sumsFile.open(QIODevice::ReadOnly) ? rescue::parseSums(sumsFile.readAll()) : QHash<QString, QByteArray>();
-        int good = 0;
-        for (auto it = sums.cbegin(); it != sums.cend(); ++it) {
-            QFile f(root + QLatin1Char('/') + it.key());
-            QCryptographicHash hash(QCryptographicHash::Sha256);
-            if (f.open(QIODevice::ReadOnly) && hash.addData(&f) && hash.result().toHex() == it.value())
-                ++good;
-        }
-        report(!sums.isEmpty() && good == sums.size(), QStringLiteral("every file on it matches sha256sum.txt"),
-               QStringLiteral("%1 of %2").arg(good).arg(sums.size()));
+    const bool madeOne = part != nullptr;
+    if (madeOne) {
+        const QString root = mountStick(udisks, loopPath, QStringLiteral("DFRESCUE"));
+        int listed = 0;
+        const int good = filesMatchingSums(root, &listed);
+        report(listed > 0 && good == listed, QStringLiteral("every file on it matches sha256sum.txt"),
+               QStringLiteral("%1 of %2").arg(good).arg(listed));
 
         // Opened again, the dialog knows the stick.
         RescueUsbDialog again(&udisks, loopPath);
@@ -1477,6 +1583,9 @@ void rescueUsb()
         report(stickInfo && stickInfo->text().contains(QLatin1String("has DiskForge Rescue")) && openLogs && openLogs->isVisibleTo(&again),
                QStringLiteral("opened again, it says the stick has DiskForge Rescue and offers its logs"), stickInfo ? stickInfo->text() : QString());
         again.close();
+        // The made-up image's build ID is "test"; a real one has its own.
+        if (rescue::stickInfo(root).id == QLatin1String("test"))
+            copyRunningStick(udisks, loopPath, root, dir);
     }
     RescueUsbDialog::allowLoopDevicesForTest = false;
 
@@ -1860,6 +1969,69 @@ void windowsUsb()
     cleanUpLoop(udisks, loopPath);
 }
 
+// In DiskForge Rescue the few things that only change the running system are off and say why;
+// the USB tools and everything else stay on.
+void rescueMode()
+{
+    const QString realConf = rescue::rescueConfPath;
+    QTemporaryDir dir;
+    rescue::rescueConfPath = dir.filePath(QStringLiteral("diskforge-rescue.conf"));
+    UDisks udisks;
+    const QStringList offInRescue = {QStringLiteral("Mount at Startup"), QStringLiteral("Disk Cleanup"), QStringLiteral("Btrfs Snapshots")};
+    const QStringList alwaysOn = {QStringLiteral("Write Image to USB"), QStringLiteral("Make a Windows USB"),
+                                  QStringLiteral("Make a Rescue USB"), QStringLiteral("Check a USB Stick"),
+                                  QStringLiteral("Open Disk Image"), QStringLiteral("Optimize")};
+
+    auto check = [&](bool inRescue) {
+        const QString where = inRescue ? QStringLiteral("in the rescue") : QStringLiteral("on a normal PC");
+        MainWindow window(&udisks);
+        window.show();
+        if (!udisks.disks().isEmpty())
+            window.selectDevice(udisks.disks().constFirst().device);
+        QCoreApplication::processEvents();
+        for (const QString &name : offInRescue) {
+            QAction *a = findAction(window, name);
+            const bool saysWhy = a && a->toolTip() == rescue::notInRescueReason();
+            if (inRescue)
+                report(a && !a->isEnabled() && saysWhy, QStringLiteral("%1 is off %2 and says why").arg(name, where), a ? a->toolTip() : QStringLiteral("no such action"));
+            else
+                report(a && !saysWhy, QStringLiteral("%1 doesn't mention the rescue %2").arg(name, where));
+        }
+        if (!inRescue) {
+            QAction *cleanup = findAction(window, QStringLiteral("Disk Cleanup"));
+            report(cleanup && cleanup->isEnabled(), QStringLiteral("Disk Cleanup is on %1").arg(where));
+        }
+        for (const QString &name : alwaysOn) {
+            QAction *a = findAction(window, name);
+            report(a && a->isEnabled(), QStringLiteral("%1 is on %2").arg(name, where));
+        }
+        OptimizeDialog optimize(&udisks);
+        QCheckBox *weekly = nullptr;
+        for (QCheckBox *c : optimize.findChildren<QCheckBox *>()) {
+            if (c->text() == QLatin1String("Optimize every week"))
+                weekly = c;
+        }
+        if (inRescue)
+            report(weekly && !weekly->isEnabled() && weekly->toolTip() == rescue::notInRescueReason(),
+                   QStringLiteral("the weekly TRIM is off %1 and says why").arg(where));
+        else
+            report(weekly && weekly->toolTip() != rescue::notInRescueReason(), QStringLiteral("the weekly TRIM doesn't mention the rescue %1").arg(where));
+    };
+
+    report(!rescue::runningInRescue(), QStringLiteral("no rescue conf, not the rescue"));
+    check(false);
+    QFile conf(rescue::rescueConfPath);
+    if (!conf.open(QIODevice::WriteOnly) || conf.write("VERSION=test\nBUILD_ID=uitest\n") < 0) {
+        report(false, QStringLiteral("write a test rescue conf"), conf.errorString());
+        rescue::rescueConfPath = realConf;
+        return;
+    }
+    conf.close();
+    report(rescue::runningInRescue(), QStringLiteral("with the rescue conf, the rescue"));
+    check(true);
+    rescue::rescueConfPath = realConf;
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -1875,6 +2047,7 @@ int userScenarios()
     stickCheck();
     isoCopy();
     windowsUsb();
+    rescueMode();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

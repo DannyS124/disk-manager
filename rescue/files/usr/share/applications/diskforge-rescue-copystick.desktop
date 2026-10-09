@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Copy This Rescue Stick
+Comment=Make another DiskForge Rescue stick from this one
+Exec=diskforge --open rescue-usb
+Icon=media-flash
+Categories=System;

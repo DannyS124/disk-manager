@@ -7,6 +7,7 @@
 #include "dialogs.h"
 #include "format.h"
 #include "jobui.h"
+#include "rescuestick.h"
 #include "snapper.h"
 #include "systemd.h"
 
@@ -136,7 +137,9 @@ void OptimizeDialog::refresh()
         const QSignalBlocker block(m_weekly);
         m_weekly->setChecked(weekly);
     }
-    m_weekly->setEnabled(m_systemd->unitExists(kTrimTimer));
+    m_weekly->setEnabled(m_systemd->unitExists(kTrimTimer) && !rescue::runningInRescue());
+    if (rescue::runningInRescue())
+        m_weekly->setToolTip(rescue::notInRescueReason());
     m_now->setEnabled(haveUnit);
     if (!haveUnit)
         m_status->setText(tr("fstrim isn't installed (it comes with util-linux)."));

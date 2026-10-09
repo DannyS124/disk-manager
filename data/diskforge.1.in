@@ -36,6 +36,14 @@ Render the main window to
 and exit. Works with
 .BR QT_QPA_PLATFORM=offscreen .
 .TP
+.BI \-\-open " tool"
+Start with one of the USB tools open:
+.BR write-image ,
+.BR windows-usb ,
+.B rescue-usb
+or
+.BR check-stick .
+.TP
 .BI \-\-log " file"
 Write what DiskForge does to
 .IR file :

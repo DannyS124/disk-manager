@@ -39,6 +39,30 @@ QByteArray readEntry(int fd, const isofs::Entry &entry)
 
 } // namespace
 
+QString rescue::rescueConfPath = QStringLiteral("/etc/diskforge-rescue.conf");
+
+bool rescue::runningInRescue()
+{
+    return QFileInfo::exists(rescueConfPath);
+}
+
+QString rescue::notInRescueReason()
+{
+    return QObject::tr("DiskForge Rescue starts fresh from the stick every time, so this would only change the copy in memory.");
+}
+
+QString rescue::runningBuildId()
+{
+    QFile conf(rescueConfPath);
+    if (!conf.open(QIODevice::ReadOnly))
+        return {};
+    for (const QByteArray &line : conf.read(4096).split('\n')) {
+        if (line.startsWith("BUILD_ID="))
+            return QString::fromUtf8(line.mid(9).trimmed());
+    }
+    return {};
+}
+
 rescue::Info rescue::parseInfo(const QByteArray &text)
 {
     Info info;
@@ -86,6 +110,19 @@ QHash<QString, QByteArray> rescue::parseSums(const QByteArray &text)
 rescue::Image rescue::inspect(const QString &isoPath)
 {
     Image image;
+    // A running rescue stick's own folder (copying the stick DiskForge runs from).
+    if (QFileInfo(isoPath).isDir()) {
+        image.info = stickInfo(isoPath);
+        QFile sums(isoPath + QLatin1Char('/') + kSumsPath);
+        if (!image.info.valid() || !sums.open(QIODevice::ReadOnly)) {
+            image.error = QObject::tr("This folder doesn't hold DiskForge Rescue.");
+            return image;
+        }
+        const QHash<QString, QByteArray> listed = parseSums(sums.read(kMaxSmallFile));
+        for (auto it = listed.cbegin(); it != listed.cend(); ++it)
+            image.bytes += quint64(QFileInfo(isoPath + QLatin1Char('/') + it.key()).size());
+        return image;
+    }
     const int fd = ::open(QFile::encodeName(isoPath).constData(), O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
         image.error = QObject::tr("Couldn't open %1.").arg(QFileInfo(isoPath).fileName());

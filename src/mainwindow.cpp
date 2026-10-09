@@ -1144,7 +1144,28 @@ void MainWindow::updateActions()
         m_health->setToolTip(tr("This drive doesn't report health data"));
     if (v && v->encrypted && !m_startup->isEnabled() && why.isEmpty())
         m_startup->setToolTip(tr("Encrypted drives can't mount at startup yet"));
+    // In DiskForge Rescue these would only change the system in memory, which starts fresh.
+    if (rescue::runningInRescue()) {
+        for (QAction *a : {m_startup, m_cleanup, m_snapshots}) {
+            a->setEnabled(false);
+            a->setToolTip(rescue::notInRescueReason());
+            a->setStatusTip(rescue::notInRescueReason());
+        }
+    }
     updateProgress();
+}
+
+bool MainWindow::openTool(const QString &name)
+{
+    const QHash<QString, QAction *> tools = {{QStringLiteral("write-image"), m_writeImage},
+                                             {QStringLiteral("windows-usb"), m_windowsUsb},
+                                             {QStringLiteral("rescue-usb"), m_rescueUsb},
+                                             {QStringLiteral("check-stick"), m_checkStick}};
+    QAction *action = tools.value(name);
+    if (!action)
+        return false;
+    action->trigger();
+    return true;
 }
 
 void MainWindow::updateProgress()

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs inside the new system while it's being built (make-image.sh starts it).
 set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 version=$1 build_id=$2 built=$3
 export DEBIAN_FRONTEND=noninteractive
 
@@ -26,9 +27,10 @@ for group in sudo netdev plugdev; do
 done
 chmod 0440 /etc/sudoers.d/diskforge-rescue
 
-# Desktop icons: rescue tools in the first column, everyday apps in the second. The apps'
-# own launchers are copied and given plain names. pcmanfm-qt snaps the positions to its
-# grid (about 124 pixels a row), so they're spaced a little wider than that.
+# Desktop icons: rescue tools in the first column, everyday apps in the second, USB stick
+# tools in the third. The apps' own launchers are copied and given plain names. pcmanfm-qt
+# snaps the positions to its grid (about 124 pixels a row), so they're spaced a little wider
+# than that.
 desktop=/home/rescue/Desktop
 positions=/home/rescue/.config/pcmanfm-qt/lxqt/desktop-items-0.conf
 mkdir -p "$desktop" "$(dirname "$positions")"
@@ -54,8 +56,23 @@ place firefox-esr 1 1 "Web Browser"
 place qterminal 1 2 Terminal
 place qps 1 3 "Task Manager"
 place featherpad 1 4 "Text Editor"
+place diskforge-rescue-writeimage 2 0
+place diskforge-rescue-windowsusb 2 1
+place diskforge-rescue-checkstick 2 2
+place diskforge-rescue-copystick 2 3
 chmod +x "$desktop"/*.desktop
 chown -R rescue:rescue /home/rescue
+
+# Everything DiskForge can use is here, so nothing it offers is missing in the rescue system.
+missing=
+while read -r program _; do
+    case $program in ''|'#'*) continue ;; esac
+    command -v "$program" >/dev/null || missing="$missing $program"
+done < /tmp/programs.txt
+if [ -n "$missing" ]; then
+    echo "These programs DiskForge uses aren't in the image:$missing" >&2
+    exit 1
+fi
 
 # Started on every boot
 systemctl enable diskforge-rescue-logs.service diskforge-rescue-logs.timer >/dev/null

@@ -87,7 +87,10 @@ int main(int argc, char *argv[])
     const QCommandLineOption logOption(QStringLiteral("log"),
                                        QStringLiteral("Write what DiskForge does to <file>. DISKFORGE_LOG=<file> does the same."),
                                        QStringLiteral("file"));
-    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption});
+    const QCommandLineOption openOption(QStringLiteral("open"),
+                                        QStringLiteral("Start with a USB tool open: write-image, windows-usb, rescue-usb or check-stick."),
+                                        QStringLiteral("tool"));
+    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
 
@@ -132,6 +135,14 @@ int main(int argc, char *argv[])
         udisks.openImage(image);
     if (parser.isSet(selectOption) && !window.selectDevice(parser.value(selectOption)))
         QTextStream(stderr) << "No partition " << parser.value(selectOption) << "\n";
+    if (parser.isSet(openOption)) {
+        // Once the window is up, so the tool opens on top of it.
+        const QString tool = parser.value(openOption);
+        QTimer::singleShot(0, &window, [&window, tool] {
+            if (!window.openTool(tool))
+                QTextStream(stderr) << "No tool called " << tool << " (write-image, windows-usb, rescue-usb, check-stick)\n";
+        });
+    }
 
     if (parser.isSet(screenshotOption)) {
         const QString file = parser.value(screenshotOption);

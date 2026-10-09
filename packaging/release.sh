@@ -39,6 +39,7 @@ cmd="${1:-}"
 v="${2:-}"
 [[ -n "$v" ]] || die "usage: release.sh --stage|--publish|--pull|--aur <version>"
 stage="$root/packaging/staging/$v"
+rescue_iso="diskforge-rescue-$v.iso"
 tarball="diskforge-$v.tar.gz"
 pkg="diskforge-$v-1-$(uname -m).pkg.tar.zst"
 tmp=$(mktemp -d)
@@ -140,6 +141,15 @@ case "$cmd" in
         [[ -e "$tmp/root/$f" ]] || die "package is missing $f"
     done
 
+    # DiskForge Rescue, from the same source, so the stick always has the same DiskForge.
+    echo "==> building DiskForge Rescue $v (podman, takes a while)"
+    command -v podman >/dev/null || die "podman is needed to build DiskForge Rescue"
+    rescue/build.sh >"$logs/rescue.log" 2>&1 || { tail -20 "$logs/rescue.log"; die "DiskForge Rescue didn't build (full log: $logs/rescue.log)"; }
+    iso=$(ls -t rescue/out/diskforge-rescue-"$v"-*.iso 2>/dev/null | head -1)
+    [[ -n "$iso" ]] || die "the rescue build made no ISO for $v"
+    cp "$iso" "$stage/$rescue_iso"
+    (cd "$stage" && sha256sum "$rescue_iso" > "$rescue_iso.sha256")
+
     cat <<EOF
 ==> $v is staged in packaging/staging/$v. Nothing is on GitHub yet.
 
@@ -155,6 +165,9 @@ On the spare stick: Wipe Disk and Stop it halfway from the bar on top; delete a 
 put it back with Recover Partitions; Partition Type and Flags; Inspect Partition Table.
 Disk Health: the reasons, the firmware row, the Btrfs part; the warning bar and Dismiss.
 View > Theme (each one), a hard drive's Properties > Power, Rescue Copy's "Go easy" options.
+USB sticks: Check a USB Stick, Write Image to USB with a compressed image and with "copy the
+files" (and persistence), Make a Windows USB, and Make a Rescue USB with
+packaging/staging/$v/$rescue_iso. Start a PC (or a VM) from the rescue stick and look at its logs.
 
 All good:  packaging/release.sh --publish $v
 Problem:   fix it, commit, and run --stage $v again
@@ -162,7 +175,7 @@ EOF
     ;;
 
 --publish)
-    [[ -f "$stage/$tarball" && -f "$stage/$pkg" ]] || die "nothing staged for $v, run --stage $v first"
+    [[ -f "$stage/$tarball" && -f "$stage/$pkg" && -f "$stage/$rescue_iso" ]] || die "nothing staged for $v, run --stage $v first"
     ! on_github "$v" || die "v$v is already on GitHub"
     git tag -v "v$v" >/dev/null 2>&1 || die "tag v$v is missing or not signed"
     # The staged file has to be exactly what the tag produces, so what you tested is what goes up.
@@ -173,7 +186,8 @@ EOF
 
     git push -q
     git push -q origin "v$v"
-    gh release create "v$v" "$stage/$tarball" "$stage/SHA256SUMS" -R "$repo" --verify-tag --latest \
+    gh release create "v$v" "$stage/$tarball" "$stage/SHA256SUMS" "$stage/$rescue_iso" "$stage/$rescue_iso.sha256" \
+        -R "$repo" --verify-tag --latest \
         --title "DiskForge $v" --notes "$notes
 
 sha256: \`$hash\`" >/dev/null

@@ -42,7 +42,7 @@ mmdebstrap --mode=root --variant=important \
     --customize-hook="copy-in $deb /tmp" \
     --customize-hook="chroot \"\$1\" apt-get install -y -q /tmp/$(basename "$deb")" \
     --customize-hook='sync-out /var/cache/apt/archives /cache' \
-    --customize-hook="copy-in $rescue/setup.sh /tmp" \
+    --customize-hook="copy-in $rescue/setup.sh $rescue/programs.txt /tmp" \
     --customize-hook="chroot \"\$1\" bash /tmp/setup.sh '$version' '$build_id' '$built'" \
     trixie "$chroot" \
     "deb $mirror trixie $components" \

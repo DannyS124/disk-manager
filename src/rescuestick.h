@@ -39,6 +39,16 @@ struct Image {
 };
 Image inspect(const QString &isoPath);
 
+// Whether DiskForge itself is running from DiskForge Rescue. Everything works the same there,
+// except what changes the running system itself (mounting at startup, cleaning it up, its
+// snapshots and schedules): that system starts fresh from the stick every time.
+bool runningInRescue();
+QString notInRescueReason(); // why those are off, for their tooltips
+// The running rescue system's build ID (matches Info::id on its stick), or empty.
+QString runningBuildId();
+// For the tests: where runningInRescue() looks.
+extern QString rescueConfPath;
+
 // A mounted stick (or any folder) with DiskForge Rescue on it: its info, and how many boots
 // have left logs there.
 Info stickInfo(const QString &root);

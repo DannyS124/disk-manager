@@ -91,6 +91,9 @@ fdisk
 rsync
 zstd
 chntpw
+# Make a Windows USB splits install.wim with wimlib; Disk Health asks fwupd about firmware
+wimtools
+fwupd
 
 # Looking at the hardware (and for the logs)
 pciutils

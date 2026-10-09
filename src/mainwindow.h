@@ -33,6 +33,9 @@ public:
     explicit MainWindow(UDisks *udisks, QWidget *parent = nullptr);
 
     bool selectDevice(const QString &device); // e.g. /dev/sdb1, or /dev/sdb for the whole drive
+    // Opens one of the USB tools by name, for --open: write-image, windows-usb, rescue-usb,
+    // check-stick. False for a name it doesn't know.
+    bool openTool(const QString &name);
     void buildContextMenu(QMenu *menu); // the right-click menu for the current selection
     // Sets up add-on toolbar pins and shortcuts again, after add-ons or their settings changed.
     void refreshAddons();

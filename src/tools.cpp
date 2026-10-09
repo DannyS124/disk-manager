@@ -537,6 +537,10 @@ void HealthDialog::reloadBtrfs()
         }
         auto *monthly = new QCheckBox(tr("Scrub every month"));
         monthly->setChecked(m_systemd->unitFileState(timer) == QLatin1String("enabled"));
+        if (rescue::runningInRescue()) {
+            monthly->setEnabled(false);
+            monthly->setToolTip(rescue::notInRescueReason());
+        }
         connect(monthly, &QCheckBox::toggled, this, [this, timer](bool on) {
             QTimer::singleShot(0, this, [this, timer, on] { setMonthlyScrub(timer, on); });
         });

@@ -23,6 +23,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStandardPaths>
+#include <QStorageInfo>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -41,6 +42,18 @@ bool RescueUsbDialog::allowLoopDevicesForTest = false;
 
 QString RescueUsbDialog::findImage()
 {
+    // Inside DiskForge Rescue: the stick it's running from, the same build there's no ISO of.
+    // After Copy to Memory it's not at /run/live/medium, but it can be mounted like any stick.
+    if (rescue::runningInRescue()) {
+        const QString running = QStringLiteral("/run/live/medium");
+        if (rescue::stickInfo(running).valid())
+            return running;
+        const QString id = rescue::runningBuildId();
+        for (const QStorageInfo &mount : QStorageInfo::mountedVolumes()) {
+            if (!id.isEmpty() && rescue::stickInfo(mount.rootPath()).id == id)
+                return mount.rootPath();
+        }
+    }
     // Downloads first; the build folder's rescue/out too, for running DiskForge from the source tree.
     QStringList folders = {QStandardPaths::writableLocation(QStandardPaths::DownloadLocation), QDir::homePath(),
                            QCoreApplication::applicationDirPath() + QStringLiteral("/../rescue/out")};
@@ -72,6 +85,8 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     m_imageInfo->setObjectName(QStringLiteral("imageInfo"));
     m_stickInfo->setObjectName(QStringLiteral("stickInfo"));
     m_confirm->setObjectName(QStringLiteral("confirm"));
+    m_targets->setObjectName(QStringLiteral("targets"));
+    m_warning->setObjectName(QStringLiteral("warning"));
     auto *browse = new QPushButton(tr("Browse…"));
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString start = m_image->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
@@ -135,6 +150,8 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     connect(m_udisks, &UDisks::changed, this, [this] {
         if (m_running)
             return;
+        if (m_image->text().isEmpty())
+            m_image->setText(findImage()); // the rescue stick, mounted after Copy to Memory
         fillTargets(m_targets->currentData().toString());
         updateState();
     });
@@ -194,11 +211,14 @@ void RescueUsbDialog::inspectImage()
     m_inspectedPath = path;
     m_inspected = rescue::Image();
     if (path.isEmpty()) {
-        m_inspected.error = tr("Choose the DiskForge Rescue ISO. It's on the DiskForge releases page on GitHub.");
+        m_inspected.error = rescue::runningInRescue()
+            ? tr("After Copy to Memory the rescue stick isn't mounted: mount its %1 partition and it shows up here. Or choose the DiskForge Rescue ISO.").arg(kLabel)
+            : tr("Choose the DiskForge Rescue ISO. It's on the DiskForge releases page on GitHub.");
         m_imageInfo->setText(m_inspected.error.toHtmlEscaped());
         return;
     }
-    if (!QFileInfo(path).isFile()) {
+    // A folder is a running rescue stick (see findImage).
+    if (!QFileInfo(path).isFile() && !QFileInfo(path).isDir()) {
         m_inspected.error = tr("File not found");
         m_imageInfo->setText(redText(m_inspected.error));
         return;
@@ -208,9 +228,9 @@ void RescueUsbDialog::inspectImage()
         m_imageInfo->setText(redText(m_inspected.error));
         return;
     }
-    m_imageInfo->setText(tr("DiskForge Rescue %1, built %2 (%3)")
-                             .arg(m_inspected.info.version, m_inspected.info.built, formatSize(m_inspected.bytes))
-                             .toHtmlEscaped());
+    const QString what = QFileInfo(path).isDir() ? tr("A copy of the rescue stick DiskForge is running from: DiskForge Rescue %1, built %2 (%3)")
+                                                 : tr("DiskForge Rescue %1, built %2 (%3)");
+    m_imageInfo->setText(what.arg(m_inspected.info.version, m_inspected.info.built, formatSize(m_inspected.bytes)).toHtmlEscaped());
 }
 
 void RescueUsbDialog::updateState()
@@ -239,7 +259,19 @@ void RescueUsbDialog::updateState()
 
     bool ok = d && m_inspected.error.isEmpty();
     QString warning;
-    if (d && m_inspected.error.isEmpty()) {
+    // Copying a rescue stick: not onto itself.
+    bool isSource = false;
+    if (d && QFileInfo(m_inspectedPath).isDir()) {
+        const QString source = QFileInfo(m_inspectedPath).canonicalFilePath();
+        for (const Volume &v : d->volumes) {
+            for (const QString &mp : v.mounts())
+                isSource = isSource || QFileInfo(mp).canonicalFilePath() == source;
+        }
+    }
+    if (isSource) {
+        warning = redText(tr("That's the stick being copied. Plug in another one."));
+        ok = false;
+    } else if (d && m_inspected.error.isEmpty()) {
         const quint64 needed = m_inspected.bytes + kRoomForLogs;
         if (d->size < needed) {
             warning = redText(tr("This stick is too small: DiskForge Rescue needs at least %1.").arg(formatSize(needed)));
@@ -257,7 +289,7 @@ void RescueUsbDialog::updateState()
         }
     }
     m_warning->setText(warning);
-    m_confirm->setVisible(d && m_inspected.error.isEmpty());
+    m_confirm->setVisible(d && m_inspected.error.isEmpty() && !isSource);
     m_make->setEnabled(ok);
 }
 
