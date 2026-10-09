@@ -17,6 +17,7 @@ optdepends=(
   'pacman-contrib: clean up the package cache in Disk Cleanup'
   'snapper: list Btrfs snapshots'
   'bubblewrap: run look-only add-ons in a read-only sandbox'
+  'fwupd: look for drive firmware updates in Disk Health'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('49488d50d351425049072fea429b89fe12ed21edcad457020b8658fc265d4f1b')

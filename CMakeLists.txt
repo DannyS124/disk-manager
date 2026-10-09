@@ -60,6 +60,7 @@ add_library(diskforge-core STATIC
     src/signature.cpp src/signature.h
     src/outputfilter.cpp src/outputfilter.h
     src/health.cpp src/health.h
+    src/firmware.cpp src/firmware.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)

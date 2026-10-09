@@ -253,6 +253,7 @@ void UDisks::refresh()
             d.model = d.backingFile.section(QLatin1Char('/'), -1);
         d.model = cleanName(d.model);
         d.serial = cleanName(drive.value(QStringLiteral("Serial")).toString());
+        d.revision = cleanName(drive.value(QStringLiteral("Revision")).toString());
         d.bus = drive.value(QStringLiteral("ConnectionBus")).toString();
         d.removable = drive.value(QStringLiteral("Removable")).toBool();
         d.rotationRate = drive.value(QStringLiteral("RotationRate"), -1).toInt();

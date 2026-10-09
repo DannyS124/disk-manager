@@ -6,6 +6,7 @@
 
 #include "testkit.h"
 
+#include "../src/firmware.h"
 #include "../src/health.h"
 
 #include <QTemporaryDir>
@@ -141,6 +142,50 @@ void healthTests()
     report(health::worseThan(more, dismissed) && health::worseThan(other, dismissed) && !health::worseThan(better, dismissed)
                && health::worseThan(shown, {}),
            QStringLiteral("it comes back when a number goes up or something new appears, not when it gets better"));
+
+    // fwupd, from what it said on this PC (serials shortened).
+    auto device = [](const char *name, const char *version, const char *serial, quint64 flags) {
+        return QVariantMap{{QStringLiteral("DeviceId"), QStringLiteral("id-") + QLatin1String(name)},
+                           {QStringLiteral("Name"), QLatin1String(name)},
+                           {QStringLiteral("Version"), QLatin1String(version)},
+                           {QStringLiteral("Serial"), QLatin1String(serial)},
+                           {QStringLiteral("Plugin"), QStringLiteral("nvme")},
+                           {QStringLiteral("Flags"), flags}};
+    };
+    const quint64 updatable = 4644337652597003ULL; // internal, updatable, needs AC, needs a reboot
+    const QVector<firmware::Device> fw = firmware::devices({device("SSD 990 PRO 1TB", "8B2QJXD7", "S7LAN", updatable),
+                                                            device("HTS545050A7E380", "GG2OACA0", "TE851", 4503600164241675ULL),
+                                                            device("Cruzer Glide", "1.26", "", 4503599627370496ULL)});
+    report(fw.size() == 3 && fw[0].updatable() && fw[1].updatable() && !fw[2].updatable(), QStringLiteral("fwupd's devices are read, with the updatable flag"));
+    report(firmware::match(fw, QStringLiteral("TE851"), QString(), QString()) == 1
+               && firmware::match(fw, QString(), QStringLiteral("Samsung SSD 990 PRO 1TB"), QStringLiteral("8B2QJXD7")) == 0
+               && firmware::match(fw, QStringLiteral("OTHER"), QStringLiteral("Samsung SSD 990 PRO 1TB"), QStringLiteral("8B2QJXD7")) == -1
+               && firmware::match(fw, QString(), QStringLiteral("Samsung SSD 990 PRO 1TB"), QStringLiteral("8B2QJXD8")) == -1
+               && firmware::match(fw, QString(), QStringLiteral("SanDisk Cruzer Glide"), QStringLiteral("1.26")) == 2,
+           QStringLiteral("a drive is matched by serial, or by model and firmware version"));
+    const QVector<firmware::Device> twins = firmware::devices({device("Twin", "1.0", "", updatable), device("Twin", "1.0", "", updatable)});
+    report(firmware::match(twins, QString(), QStringLiteral("Twin"), QStringLiteral("1.0")) == -1, QStringLiteral("two alike without serials aren't guessed"));
+
+    const QVariantMap never{{QStringLiteral("Enabled"), true}, {QStringLiteral("Type"), 1u}, {QStringLiteral("ModificationTime"), quint64(-1)}};
+    const QVariantMap fresh{{QStringLiteral("Enabled"), true}, {QStringLiteral("Type"), 1u}, {QStringLiteral("ModificationTime"), quint64(1790000000)}};
+    const QVariantMap folder{{QStringLiteral("Enabled"), true}, {QStringLiteral("Type"), 3u}, {QStringLiteral("ModificationTime"), quint64(1791327398)}};
+    using FwState = firmware::Result::State;
+    const firmware::Result noList = firmware::outcome(fw[0], {}, QStringLiteral("org.freedesktop.fwupd.NotSupported"),
+                                                      QStringLiteral("no components in silo"), {folder, never});
+    const firmware::Result upToDate = firmware::outcome(fw[0], {}, QStringLiteral("org.freedesktop.fwupd.NothingToDo"),
+                                                        QStringLiteral("No upgrades for SSD 990 PRO 1TB"), {folder, fresh});
+    const firmware::Result available = firmware::outcome(fw[1], {{{QStringLiteral("Version"), QStringLiteral("GG2OACA1")}}}, {}, {}, {fresh});
+    const firmware::Result stick = firmware::outcome(fw[2], {}, QStringLiteral("org.freedesktop.fwupd.NotSupported"), {}, {fresh});
+    const firmware::Result broken = firmware::outcome(fw[0], {}, QStringLiteral("org.freedesktop.fwupd.Internal"), QStringLiteral("oops"), {fresh});
+    report(noList.state == FwState::NoList && firmware::describe(noList).contains(QLatin1String("fwupdmgr refresh")),
+           QStringLiteral("no list downloaded says how to get one"), firmware::describe(noList));
+    report(upToDate.state == FwState::UpToDate && upToDate.listDate.isValid(), QStringLiteral("nothing newer, with a list, is up to date"),
+           firmware::describe(upToDate));
+    report(available.state == FwState::Available && available.newVersion == QLatin1String("GG2OACA1")
+               && firmware::describe(available).contains(QLatin1String("GG2OACA1")),
+           QStringLiteral("a newer version is shown, and DiskForge doesn't install it"), firmware::describe(available));
+    report(stick.state == FwState::NotUpdatable && broken.state == FwState::Error && broken.error == QLatin1String("oops"),
+           QStringLiteral("a drive fwupd can't update, and other errors, say so"));
 
     int described = 0;
     for (const int id : {1, 3, 4, 5, 7, 9, 10, 12, 177, 184, 187, 188, 190, 194, 196, 197, 198, 199, 231, 241})

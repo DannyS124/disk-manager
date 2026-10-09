@@ -213,12 +213,29 @@ table:
 void previewTools(UDisks &udisks, const QDir &out)
 {
     for (const Disk &d : udisks.disks()) {
+        // fwupd answers in the background; wait for it (when it's running) before the picture.
+        auto settle = [](QWidget &dialog) {
+            QElapsedTimer waited;
+            waited.start();
+            auto asking = [&dialog] {
+                for (QLabel *l : dialog.findChildren<QLabel *>()) {
+                    if (l->text().contains(QLatin1String("Asking fwupd")))
+                        return true;
+                }
+                return false;
+            };
+            do
+                QApplication::processEvents(QEventLoop::AllEvents, 50);
+            while (asking() && waited.elapsed() < 15000);
+        };
         if (d.health.nvme) {
             HealthDialog nvme(&udisks, d.blockPath);
+            settle(nvme);
             save(nvme, out.filePath(QStringLiteral("health-nvme.png")));
         }
         if (d.health.state == Health::State::Warning || d.health.state == Health::State::Failing) {
             HealthDialog health(&udisks, d.blockPath);
+            settle(health);
             save(health, out.filePath(QStringLiteral("health.png")));
             BadSectorsDialog scan(&udisks, d);
             save(scan, out.filePath(QStringLiteral("badsectors.png")));

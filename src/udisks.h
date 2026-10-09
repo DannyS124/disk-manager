@@ -92,6 +92,7 @@ struct Disk {
     QString device;
     QString model;
     QString serial;
+    QString revision; // firmware version
     QString bus; // "usb" or empty
     QString tableType; // "gpt", "dos" or empty
     quint64 size = 0;

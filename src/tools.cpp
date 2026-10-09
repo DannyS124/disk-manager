@@ -30,7 +30,10 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QThread>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QTextDocument>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -46,6 +49,22 @@ QString healthColor(Health::State s)
     case Health::State::Unknown: break;
     }
     return theme.html(Theme::Role::Muted);
+}
+
+// The first firmware updater app that's installed, as a command line. None in a Flatpak:
+// those would have to be started on the host.
+QStringList firmwareUpdater()
+{
+    if (QFileInfo::exists(QStringLiteral("/.flatpak-info")))
+        return {};
+    const QList<QStringList> apps = {{QStringLiteral("plasma-discover"), QStringLiteral("--mode"), QStringLiteral("update")},
+                                     {QStringLiteral("gnome-firmware")},
+                                     {QStringLiteral("gnome-software"), QStringLiteral("--mode"), QStringLiteral("updates")}};
+    for (const QStringList &app : apps) {
+        if (!QStandardPaths::findExecutable(app.first()).isEmpty())
+            return app;
+    }
+    return {};
 }
 
 QString selftestText(const Health &h)
@@ -261,6 +280,11 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
     layout->addLayout(buttons);
 
     connect(m_udisks, &UDisks::changed, this, &HealthDialog::reload);
+    // Firmware: only asked by itself when fwupd is already running (asking starts it).
+    if (!firmware::installed())
+        m_firmware.state = firmware::Result::State::NotInstalled;
+    else if (firmware::running())
+        checkFirmware();
     reload();
     resize(640, 560);
 }
@@ -319,6 +343,33 @@ void HealthDialog::reload()
     if (!h.criticalWarnings.isEmpty())
         row(tr("Warnings:"), h.criticalWarnings.join(QStringLiteral(", ")));
     row(tr("Self-test:"), selftestText(h));
+    if (!disk->isLoop && !disk->revision.isEmpty()) {
+        // The version from the drive, then what fwupd says about it, with what can be done.
+        auto *firmwareBox = new QWidget;
+        auto *firmwareLayout = new QHBoxLayout(firmwareBox);
+        firmwareLayout->setContentsMargins(0, 0, 0, 0);
+        const QString said = m_firmwareBusy ? tr("Asking fwupd…") : firmware::describe(m_firmware);
+        auto *firmwareText = new QLabel(said.isEmpty() ? disk->revision : tr("%1. %2").arg(disk->revision, said));
+        firmwareText->setTextFormat(Qt::PlainText);
+        firmwareText->setWordWrap(true);
+        firmwareText->setTextInteractionFlags(Qt::TextSelectableByMouse); // the fwupdmgr commands
+        firmwareLayout->addWidget(firmwareText, 1);
+        using State = firmware::Result::State;
+        if (!m_firmwareBusy && m_firmware.state != State::NotInstalled && m_firmware.state != State::NotUpdatable
+            && m_firmware.state != State::Unknown) {
+            auto *check = new QPushButton(m_firmware.state == State::NotRunning ? tr("Check for Updates") : tr("Check Again"));
+            connect(check, &QPushButton::clicked, this, &HealthDialog::checkFirmware);
+            firmwareLayout->addWidget(check, 0, Qt::AlignTop);
+        }
+        const QStringList updater = firmwareUpdater();
+        if (m_firmware.state == State::Available && !updater.isEmpty()) {
+            auto *open = new QPushButton(tr("Open Updater"));
+            connect(open, &QPushButton::clicked, this, [updater] { QProcess::startDetached(updater.first(), updater.mid(1)); });
+            firmwareLayout->addWidget(open, 0, Qt::AlignTop);
+        }
+        auto *firmwareName = new QLabel(tr("Firmware:"));
+        m_form->addRow(firmwareName, firmwareBox);
+    }
     m_selftest->setEnabled(h.selftestStatus != QLatin1String("inprogress"));
 
     const QVector<SmartAttribute> attrs = m_udisks->smartAttributes(*disk);
@@ -331,7 +382,9 @@ void HealthDialog::reload()
         auto *item = ata ? new QTreeWidgetItem(m_attributes, {QString::number(a.id), a.name, info.name, QString::number(a.value),
                                                                QString::number(a.worst), QString::number(a.threshold), a.raw})
                          : new QTreeWidgetItem(m_attributes, {a.name, a.raw});
-        item->setData(0, Qt::UserRole, info.meaning);
+        if (!info.meaning.isEmpty())
+            item->setData(0, Qt::UserRole, tr("%1: %2").arg(info.name, info.meaning)
+                                               + (info.counts ? QLatin1Char(' ') + tr("This one counts toward the verdict.") : QString()));
         if (!info.meaning.isEmpty())
             for (int c = 0; c < item->columnCount(); ++c)
                 item->setToolTip(c, Qt::convertFromPlainText(info.meaning, Qt::WhiteSpaceNormal));
@@ -350,6 +403,24 @@ void HealthDialog::reload()
     for (int c = 0; c < m_attributes->columnCount(); ++c)
         m_attributes->resizeColumnToContents(c);
     m_meaning->setText(ata ? tr("Bold ones count toward the verdict. Select one to see what it means.") : QString());
+}
+
+void HealthDialog::checkFirmware()
+{
+    const Disk *disk = m_udisks->diskByPath(m_blockPath);
+    if (!disk || m_firmwareBusy)
+        return;
+    m_firmwareBusy = true;
+    auto *check = new firmware::Check(this);
+    connect(check, &firmware::Check::finished, this, [this, check](const firmware::Result &result) {
+        check->deleteLater();
+        m_firmware = result;
+        m_firmwareBusy = false;
+        reload();
+    });
+    check->start(disk->serial, disk->model, disk->revision);
+    // Shown on the next pass: the Check button is in the rows reload() rebuilds.
+    QTimer::singleShot(0, this, &HealthDialog::reload);
 }
 
 // --- Benchmark ----------------------------------------------------------------

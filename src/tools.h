@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "firmware.h"
 #include "udisks.h"
 
 #include <QDialog>
@@ -77,6 +78,9 @@ private:
     QTreeWidget *m_attributes;
     QLabel *m_meaning; // what the selected attribute is
     QPushButton *m_selftest;
+    void checkFirmware();
+    firmware::Result m_firmware;
+    bool m_firmwareBusy = false;
 };
 
 class BenchmarkDialog : public QDialog

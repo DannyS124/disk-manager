@@ -17,6 +17,7 @@
 #include "../src/clone.h"
 #include "../src/format.h"
 #include "../src/gpt.h"
+#include "../src/firmware.h"
 #include "../src/health.h"
 #include "../src/imagebackup.h"
 #include "../src/outputfilter.h"
@@ -543,6 +544,63 @@ void healthVerdicts()
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+// Text made of the characters that cause trouble (hidden, bidi, separators, emoji).
+QString randomText(int length)
+{
+    static const QList<char32_t> pieces = {U'a', U'Z', U'0', U' ', U'-', U'.', U'/', U'\\', U'"', U'\n', U'\0', 0x202E,
+                                           0x200B, 0xFEFF, 0x2028, 0x1F4BE, 0x00E4, U'{', U'<'};
+    QString out;
+    for (int n = 0; n < length; ++n) {
+        const char32_t c = pieces[qsizetype(rng.bounded(quint32(pieces.size())))];
+        out += QString::fromUcs4(&c, 1);
+    }
+    return out;
+}
+
+void firmwareAnswers()
+{
+    // Random fwupd dictionaries: never a crash, and "available" only with an update listed for
+    // a drive it can update.
+    const QStringList keys = {QStringLiteral("DeviceId"), QStringLiteral("Name"), QStringLiteral("Version"), QStringLiteral("Serial"),
+                              QStringLiteral("Flags"), QStringLiteral("Plugin"), QStringLiteral("Enabled"), QStringLiteral("Type"),
+                              QStringLiteral("ModificationTime")};
+    auto randomMap = [&keys] {
+        QVariantMap m;
+        for (const QString &key : keys) {
+            switch (rng.bounded(5)) {
+            case 0: break;
+            case 1: m.insert(key, randomText(int(rng.bounded(40)))); break;
+            case 2: m.insert(key, quint64(rng.generate64())); break;
+            case 3: m.insert(key, bool(rng.bounded(2))); break;
+            default: m.insert(key, QVariant()); break;
+            }
+        }
+        return m;
+    };
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        QList<QVariantMap> reply, upgrades, remotes;
+        for (int n = int(rng.bounded(5)); n > 0; --n)
+            reply << randomMap();
+        for (int n = int(rng.bounded(3)); n > 0; --n)
+            upgrades << randomMap();
+        for (int n = int(rng.bounded(3)); n > 0; --n)
+            remotes << randomMap();
+        const QVector<firmware::Device> list = firmware::devices(reply);
+        const int found = firmware::match(list, randomText(int(rng.bounded(8))), randomText(int(rng.bounded(20))), randomText(int(rng.bounded(8))));
+        if (found < -1 || found >= list.size())
+            bad << QStringLiteral("match %1").arg(i);
+        firmware::Device device = list.value(qMax(0, found));
+        const firmware::Result r = firmware::outcome(device, upgrades, rng.bounded(2) ? QStringLiteral("org.freedesktop.fwupd.NothingToDo") : randomText(10),
+                                                     randomText(int(rng.bounded(300))), remotes);
+        if ((r.state == firmware::Result::State::Available) != (device.updatable() && !upgrades.isEmpty()) || r.error.size() > 200)
+            bad << QStringLiteral("outcome %1").arg(i);
+        firmware::describe(r);
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 random fwupd answers: no crash, and an update only when there is one").arg(rounds()),
+           bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void driveNames()
 {
     // Names made of the characters that cause trouble, through the backup add-on's command.
@@ -613,5 +671,6 @@ void fuzzTests()
     driveNames();
     commandOutput();
     healthVerdicts();
+    firmwareAnswers();
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }
