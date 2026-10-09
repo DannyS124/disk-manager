@@ -4,6 +4,7 @@
 #include "blockmapwidget.h"
 
 #include "format.h"
+#include "theme.h"
 
 #include <QHelpEvent>
 #include <QPainter>
@@ -15,6 +16,7 @@
 BlockMapWidget::BlockMapWidget(QWidget *parent)
     : QWidget(parent)
 {
+    connect(&Theme::instance(), &Theme::changed, this, qOverload<>(&QWidget::update));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
@@ -30,21 +32,22 @@ void BlockMapWidget::addSamples(const QVector<ReadSample> &samples)
     update();
 }
 
-QColor BlockMapWidget::colour(BlockMapData::State state, const QPalette &palette)
+QColor BlockMapWidget::colour(BlockMapData::State state, const QPalette &)
 {
+    const Theme &theme = Theme::instance();
     switch (state) {
     case BlockMapData::State::Good:
-        return QColor(0x3f, 0xae, 0x5a);
+        return theme.color(Theme::Role::MapGood);
     case BlockMapData::State::Slow:
-        return QColor(0xe8, 0x9a, 0x2f);
+        return theme.color(Theme::Role::MapSlow);
     case BlockMapData::State::Pending:
-        return QColor(0xd8, 0xc8, 0x3a);
+        return theme.color(Theme::Role::MapRetry);
     case BlockMapData::State::Bad:
-        return QColor(0xd9, 0x3a, 0x34);
+        return theme.color(Theme::Role::MapBad);
     case BlockMapData::State::Unread:
         break;
     }
-    return palette.color(QPalette::Mid);
+    return theme.color(Theme::Role::MapUnread);
 }
 
 int BlockMapWidget::legendHeight() const

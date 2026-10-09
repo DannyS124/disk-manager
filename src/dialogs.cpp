@@ -4,6 +4,7 @@
 #include "dialogs.h"
 
 #include "format.h"
+#include "theme.h"
 #include "tools.h"
 
 #include <QComboBox>
@@ -45,7 +46,7 @@ QDialogButtonBox *buttons(QDialog *dialog, const QString &actionText, QPushButto
 
 QString red(const QString &text)
 {
-    return QStringLiteral("<span style=\"color:#e05050\"><b>%1</b></span>").arg(text.toHtmlEscaped());
+    return QStringLiteral("<span style=\"color:%1\"><b>%2</b></span>").arg(Theme::instance().html(Theme::Role::Danger), text.toHtmlEscaped());
 }
 
 } // namespace

@@ -6,6 +6,7 @@
 #include "format.h"
 #include "jobui.h"
 #include "squarify.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -54,6 +55,7 @@ QString countText(quint64 files)
 TreemapWidget::TreemapWidget(QWidget *parent)
     : QWidget(parent)
 {
+    connect(&Theme::instance(), &Theme::changed, this, qOverload<>(&QWidget::update));
     setMouseTracking(true);
     setMinimumSize(240, 180);
 }
@@ -79,10 +81,10 @@ void TreemapWidget::layoutBoxes()
 QColor TreemapWidget::colour(int child) const
 {
     const UsageNode &c = m_node->children[child];
-    if (!c.isDir) // grey for the folded "n smaller files", blue-grey for a file
-        return c.files > 1 ? QColor(0xb8, 0xbc, 0xc4) : QColor(0x9a, 0xb0, 0xc8);
-    // Folders get well-spread hues, so neighbours rarely look alike.
-    return QColor::fromHsvF(std::fmod(0.58 + child * 0.618034, 1.0), 0.45, 0.88);
+    const Theme &theme = Theme::instance();
+    if (!c.isDir) // the folded "n smaller files", or a single file
+        return theme.color(c.files > 1 ? Theme::Role::UsageSmallFiles : Theme::Role::UsageFile);
+    return theme.usageColor(child);
 }
 
 void TreemapWidget::paintEvent(QPaintEvent *)
@@ -117,7 +119,7 @@ void TreemapWidget::paintEvent(QPaintEvent *)
         p.drawRect(box);
 
         if (box.width() > 50 && box.height() > fm.height() + 2) {
-            p.setPen(QColor(0x20, 0x20, 0x20));
+            p.setPen(Theme::textOn(fill));
             const QRectF text = box.adjusted(4, 1, -4, -1);
             const int width = int(text.width());
             const QString name = fm.elidedText(c.name, Qt::ElideMiddle, width);

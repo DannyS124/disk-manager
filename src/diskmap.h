@@ -30,8 +30,6 @@ public:
     void selectVolume(const QString &objectPath); // doesn't emit selectionChanged
     void selectDisk(int index);
 
-    static QColor partitionColor(const QPalette &palette);
-    static QColor freeColor();
 
     QSize sizeHint() const override;
 

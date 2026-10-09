@@ -4,6 +4,7 @@
 #include "diskmap.h"
 
 #include "format.h"
+#include "theme.h"
 
 #include <QContextMenuEvent>
 #include <QHelpEvent>
@@ -37,18 +38,9 @@ QString diskIconName(const Disk &d)
 DiskMap::DiskMap(QWidget *parent)
     : QWidget(parent)
 {
+    connect(&Theme::instance(), &Theme::changed, this, qOverload<>(&QWidget::update));
     setMinimumWidth(kHeaderWidth + 3 * kMinSegment);
     setFocusPolicy(Qt::ClickFocus);
-}
-
-QColor DiskMap::partitionColor(const QPalette &palette)
-{
-    return palette.color(QPalette::Highlight);
-}
-
-QColor DiskMap::freeColor()
-{
-    return QColor(128, 128, 128);
 }
 
 QSize DiskMap::sizeHint() const
@@ -316,9 +308,9 @@ void DiskMap::paintHeader(QPainter &p, int row) const
     QString state = d.isSystem ? tr("System disk") : d.isLoop && d.readOnly ? tr("Read-only image") : tr("Online");
     QColor dot;
     switch (d.health.state) {
-    case Health::State::Healthy: dot = QColor(0x2e, 0xcc, 0x71); break;
-    case Health::State::Warning: dot = QColor(0xf3, 0x9c, 0x12); break;
-    case Health::State::Failing: dot = QColor(0xe7, 0x4c, 0x3c); break;
+    case Health::State::Healthy: dot = Theme::instance().color(Theme::Role::Good); break;
+    case Health::State::Warning: dot = Theme::instance().color(Theme::Role::Warning); break;
+    case Health::State::Failing: dot = Theme::instance().color(Theme::Role::Danger); break;
     case Health::State::Unknown: break;
     }
     if (dot.isValid())
@@ -355,7 +347,9 @@ void DiskMap::paintSegment(QPainter &p, int row, int segment) const
     const QRect r = m_rows[row].segments[segment].rect.adjusted(segment ? 2 : 0, 0, 0, 0);
 
     p.fillRect(r, pal.color(QPalette::Base));
-    p.fillRect(QRect(r.left(), r.top(), r.width(), kStrip), span.isFree() ? freeColor() : partitionColor(pal));
+    const Theme &theme = Theme::instance();
+    p.fillRect(QRect(r.left(), r.top(), r.width(), kStrip),
+               span.isFree() ? theme.color(Theme::Role::Free) : theme.partitionColor(d.volumes[span.volume].effectiveFsType()));
     const QRect body = r.adjusted(0, kStrip, 0, 0);
     if (selected) {
         QColor hatch = pal.color(QPalette::Highlight);

@@ -15,6 +15,7 @@
 #include "tools.h"
 #include "diskmap.h"
 #include "format.h"
+#include "theme.h"
 #include "updates.h"
 #include "udisks.h"
 
@@ -54,7 +55,7 @@ QIcon themeIcon(const char *name, const char *fallback)
     return QIcon::fromTheme(QLatin1String(name), QIcon::fromTheme(QLatin1String(fallback)));
 }
 
-QWidget *legendItem(const QPixmap &swatch, const QString &text)
+QWidget *legendItem(const QPixmap &swatch, const QString &text, QLabel **swatchLabel = nullptr)
 {
     auto *item = new QWidget;
     auto *layout = new QHBoxLayout(item);
@@ -62,6 +63,8 @@ QWidget *legendItem(const QPixmap &swatch, const QString &text)
     layout->setSpacing(4);
     auto *icon = new QLabel;
     icon->setPixmap(swatch);
+    if (swatchLabel)
+        *swatchLabel = icon;
     layout->addWidget(icon);
     layout->addWidget(new QLabel(text));
     return item;
@@ -116,8 +119,15 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     m_progress->setTextVisible(false);
     m_progress->setVisible(false);
     statusBar()->addPermanentWidget(m_progress);
-    statusBar()->addPermanentWidget(legendItem(colorSwatch(DiskMap::freeColor()), tr("Unallocated")));
-    statusBar()->addPermanentWidget(legendItem(colorSwatch(DiskMap::partitionColor(palette())), tr("Partition")));
+    QLabel *freeSwatch = nullptr, *partitionSwatch = nullptr;
+    statusBar()->addPermanentWidget(legendItem({}, tr("Unallocated"), &freeSwatch));
+    statusBar()->addPermanentWidget(legendItem({}, tr("Partition"), &partitionSwatch));
+    auto paintLegend = [freeSwatch, partitionSwatch] {
+        freeSwatch->setPixmap(colorSwatch(Theme::instance().color(Theme::Role::Free)));
+        partitionSwatch->setPixmap(colorSwatch(Theme::instance().color(Theme::Role::Partition)));
+    };
+    paintLegend();
+    connect(&Theme::instance(), &Theme::changed, this, paintLegend);
     statusBar()->addPermanentWidget(legendItem(QIcon::fromTheme(QStringLiteral("object-locked")).pixmap(12, 12),
                                                tr("System disk (read-only)")));
 

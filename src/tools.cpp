@@ -11,6 +11,7 @@
 #include "format.h"
 #include "imagewriter.h"
 #include "surfacescan.h"
+#include "theme.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -35,13 +36,14 @@ namespace {
 
 QString healthColor(Health::State s)
 {
+    const Theme &theme = Theme::instance();
     switch (s) {
-    case Health::State::Healthy: return QStringLiteral("#2ecc71");
-    case Health::State::Warning: return QStringLiteral("#f39c12");
-    case Health::State::Failing: return QStringLiteral("#e74c3c");
+    case Health::State::Healthy: return theme.html(Theme::Role::Good);
+    case Health::State::Warning: return theme.html(Theme::Role::Warning);
+    case Health::State::Failing: return theme.html(Theme::Role::Danger);
     case Health::State::Unknown: break;
     }
-    return QStringLiteral("#888888");
+    return theme.html(Theme::Role::Muted);
 }
 
 QString selftestText(const Health &h)
@@ -309,7 +311,7 @@ void HealthDialog::reload()
                          : new QTreeWidgetItem(m_attributes, {a.name, a.raw});
         if (a.failing) {
             for (int c = 0; c < item->columnCount(); ++c)
-                item->setForeground(c, QColor(QStringLiteral("#e74c3c")));
+                item->setForeground(c, Theme::instance().color(Theme::Role::Danger));
         }
     }
     for (int c = 0; c < m_attributes->columnCount(); ++c)

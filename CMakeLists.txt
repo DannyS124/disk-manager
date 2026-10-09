@@ -82,6 +82,7 @@ add_library(diskforge-ui STATIC
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
     src/translations.cpp src/translations.h
+    src/theme.cpp src/theme.h
 )
 target_link_libraries(diskforge-ui PUBLIC diskforge-core Qt6::Widgets Qt6::Network)
 target_compile_options(diskforge-ui PRIVATE -Wall -Wextra)

@@ -7,6 +7,7 @@
 #include "addons.h"
 #include "catalogdialog.h"
 #include "dialogs.h"
+#include "theme.h"
 
 #include <QDesktopServices>
 #include <QDir>
@@ -141,9 +142,9 @@ void AddonsDialog::fill()
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, a.enabled ? Qt::Checked : Qt::Unchecked);
         if (!a.error.isEmpty())
-            item->setForeground(3, QColor(QStringLiteral("#e74c3c")));
+            item->setForeground(3, Theme::instance().color(Theme::Role::Danger));
         else if (a.outside)
-            item->setForeground(3, QColor(QStringLiteral("#e08a1e")));
+            item->setForeground(3, Theme::instance().color(Theme::Role::Warning));
     }
     m_filling = false;
     if (m_list->topLevelItemCount() > 0)
@@ -171,7 +172,8 @@ void AddonsDialog::showDetails()
     if (!a.description.isEmpty())
         html += QStringLiteral("<p>%1</p>").arg(a.description.toHtmlEscaped());
     if (!a.error.isEmpty())
-        html += QStringLiteral("<p style=\"color:#e74c3c\"><b>%1</b></p>").arg(tr("Broken: %1").arg(a.error).toHtmlEscaped());
+        html += QStringLiteral("<p style=\"color:%1\"><b>%2</b></p>")
+                    .arg(Theme::instance().html(Theme::Role::Danger), tr("Broken: %1").arg(a.error).toHtmlEscaped());
     if (a.outside && a.error.isEmpty())
         html += outsideNote();
     for (const AddonAction &act : a.actions) {
