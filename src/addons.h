@@ -155,6 +155,12 @@ public:
     static void setSetting(const Addon &addon, const QString &field, const QString &value);
     // Stable name for an action, for pins and shortcuts: "<add-on id>/<label>".
     static QString actionKey(const Addon &addon, const AddonAction &action);
+    // Toolbar pins and keyboard shortcuts, by actionKey. Only the user sets these, in the
+    // Add-ons window; an add-on file can't pin itself or take a key.
+    static bool isPinned(const QString &key);
+    static void setPinned(const QString &key, bool pinned);
+    static QString shortcut(const QString &key); // portable text, like "Ctrl+Alt+B"
+    static void setShortcut(const QString &key, const QString &keys);
 
     // Trust is remembered per add-on file, so any change to the file asks again.
     static bool isTrusted(const Addon &addon, const AddonAction &action);

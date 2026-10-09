@@ -19,6 +19,9 @@ class UDisks;
 struct Disk;
 struct Volume;
 
+class QShortcut;
+class QToolBar;
+class QKeySequence;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -27,6 +30,8 @@ public:
 
     bool selectDevice(const QString &device); // e.g. /dev/sdb1, or /dev/sdb for the whole drive
     void buildContextMenu(QMenu *menu); // the right-click menu for the current selection
+    // Sets up add-on toolbar pins and shortcuts again, after add-ons or their settings changed.
+    void refreshAddons();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -53,6 +58,9 @@ private:
     void checkForUpdates();
     bool addAddonActions(QMenu *menu); // false if none apply
     void runAddon(const QString &addonId, const QString &label);
+    // Why an add-on action doesn't fit the current selection; empty if it does.
+    QString addonReason(const QString &addonId, const QString &label) const;
+    QList<QKeySequence> takenShortcuts() const; // the window's own, for the Add-ons window
     int selectedDiskNumber() const;
 
     const Disk *selectedDisk() const;
@@ -101,6 +109,9 @@ private:
     QAction *m_secureErase = nullptr;
     QProgressBar *m_progress = nullptr;
     Addons m_addons;
+    QToolBar *m_toolbar = nullptr;
+    QList<QAction *> m_pinned; // add-on actions pinned to the toolbar, and their separator
+    QList<QShortcut *> m_shortcuts;
     HelpWindow *m_help = nullptr;
     UpdateChecker *m_updates = nullptr;
 };

@@ -828,6 +828,34 @@ QString Addons::actionKey(const Addon &addon, const AddonAction &action)
     return addon.id + QLatin1Char('/') + QString::fromLatin1(QUrl::toPercentEncoding(action.label));
 }
 
+bool Addons::isPinned(const QString &key)
+{
+    return settings().value(QStringLiteral("pinned/") + key).toBool();
+}
+
+void Addons::setPinned(const QString &key, bool pinned)
+{
+    QSettings s = settings();
+    if (pinned)
+        s.setValue(QStringLiteral("pinned/") + key, true);
+    else
+        s.remove(QStringLiteral("pinned/") + key);
+}
+
+QString Addons::shortcut(const QString &key)
+{
+    return settings().value(QStringLiteral("shortcuts/") + key).toString();
+}
+
+void Addons::setShortcut(const QString &key, const QString &keys)
+{
+    QSettings s = settings();
+    if (keys.isEmpty())
+        s.remove(QStringLiteral("shortcuts/") + key);
+    else
+        s.setValue(QStringLiteral("shortcuts/") + key, keys);
+}
+
 bool Addons::isTrusted(const Addon &addon, const AddonAction &action)
 {
     // Admin power, a shell, or an add-on that turned up from outside: always ask.

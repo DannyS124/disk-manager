@@ -3,10 +3,12 @@
 
 #include "addonsdialog.h"
 
+#include "addonform.h"
 #include "addonprompt.h"
 #include "addons.h"
 #include "catalogdialog.h"
 #include "dialogs.h"
+#include "format.h"
 #include "theme.h"
 
 #include <QDesktopServices>
@@ -15,19 +17,55 @@
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeySequenceEdit>
+#include <QLabel>
 #include <QPushButton>
+#include <QTableWidget>
 #include <QTextBrowser>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
-AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
+AddonsDialog::AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShortcuts, QWidget *parent)
     : QDialog(parent)
     , m_addons(addons)
     , m_list(new QTreeWidget)
     , m_details(new QTextBrowser)
     , m_accept(new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok")), tr("I Added It")))
+    , m_settings(new QPushButton(QIcon::fromTheme(QStringLiteral("configure")), tr("Settings…")))
+    , m_actions(new QTableWidget)
+    , m_taken(takenShortcuts)
 {
+    m_actions->setColumnCount(3);
+    m_actions->setHorizontalHeaderLabels({tr("Action"), tr("On toolbar"), tr("Shortcut")});
+    m_actions->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_actions->verticalHeader()->hide();
+    m_actions->setSelectionMode(QAbstractItemView::NoSelection);
+    connect(m_actions, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *item) {
+        if (!m_filling && item->column() == 1)
+            Addons::setPinned(item->data(Qt::UserRole).toString(), item->checkState() == Qt::Checked);
+    });
+    connect(m_settings, &QPushButton::clicked, this, [this] {
+        const int row = currentRow();
+        if (row < 0)
+            return;
+        const Addon a = m_addons->all()[row];
+        QMap<QString, QString> values;
+        for (const AddonField &f : a.settings)
+            values.insert(f.id, Addons::setting(a, f.id));
+        AddonFormDialog form(tr("Settings for %1").arg(a.name), QString(), a.settings, values, tr("Save"), this);
+        if (form.exec() != QDialog::Accepted)
+            return;
+        const QMap<QString, QString> answers = form.values();
+        for (auto it = answers.constBegin(); it != answers.constEnd(); ++it) {
+            if (hasHiddenCharacters(it.value())) {
+                warnPlain(this, windowTitle(), tr("A value has hidden characters in it, so the settings weren't saved."));
+                return;
+            }
+        }
+        for (auto it = answers.constBegin(); it != answers.constEnd(); ++it)
+            Addons::setSetting(a, it.key(), it.value());
+    });
     setWindowTitle(tr("Add-ons"));
     m_list->setHeaderLabels({tr("Add-on"), tr("Version"), tr("Author"), tr("Status")});
     m_list->setRootIsDecorated(false);
@@ -118,6 +156,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     buttons->addWidget(install);
     buttons->addWidget(remove);
     buttons->addWidget(m_accept);
+    buttons->addWidget(m_settings);
     buttons->addWidget(folder);
     buttons->addWidget(guide);
     buttons->addStretch();
@@ -126,9 +165,12 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_list, 2);
     layout->addWidget(m_details, 3);
+    auto *actionsLabel = new QLabel(tr("Its actions (pin one to the toolbar, or give it a shortcut):"));
+    layout->addWidget(actionsLabel);
+    layout->addWidget(m_actions, 2);
     layout->addLayout(buttons);
     fill();
-    resize(720, 520);
+    resize(780, 640);
 }
 
 void AddonsDialog::fill()
@@ -136,6 +178,8 @@ void AddonsDialog::fill()
     m_filling = true;
     m_list->clear();
     m_accept->setEnabled(false);
+    m_settings->setEnabled(false);
+    m_actions->setRowCount(0);
     for (const Addon &a : m_addons->all()) {
         const QString status = !a.error.isEmpty() ? tr("Broken") : a.outside ? tr("Added outside") : a.enabled ? tr("On") : tr("Off");
         auto *item = new QTreeWidgetItem(m_list, {a.name.isEmpty() ? a.file : a.name, a.version, a.author, status});
@@ -165,6 +209,8 @@ void AddonsDialog::showDetails()
 {
     const int row = currentRow();
     m_accept->setEnabled(row >= 0 && m_addons->all()[row].outside && m_addons->all()[row].error.isEmpty());
+    m_settings->setEnabled(row >= 0 && !m_addons->all()[row].settings.isEmpty() && m_addons->all()[row].error.isEmpty());
+    showActions(row);
     if (row < 0)
         return;
     const Addon &a = m_addons->all()[row];
@@ -184,4 +230,70 @@ void AddonsDialog::showDetails()
     }
     html += QStringLiteral("<p><small>%1</small></p>").arg(a.file.toHtmlEscaped());
     m_details->setHtml(html);
+}
+
+void AddonsDialog::showActions(int row)
+{
+    m_filling = true;
+    m_actions->setRowCount(0);
+    if (row >= 0 && m_addons->all()[row].error.isEmpty()) {
+        const Addon &a = m_addons->all()[row];
+        for (const AddonAction &act : a.actions) {
+            const QString key = Addons::actionKey(a, act);
+            const int r = m_actions->rowCount();
+            m_actions->insertRow(r);
+            auto *label = new QTableWidgetItem(act.label);
+            label->setFlags(Qt::ItemIsEnabled);
+            m_actions->setItem(r, 0, label);
+            auto *pin = new QTableWidgetItem;
+            pin->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+            pin->setCheckState(Addons::isPinned(key) ? Qt::Checked : Qt::Unchecked);
+            pin->setData(Qt::UserRole, key);
+            m_actions->setItem(r, 1, pin);
+            auto *keys = new QKeySequenceEdit(QKeySequence(Addons::shortcut(key), QKeySequence::PortableText));
+            keys->setMaximumSequenceLength(1);
+            keys->setClearButtonEnabled(true);
+            connect(keys, &QKeySequenceEdit::editingFinished, this, [this, keys, key] {
+                const QString problem = shortcutProblem(keys->keySequence(), key);
+                if (!problem.isEmpty()) {
+                    warnPlain(this, windowTitle(), problem);
+                    keys->setKeySequence(QKeySequence(Addons::shortcut(key), QKeySequence::PortableText));
+                    return;
+                }
+                Addons::setShortcut(key, keys->keySequence().toString(QKeySequence::PortableText));
+            });
+            connect(keys, &QKeySequenceEdit::keySequenceChanged, this, [key](const QKeySequence &seq) {
+                if (seq.isEmpty()) // the clear button
+                    Addons::setShortcut(key, QString());
+            });
+            m_actions->setCellWidget(r, 2, keys);
+        }
+    }
+    m_actions->resizeColumnToContents(1);
+    m_actions->setColumnWidth(2, 180);
+    m_filling = false;
+}
+
+QString AddonsDialog::shortcutProblem(const QKeySequence &keys, const QString &actionKey) const
+{
+    if (keys.isEmpty())
+        return {};
+    const QKeyCombination combo = keys[0];
+    const int key = int(combo.key());
+    const bool fKey = key >= Qt::Key_F1 && key <= Qt::Key_F35;
+    if (!(combo.keyboardModifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) && !fKey)
+        return tr("Use a key together with Ctrl, Alt or Meta (or an F key), so it can't go off while you type.");
+    const QString shown = keys.toString(QKeySequence::NativeText);
+    for (const QKeySequence &taken : m_taken) {
+        if (taken.matches(keys) == QKeySequence::ExactMatch)
+            return tr("%1 is already one of DiskForge's own shortcuts.").arg(shown);
+    }
+    for (const Addon &a : m_addons->all()) {
+        for (const AddonAction &act : a.actions) {
+            const QString other = Addons::actionKey(a, act);
+            if (other != actionKey && QKeySequence(Addons::shortcut(other), QKeySequence::PortableText) == keys)
+                return tr("%1 is already the shortcut for \"%2\".").arg(shown, act.label);
+        }
+    }
+    return {};
 }

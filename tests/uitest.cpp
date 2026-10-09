@@ -10,6 +10,9 @@
 // sudo QT_QPA_PLATFORM=offscreen build/diskforge-uitest
 
 #include "../src/addonoutput.h"
+#include "../src/addonform.h"
+#include "../src/addons.h"
+#include "../src/addonsdialog.h"
 #include "../src/copydialogs.h"
 #include "../src/format.h"
 #include "../src/mainwindow.h"
@@ -22,9 +25,14 @@
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QToolBar>
+#include <QStatusBar>
+#include <QShortcut>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QElapsedTimer>
 #include <QMessageBox>
@@ -77,6 +85,9 @@ void waitUntil(const std::function<bool()> &done, int ms)
 QAction *findAction(MainWindow &window, const QString &startsWith)
 {
     for (QAction *a : window.findChildren<QAction *>()) {
+        // Pinned add-on actions carry their add-on id and label; they're never DiskForge's own.
+        if (a->data().toStringList().size() == 2)
+            continue;
         if (a->text().remove(QLatin1Char('&')).startsWith(startsWith))
             return a;
     }
@@ -360,12 +371,154 @@ void outputWindow()
     }
 }
 
+// Add-ons in the Tools menu, the right-click menu, the toolbar and on shortcuts, on the
+// system disk (which every PC has, so this runs as the user).
+void addonMenus()
+{
+    const QByteArray manifest = R"({"id":"uitest","name":"UI Test","settings":[{"id":"dest","type":"folder","label":"Folder","default":"{home}/Backups"}],"actions":[
+        {"label":"Look Around","applies_to":"any","look_only":true,"system_disks":true,"command":["true"]},
+        {"label":"Only USB","applies_to":"any","when":["removable"],"command":["true"]},
+        {"label":"Format Everything","applies_to":"any","command":["true"]}]})";
+    QString error;
+    report(Addons::install(manifest, &error), QStringLiteral("a test add-on installs"), error);
+
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    QString systemPart;
+    for (const Disk &d : udisks.disks()) {
+        if (d.isSystem && !d.volumes.isEmpty())
+            systemPart = d.volumes.last().device;
+    }
+    if (systemPart.isEmpty() || !window.selectDevice(systemPart)) {
+        out << "SKIP  no system disk to try the add-on menus on" << Qt::endl;
+        return;
+    }
+    auto text = [](const QAction *a) { return a->text().remove(QLatin1Char('&')).section(QLatin1Char('\t'), 0, 0); };
+
+    QMenu *tools = nullptr;
+    for (QAction *a : window.menuBar()->actions()) {
+        if (a->text().remove(QLatin1Char('&')) == QLatin1String("Tools"))
+            tools = a->menu();
+    }
+    Q_EMIT tools->aboutToShow();
+    QMap<QString, QAction *> listed;
+    for (QAction *a : tools->actions())
+        listed.insert(text(a), a);
+    report(listed.value(QStringLiteral("Look Around")) && listed.value(QStringLiteral("Look Around"))->isEnabled()
+               && listed.value(QStringLiteral("Format Everything")) && !listed.value(QStringLiteral("Format Everything"))->isEnabled()
+               && listed.value(QStringLiteral("Format Everything"))->toolTip().contains(QLatin1String("system disk")),
+           QStringLiteral("Tools lists every add-on action; one that doesn't fit is greyed out and says why"),
+           listed.value(QStringLiteral("Format Everything")) ? listed.value(QStringLiteral("Format Everything"))->toolTip() : QStringLiteral("missing"));
+
+    QMenu context;
+    window.buildContextMenu(&context);
+    QStringList offered;
+    for (QAction *a : context.actions())
+        offered << text(a);
+    report(offered.contains(QLatin1String("Look Around")) && !offered.contains(QLatin1String("Format Everything"))
+               && !offered.contains(QLatin1String("Only USB")),
+           QStringLiteral("the system disk's right-click menu only offers the look-only add-on"), offered.join(QStringLiteral(", ")));
+
+    Addons addons;
+    addons.load();
+    auto keyOf = [&addons](const QString &label) {
+        for (const Addon &a : addons.all()) {
+            for (const AddonAction &act : a.actions) {
+                if (act.label == label)
+                    return Addons::actionKey(a, act);
+            }
+        }
+        return QString();
+    };
+    Addons::setPinned(keyOf(QStringLiteral("Look Around")), true);
+    Addons::setPinned(keyOf(QStringLiteral("Format Everything")), true);
+    window.refreshAddons();
+    auto *toolbar = window.findChild<QToolBar *>(QStringLiteral("mainToolbar"));
+    QAction *lookPin = nullptr, *formatPin = nullptr;
+    for (QAction *a : toolbar->actions()) {
+        if (text(a) == QLatin1String("Look Around"))
+            lookPin = a;
+        if (text(a) == QLatin1String("Format Everything"))
+            formatPin = a;
+    }
+    report(lookPin && lookPin->isEnabled() && formatPin && !formatPin->isEnabled() && formatPin->toolTip().contains(QLatin1String("system disk")),
+           QStringLiteral("pinned add-on actions go on the toolbar and follow the selection"));
+
+    Addons::setShortcut(keyOf(QStringLiteral("Format Everything")), QStringLiteral("Ctrl+Alt+J"));
+    Addons::setShortcut(keyOf(QStringLiteral("Look Around")), QStringLiteral("Ctrl+Alt+K"));
+    window.refreshAddons();
+    auto shortcutFor = [&window](const QString &keys) -> QShortcut * {
+        for (QShortcut *s : window.findChildren<QShortcut *>()) {
+            if (s->key() == QKeySequence(keys))
+                return s;
+        }
+        return nullptr;
+    };
+    QShortcut *formatKey = shortcutFor(QStringLiteral("Ctrl+Alt+J"));
+    if (formatKey)
+        Q_EMIT formatKey->activated();
+    const QString message = window.statusBar()->currentMessage();
+    report(formatKey && message.contains(QLatin1String("Format Everything")) && message.contains(QLatin1String("system disk")),
+           QStringLiteral("a shortcut for an action that doesn't fit says why in the status bar"), message);
+    QString asked;
+    Answerer answerer;
+    answerer.answer = [&asked](QWidget *modal) {
+        asked = modal->windowTitle();
+        modal->close();
+        return true;
+    };
+    if (QShortcut *lookKey = shortcutFor(QStringLiteral("Ctrl+Alt+K")))
+        Q_EMIT lookKey->activated();
+    waitUntil([&] { return !asked.isEmpty(); }, 3000);
+    report(asked == QLatin1String("Run Add-on?"), QStringLiteral("a shortcut runs the add-on action (it asks first)"), asked);
+
+    // The Add-ons window: shortcuts that clash or have no modifier are refused, settings save.
+    addons.load();
+    // Spelled out: the offscreen platform the tests use has no key for QKeySequence::Quit.
+    AddonsDialog dialog(&addons, {QKeySequence(QStringLiteral("Ctrl+Q"))});
+    dialog.show();
+    QStringList warnings;
+    answerer.answer = [&warnings](QWidget *modal) {
+        if (auto *form = qobject_cast<AddonFormDialog *>(modal)) {
+            form->findChild<QLineEdit *>()->setText(QStringLiteral("/srv/test-backups"));
+            form->accept();
+            return true;
+        }
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            warnings << box->text();
+            box->close();
+            return true;
+        }
+        return false;
+    };
+    const auto edits = dialog.findChildren<QKeySequenceEdit *>();
+    if (!edits.isEmpty()) {
+        edits.first()->setKeySequence(QKeySequence(QStringLiteral("Ctrl+Q")));
+        Q_EMIT edits.first()->editingFinished();
+        edits.first()->setKeySequence(QKeySequence(Qt::Key_J));
+        Q_EMIT edits.first()->editingFinished();
+    }
+    report(warnings.size() == 2 && warnings.value(0).contains(QLatin1String("DiskForge's own")) && warnings.value(1).contains(QLatin1String("Ctrl"))
+               && Addons::shortcut(keyOf(QStringLiteral("Look Around"))) == QLatin1String("Ctrl+Alt+K"),
+           QStringLiteral("the Add-ons window refuses a shortcut DiskForge uses, or one without Ctrl/Alt"), warnings.join(QStringLiteral(" / ")));
+    for (QPushButton *button : dialog.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Settings…"))
+            button->click();
+    }
+    QApplication::processEvents();
+    report(Addons::setting(addons.all().value(0), QStringLiteral("dest")) == QLatin1String("/srv/test-backups"),
+           QStringLiteral("an add-on's settings save from the Add-ons window"), Addons::setting(addons.all().value(0), QStringLiteral("dest")));
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
     qputenv("XDG_DATA_HOME", QFile::encodeName(home.filePath(QStringLiteral("data"))));
     qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral("config"))));
     outputWindow();
+    addonMenus();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

@@ -34,6 +34,8 @@
 #include <QHeaderView>
 #include <QProgressBar>
 #include <QSignalBlocker>
+#include <QKeySequence>
+#include <QShortcut>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QLabel>
@@ -169,6 +171,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     connect(m_map, &DiskMap::activated, this, &MainWindow::activate);
 
     rebuild();
+    refreshAddons();
     statusBar()->showMessage(tr("Tip: right-click any drive or partition to see what you can do with it"), 20000);
 }
 
@@ -437,15 +440,37 @@ void MainWindow::createActions()
     action->addActions({m_copy, m_properties});
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
+    tools->setToolTipsVisible(true);
     connect(tools, &QMenu::aboutToShow, this, [this, tools] {
         tools->clear();
         tools->addActions({m_usage, m_cleanup, m_optimize, m_snapshots});
         tools->addSection(tr("Add-ons"));
-        if (!addAddonActions(tools))
-            tools->addAction(tr("No add-on actions for this selection"))->setEnabled(false);
+        // Every add-on action is listed. One that doesn't fit the selection is greyed out,
+        // with the reason where a shortcut would go (and as its tooltip).
+        int listed = 0;
+        for (const Addon &a : m_addons.all()) {
+            if (!a.enabled || !a.error.isEmpty())
+                continue;
+            for (const AddonAction &act : a.actions) {
+                const QString id = a.id, label = act.label;
+                const QString why = addonReason(id, label);
+                const QString keys = Addons::shortcut(Addons::actionKey(a, act));
+                QString text = QString(label).replace(QLatin1Char('&'), QStringLiteral("&&"));
+                if (!why.isEmpty() || !keys.isEmpty())
+                    text += QLatin1Char('\t') + (why.isEmpty() ? QKeySequence(keys, QKeySequence::PortableText).toString(QKeySequence::NativeText) : why);
+                QAction *item = tools->addAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))), text,
+                                                 this, [this, id, label] { runAddon(id, label); });
+                item->setEnabled(why.isEmpty());
+                item->setToolTip(why.isEmpty() ? a.name : why);
+                ++listed;
+            }
+        }
+        if (listed == 0)
+            tools->addAction(tr("No add-ons installed"))->setEnabled(false);
         tools->addSeparator();
         tools->addAction(themeIcon("preferences-plugin", "application-x-addon"), tr("&Add-ons…"), this, [this] {
-            AddonsDialog(&m_addons, this).exec();
+            AddonsDialog(&m_addons, takenShortcuts(), this).exec();
+            refreshAddons();
         });
     });
 
@@ -472,15 +497,15 @@ void MainWindow::createActions()
     });
     help->addAction(themeIcon("qtcreator", "help-about"), tr("About &Qt"), qApp, &QApplication::aboutQt);
 
-    QToolBar *toolbar = addToolBar(tr("Main"));
-    toolbar->setObjectName(QStringLiteral("mainToolbar"));
-    toolbar->setMovable(false);
-    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    toolbar->addActions({m_refresh});
-    toolbar->addSeparator();
-    toolbar->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
-    toolbar->addSeparator();
-    toolbar->addActions({m_writeImage, m_properties});
+    m_toolbar = addToolBar(tr("Main"));
+    m_toolbar->setObjectName(QStringLiteral("mainToolbar"));
+    m_toolbar->setMovable(false);
+    m_toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_toolbar->addActions({m_refresh});
+    m_toolbar->addSeparator();
+    m_toolbar->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
+    m_toolbar->addSeparator();
+    m_toolbar->addActions({m_writeImage, m_properties});
 }
 
 void MainWindow::rebuild()
@@ -589,6 +614,14 @@ const Volume *MainWindow::selectedVolume() const
 
 void MainWindow::updateActions()
 {
+    for (QAction *pin : std::as_const(m_pinned)) {
+        const QStringList ref = pin->data().toStringList(); // id and label; empty for the separator
+        if (ref.size() != 2)
+            continue;
+        const QString why = addonReason(ref[0], ref[1]);
+        pin->setEnabled(why.isEmpty());
+        pin->setToolTip(why.isEmpty() ? QString(pin->text()).replace(QStringLiteral("&&"), QStringLiteral("&")) : why);
+    }
     const Disk *d = selectedDisk();
     const Volume *v = selectedVolume();
     const auto kind = m_map->selection().kind;
@@ -1108,6 +1141,71 @@ void MainWindow::runAddon(const QString &addonId, const QString &label)
         warnPlain(this, action.label, error);
     else
         statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
+}
+
+QString MainWindow::addonReason(const QString &addonId, const QString &label) const
+{
+    for (const Addon &a : m_addons.all()) {
+        for (const AddonAction &act : a.actions) {
+            if (a.id != addonId || act.label != label)
+                continue;
+            const Disk *d = selectedDisk();
+            if (!d)
+                return tr("Pick a drive or partition first");
+            return Addons::whyNot(act, *d, selectedVolume(), m_map->selection().kind == DiskMap::Selection::Kind::Free);
+        }
+    }
+    return tr("This add-on isn't installed anymore");
+}
+
+QList<QKeySequence> MainWindow::takenShortcuts() const
+{
+    QList<QKeySequence> taken;
+    for (const QAction *a : findChildren<QAction *>()) {
+        if (!m_pinned.contains(a))
+            taken += a->shortcuts();
+    }
+    return taken;
+}
+
+void MainWindow::refreshAddons()
+{
+    // Pins and shortcuts refer to add-on actions by id and label; build them again.
+    qDeleteAll(m_pinned);
+    m_pinned.clear();
+    qDeleteAll(m_shortcuts);
+    m_shortcuts.clear();
+    for (const Addon &a : m_addons.all()) {
+        if (!a.enabled || !a.error.isEmpty())
+            continue;
+        for (const AddonAction &act : a.actions) {
+            const QString key = Addons::actionKey(a, act), id = a.id, label = act.label;
+            if (Addons::isPinned(key)) {
+                if (m_pinned.isEmpty())
+                    m_pinned << m_toolbar->addSeparator();
+                auto *pin = new QAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))),
+                                        QString(label).replace(QLatin1Char('&'), QStringLiteral("&&")), this);
+                pin->setData(QStringList{id, label});
+                connect(pin, &QAction::triggered, this, [this, id, label] { runAddon(id, label); });
+                m_toolbar->addAction(pin);
+                m_pinned << pin;
+            }
+            const QString keys = Addons::shortcut(key);
+            if (keys.isEmpty())
+                continue;
+            // Always enabled, so pressing it when the action doesn't fit can say why.
+            auto *shortcut = new QShortcut(QKeySequence(keys, QKeySequence::PortableText), this);
+            connect(shortcut, &QShortcut::activated, this, [this, id, label] {
+                const QString why = addonReason(id, label);
+                if (why.isEmpty())
+                    runAddon(id, label);
+                else
+                    statusBar()->showMessage(tr("%1: %2").arg(label, why), 6000);
+            });
+            m_shortcuts << shortcut;
+        }
+    }
+    updateActions();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
