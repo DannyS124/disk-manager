@@ -1,39 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <!-- Drawn for DiskForge Rescue; the drive in the middle is DiskForge's own icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <!-- Behind the boot menu (Secure Boot off, and old BIOS PCs). The menu itself is drawn by
+       GRUB from boot/theme.txt, in the space under the name. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0b1220"/>
-      <stop offset="1" stop-color="#05080f"/>
+      <stop offset="0" stop-color="#0a1124"/>
+      <stop offset="1" stop-color="#03060e"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.22" r="0.55">
-      <stop offset="0" stop-color="#00b4ff" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#00b4ff" stop-opacity="0"/>
+    <radialGradient id="glow" cx="960" cy="150" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00e5ff" stop-opacity="0.20"/>
+      <stop offset="0.45" stop-color="#1f6fff" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#1f6fff" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4b5462"/>
-      <stop offset="1" stop-color="#262b33"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1f6fff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#00e5ff" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#1f6fff" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <rect width="1920" height="1080" fill="url(#bg)"/>
   <rect width="1920" height="1080" fill="url(#glow)"/>
-  <g transform="translate(880 70) scale(1.25)">
-    <rect x="8" y="20" width="112" height="88" rx="14" fill="url(#body)" stroke="#171a20" stroke-width="2"/>
-  <rect x="10" y="22" width="108" height="40" rx="12" fill="url(#shine)"/>
-  <rect x="20" y="36" width="88" height="32" rx="5" fill="#15181d"/>
-  <rect x="23" y="39" width="18" height="26" rx="2" fill="#1d99f3"/>
-  <rect x="23" y="39" width="18" height="5" rx="1.5" fill="#7cc7ff"/>
-  <rect x="44" y="39" width="42" height="26" rx="2" fill="#1d99f3"/>
-  <rect x="44" y="39" width="42" height="5" rx="1.5" fill="#7cc7ff"/>
-  <rect x="89" y="39" width="16" height="26" rx="2" fill="#5d6673"/>
-  <rect x="89" y="39" width="16" height="5" rx="1.5" fill="#8b95a3"/>
-  <rect x="20" y="84" width="54" height="7" rx="3.5" fill="#5d6673"/>
-  <circle cx="100" cy="87.5" r="5.5" fill="#2ecc71"/>
-  <circle cx="100" cy="87.5" r="2.5" fill="#a8f0c6"/>
-  </g>
-  <text x="960" y="320" text-anchor="middle" font-family="DejaVu Sans" font-weight="bold" font-size="60" fill="#e6edf7">DiskForge <tspan fill="#00b4ff">Rescue</tspan></text>
-
+  <image x="890" y="56" width="140" height="140" xlink:href="bluespark-icon.svg"/>
+  <text x="960" y="276" text-anchor="middle" font-family="DejaVu Sans" font-weight="bold" font-size="64" letter-spacing="-1" fill="#9ad8ff">Blue<tspan fill="#00e5ff">spark</tspan></text>
+  <text x="960" y="316" text-anchor="middle" font-family="DejaVu Sans" font-size="22" letter-spacing="4" fill="#7f93b5">RESCUE  ·  RECOVER  ·  REPAIR</text>
+  <rect x="560" y="344" width="800" height="2" fill="url(#rule)"/>
 </svg>

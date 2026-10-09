@@ -1,0 +1,14 @@
+Bluespark colours. Everything on the stick uses these: the boot menu, the boot animation, the
+desktop, the icons and DiskForge's Bluespark theme.
+
+neon blue   #00E5FF   highlights, the selected thing, the spark itself
+blue        #1F6FFF   buttons, panels, the anvil
+baby blue   #9AD8FF   secondary text, line icons, "Blue" in the name
+red         #FF3355   anything that erases or is broken
+green       #2BEE8A   healthy, done, safe
+
+navy        #060A16   background
+surface     #0D1426   panels and cards on top of it
+line        #1A2A4A   borders and separators
+text        #E6F1FF   main text
+dim text    #7F93B5   less important text
