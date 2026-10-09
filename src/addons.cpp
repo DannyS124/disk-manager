@@ -18,6 +18,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QUrl>
 
 namespace {
 
@@ -182,25 +183,81 @@ QString what(const QString &placeholder)
     return QLatin1Char('{') + placeholder + QLatin1Char('}');
 }
 
-// Fills in placeholders. For command arguments (not the confirm text), a value that
-// begins an argument can't begin with "-", or the program could read it as an option.
-QStringList fill(const QStringList &args, const Disk &disk, const Volume *v, bool arguments, QString *error)
+// {name} or {ask:id} / {setting:id}
+const QRegularExpression &placeholderPattern()
 {
-    auto value = [&](const QString &name) -> QString {
+    static const QRegularExpression pattern(QStringLiteral("\\{([a-z]+)(?::([a-z0-9_-]+))?\\}"));
+    return pattern;
+}
+
+const AddonField *findField(const QVector<AddonField> &fields, const QString &id)
+{
+    for (const AddonField &f : fields) {
+        if (f.id == id)
+            return &f;
+    }
+    return nullptr;
+}
+
+// A value for a field has to be one the field allows. Choices and checkbox values must be
+// the add-on's current ones: a saved setting may be from an older version of it.
+QString checkValue(const AddonField &field, const QString &value)
+{
+    if (hasHiddenCharacters(value))
+        return QObject::tr("\"%1\" has hidden characters in it, so this wasn't run.").arg(field.label);
+    switch (field.type) {
+    case AddonField::Type::Choice:
+        for (const auto &choice : field.choices) {
+            if (choice.second == value)
+                return {};
+        }
+        return QObject::tr("\"%1\" isn't one of its choices anymore. Pick it again in the add-on's settings.").arg(field.label);
+    case AddonField::Type::Check:
+        return value == field.on || value == field.off
+            ? QString() : QObject::tr("\"%1\" isn't set right anymore. Set it again in the add-on's settings.").arg(field.label);
+    case AddonField::Type::Number: {
+        if (value.isEmpty())
+            return {};
+        bool ok = false;
+        const qint64 n = value.toLongLong(&ok);
+        return ok && n >= field.min && n <= field.max
+            ? QString() : QObject::tr("\"%1\" has to be a whole number from %2 to %3.").arg(field.label).arg(field.min).arg(field.max);
+    }
+    default:
+        return {};
+    }
+}
+
+// The form's answers and the add-on's settings, for fill().
+struct Inputs {
+    const Addon *addon = nullptr;
+    const AddonAction *action = nullptr;
+    QMap<QString, QString> answers;
+};
+
+// Fills in placeholders, in one pass over the add-on's own text: values that went in are
+// never looked at again. For command arguments (not the confirm text), a value that begins
+// an argument can't begin with "-", or the program could read it as an option, unless the
+// add-on file itself lists it (a choice or a checkbox value).
+QStringList fill(const QStringList &args, const Disk &disk, const Volume *volume, bool arguments, QString *error,
+                 const Inputs *inputs = nullptr)
+{
+    auto driveValue = [&](const QString &name) -> QString {
         if (name == QLatin1String("device"))
-            return v ? v->device : disk.device;
+            return volume ? volume->device : disk.device;
         if (name == QLatin1String("disk"))
             return disk.device;
         if (name == QLatin1String("mountpoint"))
-            return firstMount(disk, v);
+            return firstMount(disk, volume);
         if (name == QLatin1String("label"))
-            return v ? (!v->label.isEmpty() ? v->label : !v->partName.isEmpty() ? v->partName : shortDevice(v->device)) : disk.model;
+            return volume ? (!volume->label.isEmpty() ? volume->label : !volume->partName.isEmpty() ? volume->partName : shortDevice(volume->device))
+                          : disk.model;
         if (name == QLatin1String("uuid"))
-            return v ? v->uuid : QString();
+            return volume ? volume->uuid : QString();
         if (name == QLatin1String("fstype"))
-            return v ? v->effectiveFsType() : QString();
+            return volume ? volume->effectiveFsType() : QString();
         if (name == QLatin1String("size"))
-            return QString::number(v ? v->size : disk.size);
+            return QString::number(volume ? volume->size : disk.size);
         if (name == QLatin1String("model"))
             return disk.model;
         if (name == QLatin1String("home"))
@@ -212,36 +269,199 @@ QStringList fill(const QStringList &args, const Disk &disk, const Volume *v, boo
             *error = message;
         return QStringList();
     };
-    static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
     QStringList out;
     for (const QString &arg : args) {
         QString result;
         qsizetype last = 0;
-        for (auto it = placeholder.globalMatch(arg); it.hasNext();) {
+        bool wholeInput = false; // the argument is exactly one {ask:x} or {setting:x}
+        for (auto it = placeholderPattern().globalMatch(arg); it.hasNext();) {
             const QRegularExpressionMatch m = it.next();
-            const QString name = m.captured(1);
-            QString v = value(name);
-            if (v.isEmpty())
-                return fail(name == QLatin1String("mountpoint") ? QObject::tr("Mount it first") : QObject::tr("{%1} isn't available here").arg(name));
-            if (kDriveValues.contains(name)) {
-                // Like UDisks does for folder names under /run/media: a name is one folder name.
-                if (name != QLatin1String("mountpoint"))
-                    v.replace(QLatin1Char('/'), QLatin1Char('_'));
-                if (hasHiddenCharacters(v))
-                    return fail(QObject::tr("The drive's %1 has hidden characters in it, so this wasn't run. Rename the drive first.").arg(what(name)));
-                if (v == QLatin1String(".") || v == QLatin1String(".."))
-                    return fail(QObject::tr("The drive's %1 is \"%2\", which would point to another folder, so this wasn't run. "
-                                            "Rename the drive first.").arg(what(name), v));
+            const QString name = m.captured(1), id = m.captured(2);
+            QString v;
+            if (name == QLatin1String("ask") || name == QLatin1String("setting")) {
+                const bool ask = name == QLatin1String("ask");
+                const AddonField *field = inputs ? findField(ask ? inputs->action->ask : inputs->addon->settings, id) : nullptr;
+                if (!field)
+                    return fail(QObject::tr("{%1:%2} isn't available here").arg(name, id));
+                v = ask ? inputs->answers.value(id, Addons::fieldDefault(*field, disk, volume)) : Addons::setting(*inputs->addon, id);
+                const QString problem = checkValue(*field, v);
+                if (!problem.isEmpty())
+                    return fail(problem);
+                if (field->typed() && arguments && m.capturedStart() == 0 && v.startsWith(QLatin1Char('-')))
+                    return fail(QObject::tr("\"%1\" starts with \"-\", so the program could take it for an option. It wasn't run.")
+                                    .arg(field->label));
+                wholeInput = m.capturedStart() == 0 && m.capturedEnd() == arg.size();
+            } else {
+                v = driveValue(name);
+                if (v.isEmpty())
+                    return fail(name == QLatin1String("mountpoint") ? QObject::tr("Mount it first") : QObject::tr("{%1} isn't available here").arg(name));
+                if (kDriveValues.contains(name)) {
+                    // Like UDisks does for folder names under /run/media: a name is one folder name.
+                    if (name != QLatin1String("mountpoint"))
+                        v.replace(QLatin1Char('/'), QLatin1Char('_'));
+                    if (hasHiddenCharacters(v))
+                        return fail(QObject::tr("The drive's %1 has hidden characters in it, so this wasn't run. Rename the drive first.").arg(what(name)));
+                    if (v == QLatin1String(".") || v == QLatin1String(".."))
+                        return fail(QObject::tr("The drive's %1 is \"%2\", which would point to another folder, so this wasn't run. "
+                                                "Rename the drive first.").arg(what(name), v));
+                }
+                if (arguments && m.capturedStart() == 0 && v.startsWith(QLatin1Char('-')))
+                    return fail(QObject::tr("The drive's %1 starts with \"-\", so the program could take it for an option. "
+                                            "It wasn't run; rename the drive first.").arg(what(name)));
             }
-            if (arguments && m.capturedStart() == 0 && v.startsWith(QLatin1Char('-')))
-                return fail(QObject::tr("The drive's %1 starts with \"-\", so the program could take it for an option. "
-                                        "It wasn't run; rename the drive first.").arg(what(name)));
             result += arg.mid(last, m.capturedStart() - last) + v;
             last = m.capturedEnd();
         }
-        out << result + arg.mid(last);
+        result += arg.mid(last);
+        // An empty answer leaves the whole argument out, so a checkbox can add or drop a flag.
+        if (arguments && wholeInput && result.isEmpty())
+            continue;
+        out << result;
     }
     return out;
+}
+
+// Programs that run as root, or that need a terminal to ask for a password.
+const QStringList kNeedsTerminal = {
+    QStringLiteral("sudo"), QStringLiteral("sudoedit"), QStringLiteral("su"), QStringLiteral("doas"),
+};
+
+const QStringList kPaletteRoles = {
+    QStringLiteral("window"), QStringLiteral("base"), QStringLiteral("alternate"), QStringLiteral("button"), QStringLiteral("text"),
+    QStringLiteral("highlight"), QStringLiteral("highlighted_text"), QStringLiteral("link"), QStringLiteral("mid"),
+};
+const QStringList kColorRoles = {
+    QStringLiteral("partition"), QStringLiteral("free"), QStringLiteral("selection"), QStringLiteral("good"), QStringLiteral("warning"),
+    QStringLiteral("danger"), QStringLiteral("muted"), QStringLiteral("map_good"), QStringLiteral("map_slow"), QStringLiteral("map_retry"),
+    QStringLiteral("map_bad"), QStringLiteral("map_unread"), QStringLiteral("usage_small_files"), QStringLiteral("usage_file"),
+    QStringLiteral("encrypted"),
+};
+
+// "#1a2b3c" -> 0x1a2b3c. Only full, opaque colors: a theme can't make anything see-through.
+bool parseColor(const QJsonValue &value, quint32 *out)
+{
+    static const QRegularExpression hex(QStringLiteral("^#[0-9a-fA-F]{6}$"));
+    const QString s = value.toString();
+    if (!hex.match(s).hasMatch())
+        return false;
+    *out = s.mid(1).toUInt(nullptr, 16);
+    return true;
+}
+
+AddonTheme parseTheme(const QJsonObject &o, QString *error)
+{
+    AddonTheme theme;
+    auto colors = [&](const char *key, const QStringList &known, QMap<QString, quint32> *into) {
+        const QJsonObject group = o.value(QLatin1String(key)).toObject();
+        static const QRegularExpression fsName(QStringLiteral("^[a-z0-9_]{1,24}$"));
+        for (auto it = group.constBegin(); it != group.constEnd(); ++it) {
+            if (known.isEmpty() ? !fsName.match(it.key()).hasMatch() : !known.contains(it.key()))
+                continue; // a newer DiskForge's name, or nonsense
+            quint32 c = 0;
+            if (!parseColor(it.value(), &c)) {
+                *error = QObject::tr("The theme's \"%1\" isn't a color like #1a2b3c").arg(it.key());
+                return false;
+            }
+            into->insert(it.key(), c);
+        }
+        return true;
+    };
+    if (!colors("palette", kPaletteRoles, &theme.palette) || !colors("colors", kColorRoles, &theme.colors)
+        || !colors("filesystems", {}, &theme.filesystems))
+        return {};
+    const QJsonArray usage = o.value(QStringLiteral("usage")).toArray();
+    for (const QJsonValue &v : usage) {
+        quint32 c = 0;
+        if (!parseColor(v, &c) || theme.usage.size() >= 32) {
+            *error = QObject::tr("The theme's \"usage\" has to be a list of up to 32 colors like #1a2b3c");
+            return {};
+        }
+        theme.usage << c;
+    }
+    return theme;
+}
+
+// The fields of a form ("ask") or of an add-on's settings.
+QVector<AddonField> parseFields(const QJsonArray &list, bool settings, QString *error)
+{
+    static const QRegularExpression idPattern(QStringLiteral("^[a-z][a-z0-9_-]*$"));
+    static const QMap<QString, AddonField::Type> types = {
+        {QStringLiteral("text"), AddonField::Type::Text},     {QStringLiteral("number"), AddonField::Type::Number},
+        {QStringLiteral("choice"), AddonField::Type::Choice}, {QStringLiteral("check"), AddonField::Type::Check},
+        {QStringLiteral("folder"), AddonField::Type::Folder}, {QStringLiteral("file"), AddonField::Type::File},
+    };
+    QVector<AddonField> fields;
+    auto fail = [error](const QString &message) {
+        *error = message;
+        return QVector<AddonField>();
+    };
+    if (list.size() > 20)
+        return fail(QObject::tr("A form can have at most 20 fields"));
+    for (const QJsonValue &value : list) {
+        const QJsonObject j = value.toObject();
+        AddonField f;
+        f.id = j.value(QStringLiteral("id")).toString();
+        if (!idPattern.match(f.id).hasMatch() || findField(fields, f.id))
+            return fail(QObject::tr("Each field needs its own \"id\": lowercase letters, digits, - and _ (\"%1\")").arg(f.id));
+        const QString type = j.value(QStringLiteral("type")).toString(QStringLiteral("text"));
+        if (!types.contains(type))
+            return fail(QObject::tr("\"%1\" has an unknown type \"%2\"").arg(f.id, type));
+        f.type = types.value(type);
+        f.label = j.value(QStringLiteral("label")).toString(f.id);
+        f.defaultValue = j.value(QStringLiteral("default")).toVariant().toString();
+        f.on = j.value(QStringLiteral("on")).toString();
+        f.off = j.value(QStringLiteral("off")).toString();
+        for (const QJsonValue &c : j.value(QStringLiteral("choices")).toArray()) {
+            const QJsonObject choice = c.toObject();
+            if (c.isString())
+                f.choices.push_back({c.toString(), c.toString()});
+            else
+                f.choices.push_back({choice.value(QStringLiteral("label")).toString(), choice.value(QStringLiteral("value")).toString()});
+        }
+        f.min = j.value(QStringLiteral("min")).toInteger(0);
+        f.max = j.value(QStringLiteral("max")).toInteger(1000000);
+
+        QStringList texts = {f.label, f.defaultValue, f.on, f.off};
+        for (const auto &choice : std::as_const(f.choices))
+            texts << choice.first << choice.second;
+        for (const QString &t : std::as_const(texts)) {
+            if (hasHiddenCharacters(t))
+                return fail(QObject::tr("\"%1\" has hidden characters in it").arg(f.id));
+        }
+        if (f.type == AddonField::Type::Choice && f.choices.isEmpty())
+            return fail(QObject::tr("\"%1\" needs \"choices\"").arg(f.id));
+        if (f.type == AddonField::Type::Number && (f.min < 0 || f.max < f.min))
+            // "-5" at the start of an argument would look like an option.
+            return fail(QObject::tr("\"%1\" needs a \"min\" of 0 or more, and a \"max\" at least as big").arg(f.id));
+        // Defaults can use the drive's placeholders (settings only {home}: they're not for one drive).
+        for (auto it = placeholderPattern().globalMatch(f.defaultValue); it.hasNext();) {
+            const QRegularExpressionMatch m = it.next();
+            const QString name = m.captured(1);
+            if (!m.captured(2).isEmpty() || !kPlaceholders.contains(name) || (settings && name != QLatin1String("home")))
+                return fail(QObject::tr("The default of \"%1\" can't use {%2}").arg(f.id, m.captured(0).mid(1).chopped(1)));
+        }
+        fields << f;
+    }
+    return fields;
+}
+
+// A field's default before placeholders are filled in.
+QString plainDefault(const AddonField &f)
+{
+    switch (f.type) {
+    case AddonField::Type::Check:
+        return f.defaultValue == QLatin1String("true") || (!f.on.isEmpty() && f.defaultValue == f.on) ? f.on : f.off;
+    case AddonField::Type::Choice:
+        for (const auto &choice : f.choices) {
+            if (choice.second == f.defaultValue)
+                return choice.second;
+        }
+        return f.choices.value(0).second;
+    case AddonField::Type::Number:
+        return f.defaultValue.isEmpty() ? QString::number(f.min) : f.defaultValue;
+    default:
+        return f.defaultValue;
+    }
 }
 
 } // namespace
@@ -300,6 +520,15 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
         return a;
     }
 
+    QString problem;
+    a.settings = parseFields(o.value(QStringLiteral("settings")).toArray(), true, &problem);
+    if (problem.isEmpty() && o.contains(QStringLiteral("theme")))
+        a.theme = parseTheme(o.value(QStringLiteral("theme")).toObject(), &problem);
+    if (!problem.isEmpty()) {
+        a.error = problem;
+        return a;
+    }
+
     QVector<AddonAction> actions;
     for (const QJsonValue &value : o.value(QStringLiteral("actions")).toArray()) {
         const QJsonObject j = value.toObject();
@@ -316,6 +545,19 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
             act.when << w.toString();
         for (const QJsonValue &c : j.value(QStringLiteral("command")).toArray())
             act.command << c.toString();
+        const QString output = j.value(QStringLiteral("output")).toString();
+        if (output == QLatin1String("terminal") || output == QLatin1String("window") || output == QLatin1String("none")) {
+            act.terminal = output == QLatin1String("terminal");
+            act.window = output == QLatin1String("window");
+        } else if (!output.isEmpty()) {
+            a.error = QObject::tr("\"output\" must be terminal, window or none");
+            return a;
+        }
+        act.ask = parseFields(j.value(QStringLiteral("ask")).toArray(), false, &problem);
+        if (!problem.isEmpty()) {
+            a.error = problem;
+            return a;
+        }
 
         if (act.label.isEmpty() || act.command.isEmpty() || act.command.first().isEmpty()) {
             a.error = QObject::tr("Every action needs a \"label\" and a \"command\"");
@@ -324,6 +566,13 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
         if (hasHiddenCharacters(act.label)) {
             a.error = QObject::tr("The label \"%1\" has hidden characters").arg(cleanName(act.label));
             return a;
+        }
+        // The run question shows the command; nothing in it may be invisible or flip the text.
+        for (const QString &part : std::as_const(act.command) + QStringList{act.confirm, act.icon}) {
+            if (hasHiddenCharacters(part)) {
+                a.error = QObject::tr("\"%1\" has hidden characters in its command").arg(act.label);
+                return a;
+            }
         }
         for (const AddonAction &other : actions) {
             if (other.label == act.label) {
@@ -341,34 +590,41 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
                 return a;
             }
         }
-        static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
-        for (qsizetype i = 0; i < act.command.size(); ++i) {
-            for (auto it = placeholder.globalMatch(act.command.at(i)); it.hasNext();) {
-                const QString name = it.next().captured(1);
-                if (!kPlaceholders.contains(name)) {
-                    a.error = QObject::tr("Unknown placeholder {%1}").arg(name);
-                    return a;
-                }
-                // The program itself can't come from the drive (like {mountpoint}/run.sh).
-                if (i == 0 && name != QLatin1String("home")) {
-                    a.error = QObject::tr("The program to run can't come from the drive: only {home} can be used in the first "
-                                          "part of \"command\"");
+        for (const QString &arg : std::as_const(act.command)) {
+            for (auto it = placeholderPattern().globalMatch(arg); it.hasNext();) {
+                const QRegularExpressionMatch m = it.next();
+                const QString name = m.captured(1), id = m.captured(2);
+                const bool input = name == QLatin1String("ask") || name == QLatin1String("setting");
+                if (input ? !findField(name == QLatin1String("ask") ? act.ask : a.settings, id) : (!id.isEmpty() || !kPlaceholders.contains(name))) {
+                    a.error = QObject::tr("Unknown placeholder %1").arg(m.captured(0));
                     return a;
                 }
             }
         }
-        if (act.lookOnly) {
-            AddonAction unboxed = act;
-            unboxed.lookOnly = false;
-            const QString admin = risks(unboxed).admin;
-            if (!admin.isEmpty()) {
-                a.error = QObject::tr("\"look_only\" actions can't use %1: the sandbox doesn't allow admin power").arg(admin);
-                return a;
+        // The program itself can't come from the drive (like {mountpoint}/run.sh) or a form.
+        if (QString(act.command.first()).remove(QStringLiteral("{home}")).contains(QLatin1Char('{'))) {
+            a.error = QObject::tr("The program to run can't come from the drive or a form: only {home} can be used in the first "
+                                  "part of \"command\"");
+            return a;
+        }
+        AddonAction unboxed = act;
+        unboxed.lookOnly = false;
+        const AddonRisks risky = risks(unboxed, a.settings);
+        if (act.lookOnly && !risky.admin.isEmpty()) {
+            a.error = QObject::tr("\"look_only\" actions can't use %1: the sandbox doesn't allow admin power").arg(risky.admin);
+            return a;
+        }
+        if (act.window) {
+            for (const QString &part : std::as_const(act.command)) {
+                if (kNeedsTerminal.contains(part.section(QLatin1Char('/'), -1))) {
+                    a.error = QObject::tr("%1 asks for a password in a terminal: use \"output\": \"terminal\"").arg(part.section(QLatin1Char('/'), -1));
+                    return a;
+                }
             }
         }
         actions << act;
     }
-    if (actions.isEmpty()) {
+    if (actions.isEmpty() && a.theme.isEmpty()) {
         a.error = QObject::tr("No actions");
         return a;
     }
@@ -427,19 +683,45 @@ void Addons::accept(const QString &id)
 
 bool Addons::applies(const AddonAction &action, const Disk &disk, const Volume *volume, bool freeSpace)
 {
+    return whyNot(action, disk, volume, freeSpace).isEmpty();
+}
+
+QString Addons::whyNot(const AddonAction &action, const Disk &disk, const Volume *volume, bool freeSpace)
+{
     // On the disk the system runs from, only look-only actions (in the sandbox) are offered.
     if (disk.isSystem && !(action.systemDisks && action.lookOnly))
-        return false;
+        return QObject::tr("Not on the system disk: only look-only add-ons are offered there");
     const QString &to = action.appliesTo;
-    const bool target = to == QLatin1String("any") || (to == QLatin1String("volume") && volume)
-        || (to == QLatin1String("disk") && !volume && !freeSpace) || (to == QLatin1String("free") && freeSpace);
-    if (!target)
-        return false;
+    if (to == QLatin1String("volume") && !volume)
+        return QObject::tr("Pick a partition first");
+    if (to == QLatin1String("disk") && (volume || freeSpace))
+        return QObject::tr("Pick the whole drive first (its box on the left)");
+    if (to == QLatin1String("free") && !freeSpace)
+        return QObject::tr("Pick unallocated space first");
     for (const QString &c : action.when) {
-        if (!conditionHolds(c, disk, volume))
-            return false;
+        if (conditionHolds(c, disk, volume))
+            continue;
+        if (c == QLatin1String("mounted"))
+            return QObject::tr("Mount it first");
+        if (c == QLatin1String("unmounted"))
+            return QObject::tr("Unmount it first");
+        if (c == QLatin1String("removable"))
+            return QObject::tr("Only for USB and other removable drives");
+        if (c == QLatin1String("internal"))
+            return QObject::tr("Only for internal drives");
+        if (c == QLatin1String("encrypted"))
+            return QObject::tr("Only for encrypted partitions");
+        if (c == QLatin1String("unlocked"))
+            return QObject::tr("Unlock it first");
+        if (c == QLatin1String("locked"))
+            return QObject::tr("Lock it first");
+        if (c == QLatin1String("has-health"))
+            return QObject::tr("Only for drives that report their health");
+        if (c.startsWith(QLatin1String("filesystem:")))
+            return QObject::tr("Only for %1").arg(c.mid(11).split(QLatin1Char('|')).join(QStringLiteral(", ")));
+        return QObject::tr("Doesn't fit this selection");
     }
-    return true;
+    return {};
 }
 
 QVector<QPair<const Addon *, const AddonAction *>> Addons::actionsFor(const Disk &disk, const Volume *volume, bool freeSpace) const
@@ -466,13 +748,11 @@ QString Addons::expandText(const QString &text, const Disk &disk, const Volume *
     return fill({text}, disk, v, false, error).value(0);
 }
 
-AddonRisks Addons::risks(const AddonAction &action)
+AddonRisks Addons::risksOf(const QStringList &parts)
 {
     AddonRisks r;
-    if (action.lookOnly)
-        return r; // the sandbox stops all of it
     static const QRegularExpression versioned(QStringLiteral("^(python|pypy|lua|luajit|perl|php|ruby|tclsh|wish)[0-9.]*$"));
-    for (const QString &part : action.command) {
+    for (const QString &part : parts) {
         const QString name = part.section(QLatin1Char('/'), -1);
         if (kAdmin.contains(name)) {
             if (r.admin.isEmpty())
@@ -488,17 +768,80 @@ AddonRisks Addons::risks(const AddonAction &action)
                 r.deletes = name;
         }
     }
-    if (r.deletes.isEmpty() && action.command.contains(QLatin1String("-delete")))
+    if (r.deletes.isEmpty() && parts.contains(QLatin1String("-delete")))
         r.deletes = QStringLiteral("find -delete");
     return r;
+}
+
+AddonRisks Addons::risks(const AddonAction &action, const QVector<AddonField> &settings)
+{
+    if (action.lookOnly)
+        return {}; // the sandbox stops all of it
+    // What a form or a setting can put in counts as much as the command itself.
+    QStringList parts = action.command;
+    for (const QVector<AddonField> *fields : {&action.ask, &settings}) {
+        for (const AddonField &f : *fields) {
+            parts << f.defaultValue << f.on << f.off;
+            for (const auto &choice : f.choices)
+                parts << choice.second;
+        }
+    }
+    return risksOf(parts);
+}
+
+QStringList Addons::fillCommand(const Addon &addon, const AddonAction &action, const Disk &disk, const Volume *volume,
+                                const QMap<QString, QString> &answers, QString *error)
+{
+    const Inputs inputs{&addon, &action, answers};
+    return fill(action.command, disk, volume, true, error, &inputs);
+}
+
+QString Addons::fieldDefault(const AddonField &field, const Disk &disk, const Volume *volume)
+{
+    const QString value = plainDefault(field);
+    if (!field.typed())
+        return value;
+    QString error;
+    const QString filled = fill({value}, disk, volume, false, &error).value(0);
+    return error.isEmpty() ? filled : QString();
+}
+
+QString Addons::setting(const Addon &addon, const QString &field)
+{
+    const AddonField *f = findField(addon.settings, field);
+    if (!f)
+        return {};
+    const QVariant saved = settings().value(QStringLiteral("settings/%1/%2").arg(addon.id, field));
+    if (saved.isValid())
+        return saved.toString();
+    return QString(plainDefault(*f)).replace(QStringLiteral("{home}"), QDir::homePath());
+}
+
+void Addons::setSetting(const Addon &addon, const QString &field, const QString &value)
+{
+    QSettings s = settings();
+    s.setValue(QStringLiteral("settings/%1/%2").arg(addon.id, field), value);
+}
+
+QString Addons::actionKey(const Addon &addon, const AddonAction &action)
+{
+    return addon.id + QLatin1Char('/') + QString::fromLatin1(QUrl::toPercentEncoding(action.label));
 }
 
 bool Addons::isTrusted(const Addon &addon, const AddonAction &action)
 {
     // Admin power, a shell, or an add-on that turned up from outside: always ask.
-    if (addon.outside || risks(action).alwaysAsk())
+    if (addon.outside || risks(action, addon.settings).alwaysAsk())
         return false;
     return settings().value(QStringLiteral("allowed/%1-%2").arg(hashText(addon)).arg(action.index)).toBool();
+}
+
+bool Addons::isTrusted(const Addon &addon, const AddonAction &action, const QStringList &argv)
+{
+    // What the form put in counts: "Don't ask again" never covers admin power or a shell.
+    if (!action.lookOnly && risksOf(argv).alwaysAsk())
+        return false;
+    return isTrusted(addon, action);
 }
 
 void Addons::trust(const Addon &addon, const AddonAction &action)
@@ -713,7 +1056,7 @@ bool Addons::remove(const Addon &addon, QString *error)
         return false;
     }
     QSettings s = settings();
-    s.remove(QStringLiteral("installed/") + addon.id);
-    s.remove(QStringLiteral("enabled/") + addon.id);
+    for (const char *group : {"installed/", "enabled/", "settings/", "pinned/", "shortcuts/"})
+        s.remove(QLatin1String(group) + addon.id);
     return true;
 }

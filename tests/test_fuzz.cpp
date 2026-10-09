@@ -46,7 +46,8 @@ QRandomGenerator rng;
 const QList<QByteArray> kTokens = {
     "{", "}", "[", "]", "\"", ",", ":", "null", "true", "-1", "0", "1e999", "18446744073709551615", "4294967296",
     "\\u0000", "\\ud800", "\\u202e", "\n", "\r", " ", "-", "--", "..", "/", "{label}", "{mountpoint}", "{home}", "<b>",
-    "\xff\xfe", "\xc3\x28", "#", "+", "?", "0x", "-----END SSH SIGNATURE-----", "=",
+    "\xff\xfe", "\xc3\x28", "#", "+", "?", "0x", "-----END SSH SIGNATURE-----", "=", "{ask:a}", "{setting:d}", "{ask:}",
+    "\"ask\":[{\"id\":\"a\"}],", "\"output\":\"window\",", "\"type\":\"choice\",", "\"min\":-1,", "#ff0000", "#12345",
 };
 const QList<QByteArray> kNumbers = {
     "0", "1", "-1", "4294967295", "4294967296", "18446744073709551615", "18446744073709551616",
@@ -124,22 +125,44 @@ void addonFiles(const QString &tmp)
         seeds << readFile(examples + QLatin1Char('/') + name + QStringLiteral("/addon.json"));
     seeds << R"({"id":"x","actions":[{"label":"L","look_only":true,"system_disks":true,"applies_to":"any",
                 "when":["mounted","filesystem:ext4|vfat"],"confirm":"Sure about {label}?","command":["{home}/bin/x","--n={label}","{uuid}"]}]})";
+    seeds << R"({"id":"full","settings":[{"id":"dest","type":"folder","default":"{home}/Backups"}],
+                "theme":{"palette":{"window":"#0a0a0f"},"colors":{"danger":"#ff2d55"},"filesystems":{"ext4":"#00b4ff"},"usage":["#112233"]},
+                "actions":[{"label":"Copy","output":"window","command":["rsync","{ask:c}","{ask:m}","--n={ask:t}","{setting:dest}/{label}"],
+                "ask":[{"id":"c","type":"check","on":"--checksum","off":""},{"id":"m","type":"choice","choices":["-q","-v"]},
+                       {"id":"t","type":"text","default":"{label}"},{"id":"n","type":"number","min":1,"max":9}]}]})";
     int accepted = 0;
     QStringList bad;
-    static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
+    Disk disk;
+    disk.device = QStringLiteral("/dev/sdz");
+    Volume vol;
+    vol.device = QStringLiteral("/dev/sdz1");
+    vol.label = QStringLiteral("stick");
+    vol.mountPoints = {QStringLiteral("/run/media/me/stick")};
+    disk.volumes = {vol};
     for (int i = 0; i < rounds(); ++i) {
         const Addon a = Addons::parseData(mutate(seeds[qsizetype(rng.bounded(quint32(seeds.size())))]), QString());
         if (!a.error.isEmpty())
             continue;
         ++accepted;
-        bool ok = kId.match(a.id).hasMatch() && !a.actions.isEmpty();
+        bool ok = kId.match(a.id).hasMatch() && (!a.actions.isEmpty() || !a.theme.isEmpty());
         for (const AddonAction &act : a.actions) {
             ok = ok && !act.label.isEmpty() && !act.command.isEmpty() && !act.command.first().isEmpty();
-            for (auto it = placeholder.globalMatch(act.command.value(0)); it.hasNext();)
-                ok = ok && it.next().captured(1) == QLatin1String("home");
+            // The program can't come from the drive or a form: no "{" but {home}.
+            ok = ok && !QString(act.command.value(0)).remove(QStringLiteral("{home}")).contains(QLatin1Char('{'));
             AddonAction unboxed = act;
             unboxed.lookOnly = false;
-            ok = ok && !(act.lookOnly && !Addons::risks(unboxed).admin.isEmpty());
+            ok = ok && !(act.lookOnly && !Addons::risks(unboxed, a.settings).admin.isEmpty());
+            for (const AddonField &f : act.ask)
+                ok = ok && !f.id.isEmpty() && f.min >= 0 && f.max >= f.min && (f.type != AddonField::Type::Choice || !f.choices.isEmpty());
+            // Whatever it fills in for a drive and random answers: no hidden characters, no
+            // empty arguments, and no typed answer at the start of an argument beginning with "-".
+            QMap<QString, QString> answers;
+            for (const AddonField &f : act.ask)
+                answers.insert(f.id, rng.bounded(3) == 0 ? QStringLiteral("-x") : rng.bounded(2) ? QString() : QStringLiteral("value"));
+            QString error;
+            const QStringList argv = Addons::fillCommand(a, act, disk, &disk.volumes[0], answers, &error);
+            for (const QString &part : argv)
+                ok = ok && !hasHiddenCharacters(part);
         }
         if (!ok)
             bad << a.id;

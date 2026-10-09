@@ -632,6 +632,118 @@ void addonTests()
     a.outside = false;
     report(!Addons::isTrusted(a, shell), QStringLiteral("a shell action is never trusted for good"));
 
+    // Forms, settings, output and themes.
+    {
+        const QByteArray full = R"({"id":"full","name":"Full","settings":[{"id":"dest","type":"folder","label":"Back up to","default":"{home}/Backups"}],
+            "theme":{"colors":{"partition":"#00b4ff","danger":"#ff2d55","nonsense":"#000000"},"filesystems":{"btrfs":"#8844ff"},"usage":["#112233"]},
+            "actions":[{"label":"Copy","output":"window","command":["rsync","-a","{ask:check}","{ask:mode}","--name={ask:name}","{mountpoint}/","{setting:dest}/{label}/"],
+              "ask":[{"id":"check","type":"check","label":"Compare contents","on":"--checksum","off":""},
+                     {"id":"mode","type":"choice","label":"How","choices":[{"label":"Quiet","value":"-q"},{"label":"Chatty","value":"-v"}],"default":"-v"},
+                     {"id":"name","type":"text","label":"Name","default":"{label}"},
+                     {"id":"count","type":"number","label":"How many","min":1,"max":5}]}]})";
+        const Addon a = Addons::parseData(full, QString());
+        report(a.error.isEmpty() && a.settings.size() == 1 && a.actions.value(0).ask.size() == 4 && a.actions.value(0).window
+                   && a.theme.colors.value(QStringLiteral("partition")) == 0x00b4ff && !a.theme.colors.contains(QStringLiteral("nonsense"))
+                   && a.theme.filesystems.value(QStringLiteral("btrfs")) == 0x8844ff && a.theme.usage.size() == 1,
+               QStringLiteral("forms, settings, window output and a theme parse"), a.error);
+        const Addon themeOnly = Addons::parseData(R"({"id":"t","theme":{"colors":{"free":"#101010"}}})", QString());
+        report(themeOnly.error.isEmpty() && themeOnly.actions.isEmpty(), QStringLiteral("an add-on can be just a theme"), themeOnly.error);
+
+        const AddonAction &act = a.actions.value(0);
+        QMap<QString, QString> answers = {{QStringLiteral("check"), QStringLiteral("--checksum")}, {QStringLiteral("mode"), QStringLiteral("-q")},
+                                          {QStringLiteral("name"), QStringLiteral("stick")}};
+        error.clear();
+        QStringList filled = Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error);
+        const QStringList expected = {QStringLiteral("rsync"), QStringLiteral("-a"), QStringLiteral("--checksum"), QStringLiteral("-q"),
+                                      QStringLiteral("--name=stick"), QStringLiteral("/run/media/me/My Stuff/"),
+                                      QDir::homePath() + QStringLiteral("/Backups/My Stuff; rm -rf ~/")};
+        report(filled == expected, QStringLiteral("answers and settings fill in"), filled.join(QStringLiteral(" | ")) + error);
+        answers[QStringLiteral("check")] = QString();
+        filled = Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error);
+        report(!filled.contains(QString()) && filled.size() == expected.size() - 1, QStringLiteral("an unticked box leaves its argument out"),
+               filled.join(QStringLiteral(" | ")));
+        answers[QStringLiteral("check")] = QStringLiteral("--checksum");
+        answers[QStringLiteral("name")] = QStringLiteral("-rf");
+        filled = Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error);
+        report(filled.value(4) == QLatin1String("--name=-rf"), QStringLiteral("a typed \"-\" is fine after the add-on's own option"), filled.value(4));
+        Addon bare = a;
+        bare.actions[0].command = {QStringLiteral("tool"), QStringLiteral("{ask:name}")};
+        error.clear();
+        report(Addons::fillCommand(bare, bare.actions[0], usb, &usb.volumes[0], answers, &error).isEmpty() && error.contains(QLatin1String("option")),
+               QStringLiteral("but a typed answer can't start an argument with \"-\""), error);
+        answers[QStringLiteral("name")] = QStringLiteral("stick");
+        answers[QStringLiteral("mode")] = QStringLiteral("--delete");
+        error.clear();
+        report(Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error).isEmpty() && error.contains(QLatin1String("choices")),
+               QStringLiteral("a choice that isn't in the add-on's list is refused"), error);
+        answers[QStringLiteral("mode")] = QStringLiteral("-v");
+        answers[QStringLiteral("name")] = QStringLiteral("a\u202Eb");
+        error.clear();
+        report(Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error).isEmpty() && error.contains(QLatin1String("hidden")),
+               QStringLiteral("a typed answer with hidden characters is refused"), error);
+        answers.remove(QStringLiteral("name"));
+        Disk braces = named(QStringLiteral("{ask:mode}"));
+        error.clear();
+        filled = Addons::fillCommand(a, act, braces, &braces.volumes[0], answers, &error);
+        report(filled.value(4) == QLatin1String("--name={ask:mode}") && filled.value(6).endsWith(QLatin1String("/{ask:mode}/")),
+               QStringLiteral("a drive named \"{ask:mode}\" stays just that (one pass)"), filled.join(QStringLiteral(" | ")) + error);
+        Addons::setSetting(a, QStringLiteral("dest"), QStringLiteral("/srv/backups"));
+        filled = Addons::fillCommand(a, act, usb, &usb.volumes[0], answers, &error);
+        report(filled.value(6).startsWith(QLatin1String("/srv/backups/")), QStringLiteral("a saved setting is used"), filled.value(6));
+        report(Addons::fieldDefault(act.ask[2], usb, &usb.volumes[0]) == QLatin1String("My Stuff; rm -rf ~")
+                   && Addons::fieldDefault(act.ask[1], usb, nullptr) == QLatin1String("-v") && Addons::fieldDefault(act.ask[3], usb, nullptr) == QLatin1String("1"),
+               QStringLiteral("form defaults fill in"));
+
+        // Values in a form count toward what an action can do.
+        const Addon sneakyChoice = Addons::parseData(R"({"id":"s","actions":[{"label":"L","command":["{home}/bin/tool","{ask:how}"],
+            "ask":[{"id":"how","type":"choice","choices":["fast","sudo"]}]}]})", QString());
+        report(sneakyChoice.error.isEmpty() && Addons::risks(sneakyChoice.actions[0]).admin == QLatin1String("sudo"),
+               QStringLiteral("a choice of \"sudo\" counts as admin power"), sneakyChoice.error);
+        Addon trusted = a;
+        trusted.outside = false;
+        Addons::trust(trusted, trusted.actions[0]);
+        report(Addons::isTrusted(trusted, trusted.actions[0], {QStringLiteral("rsync")})
+                   && !Addons::isTrusted(trusted, trusted.actions[0], {QStringLiteral("rsync"), QStringLiteral("bash")}),
+               QStringLiteral("\"Don't ask again\" doesn't cover a command that turns out to run a shell"));
+        report(Addons::actionKey(a, act) == QLatin1String("full/Copy")
+                   && Addons::actionKey(a, AddonAction{QStringLiteral("a/b & c")}) == QLatin1String("full/a%2Fb%20%26%20c"),
+               QStringLiteral("action keys are stable and safe"), Addons::actionKey(a, AddonAction{QStringLiteral("a/b & c")}));
+    }
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo","{ask:nope}"]}]})", "Unknown placeholder", QStringLiteral("a form field that doesn't exist is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo","{setting:x}"]}]})", "Unknown placeholder", QStringLiteral("a setting that doesn't exist is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo","{device:x}"]}]})", "Unknown placeholder", QStringLiteral("{device:x} is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["{ask:p}"],"ask":[{"id":"p"}]}]})", "program to run",
+           QStringLiteral("the program to run can't come from a form"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo"],"ask":[{"id":"n","type":"number","min":-5}]}]})", "min",
+           QStringLiteral("a number field that allows negatives is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo"],"ask":[{"id":"c","type":"choice"}]}]})", "choices",
+           QStringLiteral("a choice field without choices is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo"],"ask":[{"id":"a"},{"id":"a"}]}]})", "own",
+           QStringLiteral("two fields with the same id are refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["echo"],"ask":[{"id":"a","type":"slider"}]}]})", "unknown type",
+           QStringLiteral("an unknown field type is refused"));
+    broken(R"({"id":"x","settings":[{"id":"d","default":"{label}"}],"actions":[{"label":"L","command":["echo"]}]})", "default",
+           QStringLiteral("a setting's default can't depend on a drive"));
+    broken(R"({"id":"x","actions":[{"label":"L","output":"sideways","command":["echo"]}]})", "output", QStringLiteral("an unknown output is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","output":"window","command":["sudo","ls"]}]})", "terminal",
+           QStringLiteral("sudo in a DiskForge window is refused (it needs a terminal)"));
+    broken(R"({"id":"x","theme":{"colors":{"danger":"red"}}})", "color", QStringLiteral("a theme color that isn't #rrggbb is refused"));
+    broken(R"({"id":"x","theme":{"colors":{"danger":"#ff000080"}}})", "color", QStringLiteral("a see-through theme color is refused"));
+    broken(R"({"id":"x"})", "No actions", QStringLiteral("an add-on with no actions and no theme is refused"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["ls","safe\u202Egnp.exe"]}]})", "hidden",
+           QStringLiteral("a command with a text-direction flip in it is refused"));
+
+    // Why an action isn't offered.
+    {
+        AddonAction mountedOnly;
+        mountedOnly.when = {QStringLiteral("mounted"), QStringLiteral("filesystem:ext4|btrfs")};
+        report(Addons::whyNot(mountedOnly, usb, &unmounted, false) == QLatin1String("Mount it first")
+                   && Addons::whyNot(mountedOnly, usb, &usb.volumes[0], false) == QLatin1String("Only for ext4, btrfs")
+                   && Addons::whyNot(mountedOnly, usb, nullptr, false) == QLatin1String("Pick a partition first")
+                   && Addons::whyNot(mountedOnly, system, &system.volumes[0], false).contains(QLatin1String("system disk")),
+               QStringLiteral("the reasons an action isn't offered are plain"), Addons::whyNot(mountedOnly, usb, &usb.volumes[0], false));
+    }
+
     // The look-only sandbox: really read-only, and other programs' sockets aren't there.
     AddonAction looking;
     looking.lookOnly = true;

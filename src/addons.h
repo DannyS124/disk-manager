@@ -9,9 +9,35 @@
 #include "udisks.h"
 
 #include <QByteArray>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 #include <QVector>
+
+// Something an add-on asks for: before an action runs ("ask"), or once in the Add-ons
+// window ("settings"). DiskForge draws the form; the add-on only describes it.
+struct AddonField {
+    enum class Type { Text, Number, Choice, Check, Folder, File };
+    QString id;
+    Type type = Type::Text;
+    QString label;
+    QString defaultValue; // may use the drive placeholders, like {label}
+    QVector<QPair<QString, QString>> choices; // Choice: label and value
+    QString on, off; // Check: the value when ticked or not
+    qint64 min = 0, max = 1000000; // Number
+    // Typed in by the user (as opposed to picked from values the add-on file lists).
+    bool typed() const { return type != Type::Choice && type != Type::Check; }
+};
+
+// Colors from a theme add-on, as 0xRRGGBB (the core library has no QColor). The names are
+// the ones in docs/ADDONS.md; unknown names are ignored, so newer themes still load.
+struct AddonTheme {
+    QMap<QString, quint32> palette;
+    QMap<QString, quint32> colors;
+    QMap<QString, quint32> filesystems;
+    QVector<quint32> usage;
+    bool isEmpty() const { return palette.isEmpty() && colors.isEmpty() && filesystems.isEmpty() && usage.isEmpty(); }
+};
 
 struct AddonAction {
     QString label;
@@ -19,11 +45,13 @@ struct AddonAction {
     QString appliesTo = QStringLiteral("volume"); // volume, disk, free or any
     QStringList when; // conditions, all must hold
     QStringList command;
-    bool terminal = false;
+    bool terminal = false; // output in a terminal window
+    bool window = false;   // output in a DiskForge window
     QString confirm;
     bool systemDisks = false; // also offered on the system disk, if it's look-only too
     bool lookOnly = false; // runs in a read-only sandbox: no changing files, no network
     int index = 0; // its place in the add-on's list of actions
+    QVector<AddonField> ask; // a form shown before it runs
 };
 
 // What an action's command could do, judging by the programs in it. Look-only actions
@@ -51,6 +79,8 @@ struct Addon {
     bool systemWide = false; // installed by a package, in /usr/share/diskforge/addons
     // In your add-on folder, but not put there by DiskForge (or changed since).
     bool outside = false;
+    QVector<AddonField> settings; // set once in the Add-ons window
+    AddonTheme theme;
     QVector<AddonAction> actions;
 };
 
@@ -99,16 +129,36 @@ public:
     // Add-on actions that fit the selection (disk always set; volume null for a disk or free space).
     QVector<QPair<const Addon *, const AddonAction *>> actionsFor(const Disk &disk, const Volume *volume, bool freeSpace) const;
     static bool applies(const AddonAction &action, const Disk &disk, const Volume *volume, bool freeSpace);
+    // Why an action isn't offered for this selection, in plain words; empty if it is.
+    static QString whyNot(const AddonAction &action, const Disk &disk, const Volume *volume, bool freeSpace);
     // Fills in the placeholders. Values that come from the drive can't start an argument
     // with "-", be "." or "..", hold "/" or hidden characters, so a drive's name can't turn
     // into an option or a path somewhere else. error says why it can't run.
     static QStringList expand(const QStringList &args, const Disk &disk, const Volume *volume, QString *error);
     // The same for the "confirm" question, which is only shown, so "-" is fine there.
     static QString expandText(const QString &text, const Disk &disk, const Volume *volume, QString *error);
-    static AddonRisks risks(const AddonAction &action);
+    // The full command for this drive, with the form's answers (by field id) and the
+    // add-on's settings, in one pass over the add-on's own text: a value is never read again,
+    // so a drive named "{ask:x}" stays just that. Missing answers use the field's default.
+    static QStringList fillCommand(const Addon &addon, const AddonAction &action, const Disk &disk, const Volume *volume,
+                                   const QMap<QString, QString> &answers, QString *error);
+    // A field's default for this drive (placeholders filled in), for the form.
+    static QString fieldDefault(const AddonField &field, const Disk &disk, const Volume *volume);
+
+    // What the programs in a command could do. For an action, the values its fields can put
+    // in (choices, checkbox values, defaults) count too; look-only actions have none.
+    static AddonRisks risksOf(const QStringList &parts);
+    static AddonRisks risks(const AddonAction &action, const QVector<AddonField> &settings = {});
+
+    static QString setting(const Addon &addon, const QString &field); // the saved value, or the default
+    static void setSetting(const Addon &addon, const QString &field, const QString &value);
+    // Stable name for an action, for pins and shortcuts: "<add-on id>/<label>".
+    static QString actionKey(const Addon &addon, const AddonAction &action);
 
     // Trust is remembered per add-on file, so any change to the file asks again.
     static bool isTrusted(const Addon &addon, const AddonAction &action);
+    // The same, also checking the command as it will really run.
+    static bool isTrusted(const Addon &addon, const AddonAction &action, const QStringList &argv);
     static void trust(const Addon &addon, const AddonAction &action);
     // The command as it really runs: in the sandbox for look-only actions, in a terminal
     // if asked for. Empty with error set if it can't run.
