@@ -13,6 +13,7 @@
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
 #include "../src/diskmap.h"
+#include "../src/homewindow.h"
 #include "../src/inspectdialog.h"
 #include "../src/isomode.h"
 #include "../src/filecopy.h"
@@ -1992,6 +1993,103 @@ void windowsUsb()
     cleanUpLoop(udisks, loopPath);
 }
 
+// The home screen (Bluespark's desktop, and Tools → Quick Fixes on a PC): which tiles are there,
+// what each one starts, the ask before restarting into the firmware, and reading Secure Boot.
+void homeScreen()
+{
+    QTemporaryDir dir;
+    UDisks udisks;
+    QList<QStringList> started;
+    const auto realLaunch = HomeWindow::launch;
+    HomeWindow::launch = [&started](const QString &program, const QStringList &args) {
+        started << (QStringList{program} + args);
+        return true;
+    };
+    const QString apps = dir.filePath(QStringLiteral("applications"));
+    QDir().mkpath(apps);
+    auto desktopFile = [&apps](const char *id, const QByteArray &exec) {
+        QFile f(apps + QLatin1Char('/') + QLatin1String(id) + QStringLiteral(".desktop"));
+        if (f.open(QIODevice::WriteOnly))
+            f.write("[Desktop Entry]\nName=x\n[Other]\nExec=wrong\n[Desktop Entry]\nExec=" + exec + "\n");
+    };
+    desktopFile("bluespark-photorec", "qterminal -e sudo photorec %f");
+    desktopFile("bluespark-firmware", "systemctl reboot --firmware-setup");
+    desktopFile("qterminal", "qterminal");
+    HomeWindow::applicationDirs = {apps};
+    auto ids = [](const HomeWindow &home) {
+        QStringList out;
+        for (const HomeWindow::Tile &t : home.tiles())
+            out << t.id;
+        return out;
+    };
+
+    {
+        HomeWindow fixes(&udisks, HomeWindow::Mode::Window);
+        const QStringList tiles = ids(fixes);
+        report(!tiles.contains(QLatin1String("drives")) && !tiles.contains(QLatin1String("terminal")) && !tiles.contains(QLatin1String("testdisk"))
+                   && tiles.contains(QLatin1String("writeimage")) && tiles.contains(QLatin1String("recover")),
+               QStringLiteral("Quick Fixes: the tools, without the stick's programs or what isn't installed"), tiles.join(QLatin1Char(' ')));
+        auto *copy = fixes.findChild<QAbstractButton *>(QStringLiteral("tile-copystick"));
+        report(copy && copy->text() == QLatin1String("Make a Bluespark USB"), QStringLiteral("on a PC the stick tile makes a Bluespark USB"),
+               copy ? copy->text() : QString());
+        started.clear();
+        if (auto *write = fixes.findChild<QAbstractButton *>(QStringLiteral("tile-writeimage")))
+            write->click();
+        report(started.size() == 1 && started[0].mid(1) == QStringList{QStringLiteral("--open"), QStringLiteral("write-image")}
+                   && started[0][0] == QCoreApplication::applicationFilePath(),
+               QStringLiteral("a tool tile starts DiskForge with that tool"), started.value(0).join(QLatin1Char(' ')));
+    }
+    {
+        HomeWindow home(&udisks, HomeWindow::Mode::Desktop);
+        const QStringList tiles = ids(home);
+        report(tiles.contains(QLatin1String("drives")) && tiles.contains(QLatin1String("terminal")) && tiles.contains(QLatin1String("firmware"))
+                   && !tiles.contains(QLatin1String("web")),
+               QStringLiteral("the home screen: DiskForge, the tools and the programs that are there"), tiles.join(QLatin1Char(' ')));
+        started.clear();
+        if (auto *recover = home.findChild<QAbstractButton *>(QStringLiteral("tile-recover")))
+            recover->click();
+        report(started.size() == 1 && started[0] == QStringList{QStringLiteral("qterminal"), QStringLiteral("-e"), QStringLiteral("sudo"), QStringLiteral("photorec")},
+               QStringLiteral("a program tile runs the Exec line of its launcher, without %f"), started.value(0).join(QLatin1Char(' ')));
+
+        // Restarting into the firmware asks first: No starts nothing, Yes restarts.
+        for (const bool yes : {false, true}) {
+            started.clear();
+            Answerer answerer;
+            answerer.answer = [yes](QWidget *modal) {
+                if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+                    box->button(yes ? QMessageBox::Yes : QMessageBox::No)->click();
+                    return true;
+                }
+                return false;
+            };
+            if (auto *firmware = home.findChild<QAbstractButton *>(QStringLiteral("tile-firmware")))
+                firmware->click();
+            report(yes ? started.size() == 1 && started[0].value(1) == QLatin1String("reboot") : started.isEmpty(),
+                   yes ? QStringLiteral("Firmware Settings restarts after Yes") : QStringLiteral("and does nothing after No"),
+                   started.value(0).join(QLatin1Char(' ')));
+        }
+    }
+
+    // Secure Boot from the firmware variable: 4 bytes of attributes, then the value.
+    const QString efi = dir.filePath(QStringLiteral("efi"));
+    QDir().mkpath(efi + QStringLiteral("/efivars"));
+    auto secureBootVar = [&efi](const QByteArray &data) {
+        QFile f(efi + QStringLiteral("/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"));
+        if (f.open(QIODevice::WriteOnly))
+            f.write(data);
+    };
+    const bool noVar = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::Unknown;
+    secureBootVar(QByteArray("\x06\x00\x00\x00\x01", 5));
+    const bool on = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::On;
+    secureBootVar(QByteArray("\x06\x00\x00\x00\x00", 5));
+    const bool off = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::Off;
+    const bool bios = HomeWindow::secureBoot(dir.filePath(QStringLiteral("no-efi"))) == HomeWindow::SecureBoot::Bios;
+    report(noVar && on && off && bios, QStringLiteral("Secure Boot is read right: on, off, BIOS, can't tell"));
+
+    HomeWindow::applicationDirs.clear();
+    HomeWindow::launch = realLaunch;
+}
+
 // Enter in a USB dialog goes to Close or Cancel, never to the button that erases the stick, and
 // not to Browse either, even after Browse had the focus (it used to open the file picker).
 void enterKey()
@@ -2123,6 +2221,7 @@ int userScenarios()
     windowsUsb();
     rescueMode();
     enterKey();
+    homeScreen();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

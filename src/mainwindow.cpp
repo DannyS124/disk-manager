@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "mainwindow.h"
+#include "homewindow.h"
 
 #include "about.h"
 #include "addonform.h"
@@ -625,6 +626,13 @@ void MainWindow::createActions()
     tools->setToolTipsVisible(true);
     connect(tools, &QMenu::aboutToShow, this, [this, tools] {
         tools->clear();
+        tools->addAction(themeIcon("tools-wizard", "system-run"), tr("&Quick Fixes…"), this, [this] {
+            // Its own window, so it can stay open next to this one.
+            auto *fixes = new HomeWindow(m_udisks, HomeWindow::Mode::Window);
+            fixes->setAttribute(Qt::WA_DeleteOnClose);
+            fixes->show();
+        });
+        tools->addSeparator();
         tools->addActions({m_usage, m_cleanup, m_optimize, m_snapshots});
         tools->addSection(tr("Add-ons"));
         // Every add-on action is listed. One that doesn't fit the selection is greyed out,

@@ -17,6 +17,7 @@
 #include "../src/partrecover.h"
 #include "../src/recoverdialog.h"
 #include "../src/stickcheckdialog.h"
+#include "../src/homewindow.h"
 #include "../src/windowsusbdialog.h"
 #include "../src/powerbox.h"
 #include "../src/mainwindow.h"
@@ -55,6 +56,7 @@
 #include <QLabel>
 
 void previewTools(UDisks &udisks, const QDir &out);
+void previewHome(UDisks &udisks, const QDir &out);
 void previewCopyTools(UDisks &udisks, const QDir &out);
 
 namespace {
@@ -93,6 +95,7 @@ int main(int argc, char *argv[])
     save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
     ThemeMaker themeMaker(&addons);
     save(themeMaker, out.filePath(QStringLiteral("theme-maker.png")));
+    previewHome(udisks, out);
     {
         // The main window (with the warning banner when a drive here has one), then in each
         // built-in theme.
@@ -593,4 +596,43 @@ void previewCopyTools(UDisks &udisks, const QDir &out)
     if (auto *file = rescue.findChild<QLineEdit *>())
         file->setText(rescued);
     save(rescue, out.filePath(QStringLiteral("rescue.png")));
+}
+
+// Bluespark's home screen, with Bluespark's own icons (from rescue/icons, the logo added the way
+// make-image.sh does it) and its programs, then the same tiles as the Quick Fixes window.
+void previewHome(UDisks &udisks, const QDir &out)
+{
+    QTemporaryDir dir;
+    const QString theme = dir.filePath(QStringLiteral("icons/Bluespark"));
+    QDir().mkpath(dir.filePath(QStringLiteral("icons")));
+    QProcess::execute(QStringLiteral("cp"), {QStringLiteral("-a"), QStringLiteral(SOURCE_DIR "/rescue/icons/Bluespark"), dir.filePath(QStringLiteral("icons"))});
+    QFile::copy(QStringLiteral(SOURCE_DIR "/rescue/art/bluespark-icon.svg"), theme + QStringLiteral("/scalable/apps/bluespark.svg"));
+    const QStringList searchPaths = QIcon::themeSearchPaths();
+    const QString themeName = QIcon::themeName();
+    QIcon::setThemeSearchPaths(QStringList{dir.filePath(QStringLiteral("icons"))} + searchPaths);
+    QIcon::setThemeName(QStringLiteral("Bluespark"));
+
+    // The stick's launchers, plus stand-ins for the programs Debian brings.
+    const QString apps = dir.filePath(QStringLiteral("applications"));
+    QDir().mkpath(apps);
+    for (const QString &f : QDir(QStringLiteral(SOURCE_DIR "/rescue/files/usr/share/applications")).entryList({QStringLiteral("*.desktop")}))
+        QFile::copy(QStringLiteral(SOURCE_DIR "/rescue/files/usr/share/applications/") + f, apps + QLatin1Char('/') + f);
+    for (const char *program : {"pcmanfm-qt", "firefox-esr", "qterminal", "qps", "featherpad"}) {
+        QFile f(apps + QLatin1Char('/') + QLatin1String(program) + QStringLiteral(".desktop"));
+        if (f.open(QIODevice::WriteOnly))
+            f.write(QByteArray("[Desktop Entry]\nType=Application\nName=x\nExec=") + program + "\n");
+    }
+    HomeWindow::applicationDirs = {apps};
+    {
+        HomeWindow home(&udisks, HomeWindow::Mode::Desktop);
+        home.resize(1280, 800);
+        save(home, out.filePath(QStringLiteral("home.png")));
+    }
+    {
+        HomeWindow fixes(&udisks, HomeWindow::Mode::Window);
+        save(fixes, out.filePath(QStringLiteral("quick-fixes.png")));
+    }
+    HomeWindow::applicationDirs.clear();
+    QIcon::setThemeSearchPaths(searchPaths);
+    QIcon::setThemeName(themeName);
 }

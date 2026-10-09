@@ -3,6 +3,7 @@
 
 #include "applog.h"
 #include "format.h"
+#include "homewindow.h"
 #include "mainwindow.h"
 #include "translations.h"
 #include "udisks.h"
@@ -91,7 +92,8 @@ int main(int argc, char *argv[])
     const QCommandLineOption openOption(QStringLiteral("open"),
                                         QStringLiteral("Open just one USB tool: write-image, windows-usb, rescue-usb or check-stick."),
                                         QStringLiteral("tool"));
-    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption});
+    const QCommandLineOption homeOption(QStringLiteral("home"), QStringLiteral("Be Bluespark's home screen (its desktop)."));
+    parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption, homeOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
 
@@ -127,6 +129,14 @@ int main(int argc, char *argv[])
         QObject::connect(&udisks, &UDisks::operationFinished, &app, [](bool ok, const QString &message) {
             qCInfo(lcOps).noquote() << (ok ? "result:" : "failed:") << message;
         });
+    }
+
+    if (parser.isSet(homeOption)) {
+        HomeWindow home(&udisks, HomeWindow::Mode::Desktop);
+        home.show();
+        const int status = app.exec();
+        qCInfo(lcOps).noquote() << "Home screen closed";
+        return status;
     }
 
     MainWindow window(&udisks);

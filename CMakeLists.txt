@@ -86,6 +86,7 @@ target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
 # Windows and dialogs, shared by the app, the dialog preview and the window test.
 add_library(diskforge-ui STATIC
     src/diskmap.cpp src/diskmap.h
+    src/homewindow.cpp src/homewindow.h
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
