@@ -1,0 +1,9 @@
+# The machine that builds the rescue image. rescue/build.sh makes it once and reuses it.
+FROM docker.io/library/debian:trixie
+RUN sed -i 's/^Components: main$/Components: main contrib non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      mmdebstrap squashfs-tools xorriso mtools dosfstools \
+      grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed grub-common \
+      memtest86+ debian-archive-keyring ca-certificates zstd file python3 librsvg2-bin fonts-dejavu-core gpg \
+ && rm -rf /var/lib/apt/lists/*

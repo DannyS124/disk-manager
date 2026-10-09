@@ -1,0 +1,122 @@
+#!/bin/bash
+# Runs inside the builder container; rescue/build.sh starts it. Makes the live system with
+# mmdebstrap, then puts the ISO together around it.
+#
+# Everything here is ours except Debian's packages and its signed boot files (shim, GRUB and
+# the kernel). Those are what Secure Boot trusts, so they're used exactly as Debian ships them.
+set -euo pipefail
+version=$1
+rescue=/src/rescue
+work=/work
+chroot=$work/chroot
+iso=$work/iso
+built=$(date -u +%Y-%m-%d)
+build_id=$(cat /proc/sys/kernel/random/uuid)
+name=diskforge-rescue-$version-$(date -u +%Y%m%d)
+deb=/src/packaging/deb/out/diskforge_${version}_amd64.deb
+[ -f "$deb" ] || { echo "No DiskForge package at $deb"; exit 1; }
+
+packages=$(grep -v '^#' "$rescue/packages.txt" | grep -v '^ *$' | paste -sd, -)
+mirror=http://deb.debian.org/debian
+components="main contrib non-free-firmware"
+mkdir -p "$work" "$iso"
+
+# The pictures: one drawing for the boot menu and the desktop.
+mkdir -p "$work/art"
+rsvg-convert -w 1920 -h 1080 "$rescue/art/boot.svg" -o "$work/art/background.png"
+rsvg-convert -w 1920 -h 1080 "$rescue/art/desktop.svg" -o "$work/art/wallpaper.png"
+
+echo "--> The live system"
+# Downloaded packages live in /cache between builds. The hooks run in order: our files, then
+# DiskForge, then setup.sh, which cleans up after itself.
+mmdebstrap --mode=root --variant=important \
+    --components="${components// /,}" \
+    --aptopt='Apt::Install-Recommends "true"' \
+    --include="$packages" \
+    --skip=download/empty \
+    --setup-hook='mkdir -p "$1"/var/cache/apt/archives/' \
+    --setup-hook='sync-in /cache /var/cache/apt/archives/' \
+    --customize-hook="sync-in $rescue/files /" \
+    --customize-hook='mkdir -p "$1/usr/local/share/diskforge-rescue"' \
+    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt /usr/local/share/diskforge-rescue" \
+    --customize-hook="copy-in $deb /tmp" \
+    --customize-hook="chroot \"\$1\" apt-get install -y -q /tmp/$(basename "$deb")" \
+    --customize-hook='sync-out /var/cache/apt/archives /cache' \
+    --customize-hook="copy-in $rescue/setup.sh /tmp" \
+    --customize-hook="chroot \"\$1\" bash /tmp/setup.sh '$version' '$build_id' '$built'" \
+    trixie "$chroot" \
+    "deb $mirror trixie $components" \
+    "deb $mirror trixie-updates $components" \
+    "deb http://security.debian.org/debian-security trixie-security $components"
+
+echo "--> Kernel and the list of what's inside"
+mkdir -p "$iso/live" "$iso/.disk" "$iso/boot/grub/fonts" "$iso/boot/grub/i386-pc" "$iso/EFI/BOOT" "$iso/EFI/debian"
+kernel=$(ls "$chroot"/boot/vmlinuz-* | sort -V | tail -1)
+kver=${kernel##*/vmlinuz-}
+cp "$kernel" "$iso/live/vmlinuz"
+cp "$chroot/boot/initrd.img-$kver" "$iso/live/initrd.img"
+chroot "$chroot" dpkg-query -W -f '${Package} ${Version}\n' > "$iso/live/packages.txt"
+
+echo "--> Packing the system (this takes a few minutes)"
+mksquashfs "$chroot" "$iso/live/filesystem.squashfs" -noappend -no-progress -quiet \
+    -comp zstd -Xcompression-level 19 -b 1M -xattrs-exclude '^system\.posix_acl' \
+    -wildcards -e 'boot/vmlinuz-*' 'boot/initrd.img-*' 'boot/System.map-*' 'boot/config-*' \
+    'proc/*' 'sys/*' 'dev/*' 'run/*' 'tmp/*'
+
+echo "--> Boot files"
+# How the stick is recognized: GRUB looks for the build's own file, live-boot compares
+# live-uuid with the copy in its initrd, DiskForge reads diskforge-rescue.
+echo "DiskForge Rescue $version ($built)" > "$iso/.disk/info"
+echo "$build_id" > "$iso/.disk/live-uuid-amd64"
+printf 'DiskForge Rescue\nversion=%s\nbuilt=%s\nid=%s\n' "$version" "$built" "$build_id" > "$iso/.disk/diskforge-rescue"
+: > "$iso/.disk/diskforge-$build_id"
+cp "$rescue/README.txt" "$iso/README.txt"
+
+# UEFI: shim (signed by Microsoft) starts GRUB (signed by Debian), which starts the kernel
+# (signed by Debian). This GRUB is the one Debian makes for CDs and USB sticks: it finds
+# /.disk/info, then reads /boot/grub/grub.cfg. The small configs next to it are a fallback.
+cp --dereference /usr/lib/shim/shimx64.efi.signed "$iso/EFI/BOOT/BOOTX64.EFI"
+cp /usr/lib/shim/mmx64.efi.signed "$iso/EFI/BOOT/mmx64.efi"
+cp /usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed "$iso/EFI/BOOT/grubx64.efi"
+sed "s/@ID@/$build_id/g" "$rescue/boot/find-stick.cfg" > "$iso/EFI/BOOT/grub.cfg"
+cp "$iso/EFI/BOOT/grub.cfg" "$iso/EFI/debian/grub.cfg"
+
+# Old BIOS PCs (and VMs set to BIOS): GRUB's own CD image. No Secure Boot there.
+cp /usr/lib/grub/i386-pc/*.mod /usr/lib/grub/i386-pc/*.lst "$iso/boot/grub/i386-pc/"
+grub-mkimage -O i386-pc -p /boot/grub -o "$work/core.img" biosdisk iso9660
+cat /usr/lib/grub/i386-pc/cdboot.img "$work/core.img" > "$iso/boot/grub/i386-pc/eltorito.img"
+
+cp /usr/share/grub/unicode.pf2 "$iso/boot/grub/fonts/"
+cp "$work/art/background.png" "$iso/boot/grub/"
+cp /boot/memtest86+x64.efi /boot/memtest86+x64.bin "$iso/boot/"
+memtest=$(dpkg-query -W -f '${Version}' memtest86+ | sed 's/-.*//')
+sed -e "s/@ID@/$build_id/g" -e "s/@VERSION@/$version/g" -e "s/@BUILT@/$built/g" -e "s/@MEMTEST@/$memtest/g" \
+    "$rescue/boot/grub.cfg" > "$iso/boot/grub/grub.cfg"
+sed -e "s/@VERSION@/$version/g" -e "s/@BUILT@/$built/g" "$rescue/boot/theme.txt" > "$iso/boot/grub/theme.txt"
+
+# The FAT image a PC's firmware boots from when the ISO is a CD (or a VM's CD drive).
+efi=$iso/boot/grub/efi.img
+mkfs.vfat -C -n DFR-EFI "$efi" 8192 >/dev/null
+mmd -i "$efi" ::/EFI ::/EFI/BOOT ::/EFI/debian
+mcopy -i "$efi" "$iso"/EFI/BOOT/* ::/EFI/BOOT/
+mcopy -i "$efi" "$iso/EFI/debian/grub.cfg" ::/EFI/debian/
+
+# For "Check the stick" in the boot menu (live-boot reads this) and for DiskForge, which
+# checks every file it copies onto a USB stick against it. eltorito.img is left out: xorriso
+# writes a table into it while making the ISO, and a FAT32 stick has no use for it anyway.
+(cd "$iso" && find . -type f ! -name sha256sum.txt ! -path ./boot/grub/i386-pc/eltorito.img -print0 |
+    sort -z | xargs -0 sha256sum) > "$work/sha256sum.txt"
+mv "$work/sha256sum.txt" "$iso/sha256sum.txt"
+
+echo "--> The ISO"
+# Hybrid: boots as a CD or written straight to a USB stick, on UEFI and BIOS.
+xorriso -as mkisofs -quiet \
+    -iso-level 3 -full-iso9660-filenames -joliet -joliet-long -rational-rock \
+    -volid DFRESCUE -appid "DiskForge Rescue $version" -publisher DiskForge \
+    -eltorito-boot boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table \
+    --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
+    -eltorito-catalog boot/grub/boot.cat \
+    -eltorito-alt-boot -e boot/grub/efi.img -no-emul-boot -efi-boot-part --efi-boot-image \
+    -output "/out/$name.iso" "$iso"
+(cd /out && sha256sum "$name.iso" > "$name.iso.sha256")
+echo "==> rescue/out/$name.iso ($(du -h "/out/$name.iso" | cut -f1)), build $build_id"

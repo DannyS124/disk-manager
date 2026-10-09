@@ -1,0 +1,110 @@
+# What goes on the rescue stick, one package per line. Lines starting with # are notes.
+
+# Linux and the live boot (finds the stick, runs the system from RAM on top of it)
+linux-image-amd64
+live-boot
+systemd-sysv
+systemd-timesyncd
+dbus-user-session
+amd64-microcode
+intel-microcode
+
+# Firmware, so Wi-Fi, network cards and graphics work on real PCs
+firmware-linux-free
+firmware-misc-nonfree
+firmware-amd-graphics
+firmware-intel-graphics
+firmware-nvidia-graphics
+firmware-realtek
+firmware-iwlwifi
+firmware-atheros
+firmware-brcm80211
+firmware-mediatek
+firmware-libertas
+firmware-bnx2
+firmware-bnx2x
+
+# Running inside VMware, VirtualBox's cousins and QEMU (screen size, mouse)
+open-vm-tools
+open-vm-tools-desktop
+spice-vdagent
+
+# The desktop (LXQt on X11, light and Qt like DiskForge). xserver-xorg brings the drivers
+# for every graphics card X has one for.
+xserver-xorg
+xinit
+xauth
+x11-xserver-utils
+openbox
+lxqt-session
+lxqt-panel
+lxqt-config
+lxqt-policykit
+lxqt-notificationd
+lxqt-qtplugin
+lxqt-themes
+lxqt-globalkeys
+lxqt-runner
+lxqt-sudo
+pcmanfm-qt
+qterminal
+featherpad
+qps
+breeze-icon-theme
+fonts-dejavu-core
+fonts-noto-core
+gvfs
+gvfs-daemons
+libnotify-bin
+
+# Network and the web browser
+network-manager
+nm-tray
+firefox-esr
+ca-certificates
+curl
+
+# Disk tools (DiskForge itself comes from our own .deb)
+udisks2
+udisks2-lvm2
+udisks2-btrfs
+polkitd
+bubblewrap
+smartmontools
+nvme-cli
+hdparm
+gddrescue
+testdisk
+e2fsprogs
+dosfstools
+exfatprogs
+ntfs-3g
+btrfs-progs
+xfsprogs
+f2fs-tools
+lvm2
+mdadm
+cryptsetup
+parted
+gdisk
+fdisk
+rsync
+zstd
+chntpw
+
+# Looking at the hardware (and for the logs)
+pciutils
+usbutils
+dmidecode
+lshw
+mokutil
+efibootmgr
+
+# Everyday command line
+sudo
+less
+nano
+htop
+locales
+console-setup
+kbd

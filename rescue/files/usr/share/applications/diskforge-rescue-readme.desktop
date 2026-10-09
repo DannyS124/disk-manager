@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Read Me
+Comment=What's on this stick and how it works
+Exec=featherpad /usr/local/share/diskforge-rescue/README.txt
+Icon=help-about
+Categories=System;

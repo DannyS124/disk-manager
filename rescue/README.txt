@@ -1,0 +1,72 @@
+DiskForge Rescue
+================
+
+A USB stick that starts any PC into its own small Linux desktop with DiskForge and some
+other repair tools. Nothing on the PC changes unless you tell it to, so it's safe to use
+on a PC that won't start, a drive that's failing, or a Windows PC you don't want to
+install anything on.
+
+Starting a PC from the stick
+----------------------------
+1. Plug the stick in and turn the PC on.
+2. Press the boot menu key right away. It's usually F12, F11, F10, F9, F8 or Esc,
+   depending on the maker (Dell F12, HP F9, Lenovo F12, ASUS F8 or Esc, Acer F12,
+   MSI F11). Pick the USB stick, the "UEFI" entry if there are two.
+3. The DiskForge Rescue menu shows up. Enter starts it. The desktop opens with DiskForge
+   after a minute or so.
+
+Secure Boot can stay on. The stick starts the same way Debian does, through boot files
+signed for Secure Boot.
+
+What's in the menu
+------------------
+Start DiskForge Rescue                the normal way
+Safe graphics                         if the screen stays black or looks broken
+Text mode                             no desktop, just a command line
+Copy to memory first                  takes longer to start, then the stick can come out
+Tools and troubleshooting:
+  Memory test                         memtest86+. It isn't signed for Secure Boot, so turn
+                                      Secure Boot off in the PC's setup to use it
+  Detailed messages                   more on screen and on the serial port, for when
+                                      something goes wrong while starting
+  Check the stick                     reads every file on the stick and checks it
+  Firmware settings                   the PC's UEFI setup
+
+On the desktop
+--------------
+DiskForge        partitions, health, wipe, back up, clone, rescue a failing drive,
+                 recover lost partitions
+Recover Files    PhotoRec: gets deleted files back, even from a formatted drive
+TestDisk         finds lost partitions and fixes boot sectors
+Files, Web Browser, Terminal, Task Manager, Text Editor
+Save Logs        see below
+
+The user is "rescue" and has no password. sudo doesn't ask for one.
+
+Logs
+----
+Every time the stick starts a PC, it keeps notes on what happened: the PC's model, how it
+started (UEFI or BIOS, Secure Boot on or off), the graphics and network, the drives and
+their health, errors, and what DiskForge did. They go to the logs folder on the stick, one
+folder per start, named by date and PC model. They're saved a couple of minutes after
+starting, every few minutes after that, when you shut down, and when you click Save Logs.
+
+They're plain text, so any PC can open them. If something didn't work, they're what to send
+along with the bug report. They do contain the PC's and the drives' serial numbers, so look
+before posting them somewhere public.
+
+When the ISO runs as a CD (in VMware or VirtualBox, say), there's no stick to write to. Pick
+"Detailed messages" in the boot menu and give the VM a serial port that writes to a file;
+everything that happens while it starts ends up in that file.
+
+Making the stick
+----------------
+DiskForge does it: File > Make a Rescue USB, then pick this ISO and the stick. It also
+works to write the ISO with any image writer (DiskForge's Write Image to USB, Rufus,
+balenaEtcher, dd). Written like that, the stick also starts old BIOS PCs, but it's read-only,
+so it can't keep logs.
+
+What it's made of
+-----------------
+Debian 13 with the LXQt desktop. DiskForge and everything else on it are free software.
+The source and the build scripts are at https://github.com/DannyS124/diskforge (rescue/).

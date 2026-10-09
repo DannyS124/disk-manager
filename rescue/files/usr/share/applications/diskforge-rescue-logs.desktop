@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Save Logs
+Comment=Copy what happened on this boot to the logs folder on the stick
+Exec=diskforge-rescue-logs --notify
+Icon=text-x-log
+Categories=System;

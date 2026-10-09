@@ -1,0 +1,75 @@
+#!/bin/bash
+# Runs inside the new system while it's being built (make-image.sh starts it).
+set -euo pipefail
+version=$1 build_id=$2 built=$3
+export DEBIAN_FRONTEND=noninteractive
+
+cat > /etc/diskforge-rescue.conf <<CONF
+VERSION=$version
+BUILD_ID=$build_id
+BUILT=$built
+CONF
+
+# English and UTC. The keyboard layout can be changed on the desktop
+# (Preferences > LXQt Settings > Keyboard and Mouse).
+sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+locale-gen >/dev/null
+echo 'LANG=en_US.UTF-8' > /etc/default/locale
+echo diskforge-rescue > /etc/hostname
+
+# The one user, without a password: whoever is at the PC owns it. sudo and polkit
+# (files/etc) don't ask either.
+useradd --create-home --shell /bin/bash --comment "DiskForge Rescue" rescue
+passwd --delete rescue >/dev/null
+for group in sudo netdev plugdev; do
+    if getent group "$group" >/dev/null; then usermod -aG "$group" rescue; fi
+done
+chmod 0440 /etc/sudoers.d/diskforge-rescue
+
+# Desktop icons: rescue tools in the first column, everyday apps in the second. The apps'
+# own launchers are copied and given plain names. pcmanfm-qt snaps the positions to its
+# grid (about 124 pixels a row), so they're spaced a little wider than that.
+desktop=/home/rescue/Desktop
+positions=/home/rescue/.config/pcmanfm-qt/lxqt/desktop-items-0.conf
+mkdir -p "$desktop" "$(dirname "$positions")"
+: > "$positions"
+place() { # place <launcher> <column> <row> [new name]
+    local file=$desktop/$1.desktop
+    cp "/usr/share/applications/$1.desktop" "$file"
+    if [ -n "${4:-}" ]; then
+        # Only the main section's name; translations of the old name go too.
+        awk -v name="$4" '/^\[/ { main = ($0 == "[Desktop Entry]") }
+            main && /^Name(\[[^]]*\])?=/ { if (!done && /^Name=/) { print "Name=" name; done = 1 }; next }
+            { print }' "/usr/share/applications/$1.desktop" > "$file"
+    fi
+    printf '[%s.desktop]\npos=@Point(%d %d)\n\n' "$1" $((12 + $2 * 130)) $((12 + $3 * 130)) >> "$positions"
+}
+place io.github.DannyS124.DiskForge 0 0
+place diskforge-rescue-photorec 0 1
+place diskforge-rescue-testdisk 0 2
+place diskforge-rescue-logs 0 3
+place diskforge-rescue-readme 0 4
+place pcmanfm-qt 1 0 Files
+place firefox-esr 1 1 "Web Browser"
+place qterminal 1 2 Terminal
+place qps 1 3 "Task Manager"
+place featherpad 1 4 "Text Editor"
+chmod +x "$desktop"/*.desktop
+chown -R rescue:rescue /home/rescue
+
+# Started on every boot
+systemctl enable diskforge-rescue-logs.service diskforge-rescue-logs.timer >/dev/null
+# Nothing that touches the PC's own drives on its own, or keeps the stick busy
+systemctl mask fstrim.timer e2scrub_all.timer e2scrub_reap.service smartmontools.service \
+    apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer >/dev/null 2>&1
+
+# The build ID goes into the initrd too (hooks/diskforge-rescue), so this initrd only
+# starts from its own stick.
+update-initramfs -u -k all
+
+# Smaller and cleaner
+apt-get clean
+rm -rf /var/lib/apt/lists/* /var/cache/debconf/*-old /tmp/* /var/tmp/*
+find /var/log -type f -delete
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id

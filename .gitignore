@@ -7,3 +7,4 @@ packaging/arch/*.pkg.tar.*
 .cache/
 packaging/staging/
 packaging/deb/out/
+rescue/out/
