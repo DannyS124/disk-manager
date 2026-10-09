@@ -5,7 +5,13 @@ tools. It's for when the PC's own system won't start, when a drive is dying and 
 it, or when it's a Windows PC and you'd rather not install anything on it.
 
 What's on the desktop: DiskForge, PhotoRec (Recover Files), TestDisk, a file manager, Firefox, a terminal, a
-task manager and a text editor. The boot menu also has memtest86+ for testing the memory.
+task manager and a text editor, plus the USB stick tools: Write an Image, Make a Windows USB, Check a USB
+Stick and Copy This Rescue Stick. The boot menu also has memtest86+ for testing the memory.
+
+It's the same DiskForge as on a PC, built from the same source for every release, with everything it can use
+installed. The only things turned off are the few that change the running system itself (Mount at Startup,
+Disk Cleanup, Btrfs snapshots, the weekly and monthly schedules): the rescue system starts fresh from the
+stick every time, so they'd change nothing. They say so when you point at them.
 
 Nothing on the PC changes unless you tell it to. It doesn't mount the PC's drives by itself, doesn't use its
 swap, doesn't TRIM anything, and closing a laptop's lid doesn't put it to sleep in the middle of a copy.
@@ -14,6 +20,10 @@ swap, doesn't TRIM anything, and closing a laptop's lid doesn't put it to sleep 
 In DiskForge: File → Make a Rescue USB, pick the ISO and the stick. That makes one FAT32 partition and copies
 the ISO's files onto it, checking each one. The stick stays readable everywhere (Windows too), there's room
 left over for files, and the rescue system writes its logs there.
+
+Inside the rescue system, Copy This Rescue Stick on the desktop (or Make a Rescue USB) copies the stick it's
+running from onto another one, checked against its sha256sum.txt. After "Copy to memory" the stick isn't
+mounted anymore: mount it in DiskForge and the dialog finds it.
 
 The ISO can also go onto a stick as-is (Write Image to USB, Rufus, balenaEtcher, dd). That stick also starts
 old BIOS-only PCs, but it's read-only, so it can't keep logs.

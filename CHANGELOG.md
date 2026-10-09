@@ -9,11 +9,27 @@ New:
   every one of them. For a stick that's been used, Open Logs shows what it saved
 - `--log <file>` (or `DISKFORGE_LOG=<file>`): DiskForge writes down what it does, for bug reports
 - A .deb for Debian and Ubuntu (`packaging/deb/build.sh` builds it in a Debian container)
+- Check a USB Stick (Action menu, or right-click a stick): finds bad spots and fake sticks, the ones that say they're bigger
+  than they are and quietly lose what goes past their real size. It says how much a fake one really holds and can make it
+  safe to use (one partition that ends there). Quick takes minutes, Full checks every byte
+- Write Image to USB takes compressed images (.xz, .gz, .bz2, .lzma, .zst, or a .zip with the image inside) and unpacks them
+  on the way. The checksum can be MD5, SHA-1, SHA-256 or SHA-512, or come from a checksum file like SHA256SUMS, and
+  Checksums... works out all four
+- Write Image to USB can copy a Linux ISO's files instead of writing it as it is, so the stick stays usable for files (UEFI
+  PCs only). Ubuntu and Debian live sticks can keep changes between starts (persistence)
+- Make a Windows USB (File menu): a Windows 10 or 11 install stick from Microsoft's ISO. It's FAT32, so it starts with Secure
+  Boot on; install.wim is split with wimlib when it's too big. The Windows 11 options: no TPM 2.0, Secure Boot or 4 GB RAM
+  check, no Microsoft account, a local account, skip the privacy questions, region like this PC, no automatic BitLocker
+- DiskForge Rescue has all of it, with icons on its desktop. There, the few things that only change the running system
+  (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a Rescue USB copies the stick it's
+  running from
+- `--open <tool>` starts DiskForge with one of the USB tools open
 
 Changed:
 - New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
   stick doesn't need it
 - On a live system, the system's own image isn't listed as a drive anymore
+- Staging a release also builds DiskForge Rescue from the same source, and publishing attaches the ISO
 
 ## 0.5.0
 Everything new since 0.4.3.

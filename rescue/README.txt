@@ -34,12 +34,20 @@ Tools and troubleshooting:
 
 On the desktop
 --------------
-DiskForge        partitions, health, wipe, back up, clone, rescue a failing drive,
-                 recover lost partitions
-Recover Files    PhotoRec: gets deleted files back, even from a formatted drive
-TestDisk         finds lost partitions and fixes boot sectors
+DiskForge               partitions, health, wipe, back up, clone, rescue a failing
+                        drive, recover lost partitions
+Recover Files           PhotoRec: gets deleted files back, even from a formatted drive
+TestDisk                finds lost partitions and fixes boot sectors
 Files, Web Browser, Terminal, Task Manager, Text Editor
-Save Logs        see below
+Write an Image          an ISO or a disk image onto a USB stick (compressed ones too)
+Make a Windows USB      a stick that installs Windows 10 or 11
+Check a USB Stick       bad spots, and sticks that are smaller than they say
+Copy This Rescue Stick  another stick like this one. After "Copy to memory" the stick
+                        isn't mounted: mount it in DiskForge first
+Save Logs               see below
+
+Mount at Startup, Disk Cleanup, snapshots and the TRIM and scrub schedules are off in here:
+this system starts fresh from the stick every time, so they'd change nothing.
 
 The user is "rescue" and has no password. sudo doesn't ask for one.
 
@@ -62,10 +70,10 @@ starts ends up in that file.
 
 Making the stick
 ----------------
-DiskForge does it: File > Make a Rescue USB, then pick this ISO and the stick. It also
-works to write the ISO with any image writer (DiskForge's Write Image to USB, Rufus,
-balenaEtcher, dd). Written like that, the stick also starts old BIOS PCs, but it's read-only,
-so it can't keep logs.
+DiskForge does it: File > Make a Rescue USB, then pick this ISO and the stick (inside the
+rescue system it copies the stick it's running from). It also works to write the ISO with
+any image writer (DiskForge's Write Image to USB, Rufus, balenaEtcher, dd). Written like
+that, the stick also starts old BIOS PCs, but it's read-only, so it can't keep logs.
 
 What it's made of
 -----------------

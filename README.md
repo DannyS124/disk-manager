@@ -24,7 +24,10 @@ a while and wanted something simple for managing drives without going to the ter
 - Disk Usage: see what's eating your space
 - Disk Cleanup: old packages, logs, caches and the trash
 - Optimize Drives (TRIM), Btrfs snapshot list, Secure Erase for SSDs
-- Write an ISO to a USB stick (Arch install sticks etc.)
+- Write an ISO or a disk image to a USB stick, compressed ones too, as it is or with its files copied (with persistence
+  for Ubuntu and Debian live sticks)
+- Make a Windows 10 or 11 install stick, with the Windows 11 options (no TPM check, no Microsoft account...)
+- Check a USB stick for bad spots and for being fake (smaller than it says)
 - Make a DiskForge Rescue USB: start any PC from it (Secure Boot is fine) and fix its drives, get files back, test the
   memory. See [docs/RESCUE.md](docs/RESCUE.md)
 - Open .iso and .img files like a drive
@@ -48,7 +51,8 @@ The PKGBUILD checks the sha256 of the release tarball and won't build if it does
 
 For exFAT you need `exfatprogs`, for NTFS `ntfs-3g`, for XFS `xfsprogs`. Disk Cleanup uses
 `pacman-contrib` for the package cache, and the snapshot list needs `snapper`. The firmware check
-needs `fwupd`, LVM needs `udisks2-lvm2`, and Btrfs scrubs come with `btrfs-progs`.
+needs `fwupd`, LVM needs `udisks2-lvm2`, and Btrfs scrubs come with `btrfs-progs`. Make a Windows USB needs
+`wimlib` for most Windows 11 ISOs (it splits the big install.wim).
 
 DiskForge never installs anything by itself. If something's missing, it says which package it needs
 (Format shows "needs exfatprogs", for example), so install that one. If every change fails with
@@ -70,6 +74,8 @@ cd packaging/arch && makepkg -si
 ```
 
 ## Building
+You need CMake, Qt 6.8 or newer (base, svg and tools), udisks2, OpenSSL, zstd, libarchive and
+libblkid. On Arch that's `pacman -S cmake qt6-base qt6-svg qt6-tools udisks2 openssl zstd libarchive util-linux-libs`.
 ```
 cmake -S . -B build
 cmake --build build

@@ -29,8 +29,21 @@ it. exFAT can't be resized, XFS can only grow. Back up anything important first.
 <p><b>Rename:</b> select it and press F2.</p>
 <p><b>Delete:</b> right-click, Delete Partition. The space becomes unallocated.</p>
 <p><b>Make a USB stick from an ISO:</b> File → Write Image to USB. Pick the ISO and the stick, type the
-stick's name to confirm. Paste the SHA-256 from the download page if you have it, so a broken download is
-caught before anything is written. Works for Linux ISOs; Windows ISOs need a tool like WoeUSB.</p>
+stick's name to confirm. Compressed images (.xz, .gz, .zip and so on) work as they are. Paste the checksum
+from the download page if you have it (or pick its SHA256SUMS file with From a File), so a broken download is
+caught before anything is written.</p>
+<p><b>Copy the files instead:</b> for a Linux ISO, Write Image to USB can also copy its files onto the stick
+instead of writing the ISO as it is. The stick then stays usable for your own files, and Ubuntu and Debian live
+sticks can keep changes between starts (persistence). It only starts UEFI PCs, so for an old BIOS-only PC write
+it as it is.</p>
+<p><b>Windows install stick:</b> File → Make a Windows USB. Pick Microsoft's ISO and the stick. The options are
+answered for Windows Setup, so it doesn't ask: no TPM 2.0 or Secure Boot needed (for PCs Windows 11 turns
+down), no Microsoft account, a local account with the name you give it, and so on. Most Windows 11 ISOs need
+wimlib installed, to split the big install.wim for FAT32.</p>
+<p><b>Is this stick fake?</b> Action → Check a USB Stick. It writes to the whole stick and reads it back (this
+erases it). Fake sticks say they're bigger than they are and lose what goes past their real size; the check
+says how much it really holds, and Make It Safe to Use makes a partition that stays inside that. Quick takes
+minutes, Full checks every byte and takes hours.</p>
 <p><b>Make a rescue USB:</b> File → Make a Rescue USB. Pick the DiskForge Rescue ISO (from the releases page) and
 the stick, type the stick's name to confirm. The stick can then start any PC, even one whose own system won't
 start, with DiskForge and other repair tools on a small desktop. Secure Boot can stay on, except for the memory
