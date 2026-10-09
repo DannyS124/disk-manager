@@ -12,7 +12,13 @@ a while and wanted something simple for managing drives without going to the ter
 - Make a new partition table (GPT or MBR), or wipe a whole disk
 - Check for errors and repair
 - Make a drive mount at startup
-- Disk health: warns you before a drive dies, scan for bad sectors (with a map of the drive) and repair them
+- Disk health: warns you before a drive dies and says why in plain words, scan for bad sectors (with a map of the drive) and repair them,
+  check for firmware updates (fwupd), Btrfs error counts and scrubs
+- Recover lost partitions (from GPT's own backup, from a layout DiskForge saw before, or by scanning the drive), and look at the
+  partition table as it really is on the disk
+- A Stop button for wipes and checks
+- Partition type and flags, power settings for hard drives (spin-down etc.)
+- Shows software RAID arrays and LVM volume groups
 - Clone a drive onto another one, back up and restore drives or partitions (compressed, with checksums)
 - Rescue Copy: get what you can off a dying drive, like ddrescue
 - Disk Usage: see what's eating your space
@@ -21,7 +27,9 @@ a while and wanted something simple for managing drives without going to the ter
 - Write an ISO to a USB stick (Arch install sticks etc.)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
-- Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md)), and there's a list to install them from
+- Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md)), and there's a list to install them from.
+  There's an Add-on Maker too, so you don't have to write JSON
+- Themes (Classic, Deadshadow, High Contrast, or make your own)
 
 It doesn't run as root. Changes go through udisks2, so you get the normal password prompt, and the
 drive your system is on is locked so you can't format it by accident.
@@ -37,7 +45,8 @@ makepkg -si
 The PKGBUILD checks the sha256 of the release tarball and won't build if it doesn't match.
 
 For exFAT you need `exfatprogs`, for NTFS `ntfs-3g`, for XFS `xfsprogs`. Disk Cleanup uses
-`pacman-contrib` for the package cache, and the snapshot list needs `snapper`.
+`pacman-contrib` for the package cache, and the snapshot list needs `snapper`. The firmware check
+needs `fwupd`, LVM needs `udisks2-lvm2`, and Btrfs scrubs come with `btrfs-progs`.
 
 ## Other distros
 Each release also has a Flatpak and an AppImage on the Releases page. They're not on Flathub (a disk

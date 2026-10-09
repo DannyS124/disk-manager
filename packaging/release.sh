@@ -150,7 +150,11 @@ Back Up and Restore, Clone Drive (onto another spare stick), Rescue Copy.
 Then Disk Usage, Disk Cleanup, Optimize Drives, Btrfs Snapshots, Help, About and Check for Updates.
 Add-ons: install examples/addons/folder-sizes from a file, run it on the system disk (look-only),
 run your own add-on (it should say it was added outside DiskForge), and check what the
-run question shows.
+run question shows. Make one with Make an Add-on and Test it; pin it to the toolbar.
+On the spare stick: Wipe Disk and Stop it halfway from the bar on top; delete a partition and
+put it back with Recover Partitions; Partition Type and Flags; Inspect Partition Table.
+Disk Health: the reasons, the firmware row, the Btrfs part; the warning bar and Dismiss.
+View > Theme (each one), a hard drive's Properties > Power, Rescue Copy's "Go easy" options.
 
 All good:  packaging/release.sh --publish $v
 Problem:   fix it, commit, and run --stage $v again

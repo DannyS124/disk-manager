@@ -38,12 +38,21 @@ offers to repair them.</p>
 <p><b>Mount a drive every time the PC starts:</b> right-click the partition and tick Mount at Startup. It
 will show up under /mnt.</p>
 <p><b>Encrypt a drive:</b> tick "Encrypt with a passphrase" when you format or create a partition. To use it
-later, right-click it and Unlock, then Mount. Lock it when you're done.</p>
+later, right-click it and Unlock, then Mount. Lock it when you're done. The lock drawn on it in the map does the same with
+one click.</p>
 <p><b>Open an ISO or disk image:</b> File → Open Disk Image (Ctrl+O). It shows up as a disk you can mount
 and browse. Close it from the disk's right-click menu.</p>
 <p><b>Is my drive OK?</b> The dot on each disk shows its health: green is fine, orange means it's wearing
 out (keep backups), red means back it up now. Right-click the disk, Disk Health for details and self-tests.
 USB sticks don't report health.</p>
+<p>When a drive is failing or needs a look, a bar at the top of the window says so, with Back Up, Details and Dismiss.
+Dismissed, it stays away until things get worse. Disk Health lists every reason and explains each number (select one);
+the bold ones are the ones that count. Connection errors usually mean a bad cable or port, not a bad drive.</p>
+<p><b>Firmware:</b> Disk Health shows the drive's firmware version. With fwupd installed, Check for Updates asks it
+whether there's a newer one. DiskForge doesn't install firmware: use your software center or <code>fwupdmgr update</code>,
+and back up first.</p>
+<p><b>Btrfs:</b> Disk Health shows how many read, write and checksum errors Btrfs has seen on each Btrfs partition.
+Scrub Now reads everything back and checks it; tick "Scrub every month" to have it done for you.</p>
 <p><b>Bad sectors:</b> right-click the drive, Scan for Bad Sectors. The scan reads everything and changes
 nothing. If it finds unreadable sectors, Repair rewrites just those: whatever still reads is kept, the rest was
 already lost. The drive then reuses each spot or swaps in a spare. The "reallocated" count in Disk Health never
@@ -53,7 +62,8 @@ square to see where it is. Slow spots often turn into bad sectors later, so keep
 <p><b>Get files off a dying drive:</b> right-click the drive, Rescue Copy. It copies everything that can still be
 read into an image file (or onto another drive): the easy parts first, then it goes back for the hard ones. You can
 stop it and start it again later with the same file; it carries on where it stopped. Do this before running any
-repairs on a failing drive. Then open the image with File → Open Disk Image and copy your files off.</p>
+repairs on a failing drive. Then open the image with File → Open Disk Image and copy your files off. Under "Go easy on
+the drive" it can pause when the drive gets too hot, rest after a run of read errors, or read slower.</p>
 <p><b>Copy a whole drive:</b> right-click the drive, Clone Drive, for example to move to a bigger SSD. Empty
 space isn't copied, and on a bigger drive the last partition can grow into the extra space. Pick "replaces the old
 drive" if the old one is going away (it's an exact copy), or "keep using both" so the copy gets its own IDs. You
@@ -83,6 +93,26 @@ write test uses a temporary file.</p>
 zeros. Do this before you sell or give away a drive.</p>
 <p><b>Start a disk over:</b> right-click the disk on the left, New Partition Table. You have to type
 the disk name to confirm. Pick GPT unless it's for a really old computer.</p>
+<p><b>Stop a wipe:</b> while a wipe or a check runs, a bar at the top shows how far it got, with a Stop button (Stop is
+on the toolbar too). What's already wiped is gone; to use the drive again, make a new partition table. A drive's own
+Secure Erase can't be stopped once it starts.</p>
+<p><b>Get partitions back:</b> right-click the drive, Recover Partitions. If the main copy of a GPT is damaged, it puts
+back the copy GPT keeps at the end of the drive. DiskForge also remembers each drive's layout, so a deleted partition or a
+wiped table can be put back the way it was. With nothing to go on, Scan the Drive looks for file systems where partitions
+used to start. Only the partition table is written, never what's in the partitions, and the table that's there now is
+remembered first, so you can undo it the same way.</p>
+<p><b>Look at the partition table itself:</b> Inspect Partition Table shows the MBR, the GPT and its backup copy the way
+they are on the drive, whether their checksums are right, and any sector in hex. It only reads.</p>
+<p><b>Partition type and flags:</b> right-click a partition, Partition Type and Flags. The type tells other systems and
+installers what the partition is for; what's on it doesn't change. Changing an EFI or boot partition's type, or the boot
+flags, can stop the PC from starting from that drive.</p>
+<p><b>Hard drive power:</b> Properties of a hard drive has Power settings: when it spins down, how hard it saves power,
+the write cache, and Sleep Now. UDisks keeps them and sets them again whenever the drive shows up.</p>
+<p><b>RAID and LVM:</b> software RAID arrays and LVM volume groups show up like drives. A RAID array shows whether it's
+degraded or rebuilding, and Check RAID Array reads it all and compares the copies. LVM needs the udisks2-lvm2 package;
+for now you can mount, open and check logical volumes, but not create or resize them.</p>
+<p><b>Change the look:</b> View → Theme. System uses your desktop's colors; there's also Classic, Deadshadow and High
+Contrast, or Make a Theme for your own. Whatever the theme, red still means danger.</p>
 
 <p><b>Add-ons:</b> Tools → Add-ons → Get Add-ons lists add-ons you can install, or use Install from File for
 one you have. They add extra actions, like backing up a drive or opening a terminal in it. They show up in the right-click menu and the Tools menu. Before
@@ -90,6 +120,9 @@ one runs, DiskForge shows exactly what it will run and asks. Ones that use admin
 time. Look-only add-ons run in a sandbox where they can't change anything, and they're the only ones offered for the disk your
 system runs from. An add-on that turns up without being installed through DiskForge is marked "Added outside": if you didn't
 put it there, remove it. Only install add-ons you trust.</p>
+<p>To make your own, Tools → Add-ons → Make an Add-on: fill in what it runs, where it shows up and what it asks for, and
+Test it on the selected drive before you save. An add-on can ask for things in a form, have settings, and show what it
+prints in a window. In the Add-ons window you can pin an action to the toolbar or give it a shortcut.</p>
 
 <a name="filesystems"></a>
 <h2>Which file system?</h2>
@@ -108,6 +141,8 @@ put it there, remove it. Only install add-ons you trust.</p>
 <p><b>"Not authorized":</b> the password prompt was cancelled, or there's no polkit agent running.</p>
 <p><b>"Device or resource busy":</b> something still has files open on the drive. Close it and try again.</p>
 <p><b>A drive is missing:</b> press F5. Empty card readers are hidden.</p>
+<p><b>A USB stick still shows two partitions after it held an ISO:</b> a Linux ISO leaves its own layout on the stick,
+and formatting doesn't clear it. Right-click the stick, Wipe Disk, then New Partition Table and make one new partition.</p>
 <p><b>A Secure Erase got cut off and now the drive is locked:</b> during the erase the drive has the temporary
 password <code>xxxx</code>. Unlock it with
 <code>sudo hdparm --user-master u --security-unlock xxxx /dev/sdX</code>, then

@@ -14,8 +14,25 @@ Safety:
 - Check for Updates builds the release link itself instead of opening whatever link comes back
 - Rescue maps whose blocks don't add up are refused, and Clone refuses partition tables that run past the end of the drive
 - Every release now runs crash tests: thousands of damaged add-ons, lists, signatures, backups, maps and partition tables, also in a build with memory checks
+- Programs DiskForge starts (add-ons, terminals) don't get handed an open drive anymore
 
 New:
+- Stop button: wipes, checks and self-tests get a bar at the top showing how far along they are, with a Stop button (also on the toolbar). A drive's own Secure Erase says up front that it can't be stopped
+- A warning bar at the top when a drive is failing or needs a look, with Back Up (or Rescue Copy), Details and Dismiss. It comes back if things get worse
+- Disk Health explains itself: every reason behind the verdict, what each number means, and the ones that count are in bold. It goes by the numbers Backblaze's drive stats tie to failures. Connection errors say to check the cable, since the drive itself may be fine
+- Firmware: Disk Health shows the drive's firmware and asks fwupd if there's a newer one. DiskForge never installs firmware itself
+- Btrfs: error counts for each Btrfs partition in Disk Health, and a scrub now or every month
+- Recover Partitions: put a lost or damaged partition table back, from the copy GPT keeps at the end of the drive, from a layout DiskForge saw on that drive before (it keeps the last 10), or by scanning the drive for file systems
+- Inspect Partition Table: the MBR, both GPT copies and the partition list as they are on the drive, checksums checked, plus any sector in hex. Only reads, so it works on the system disk too
+- Partition type and flags (GPT attributes, the MBR boot flag)
+- A lock on encrypted partitions in the map: click it to unlock or lock
+- Power settings for hard drives: when to spin down, how hard to save power, the write cache, and Sleep Now
+- Rescue Copy can go easy on a failing drive: pause when it's too hot, rest after a run of read errors, or cap the speed
+- RAID arrays are listed like drives, with their status (checking, rebuilding, degraded), and you can start a check
+- LVM volume groups are listed like drives, their logical volumes as the volumes (needs udisks2-lvm2)
+- Add-ons can ask for things in a form, have their own settings, and show their output in a window. Every add-on action is in the Tools menu, with the reason when one doesn't fit, and you can pin actions to the toolbar or give them a shortcut
+- Add-on Maker: make or change an add-on in a window instead of writing JSON
+- Themes: Classic, Deadshadow and High Contrast built in, theme add-ons, and a Theme Maker. Danger stays red and text stays readable whatever the theme
 - Clone Drive: copies a whole drive onto another one, skips empty space, and can grow the last partition into a bigger drive. Pick whether the copy replaces the old drive (same IDs) or sits next to it (new IDs)
 - Back Up and Restore: saves a drive or partition to a compressed .img.zst file with a checksum, and checks the whole backup before restoring anything
 - Rescue Copy: gets what's still readable off a failing drive, easy parts first. Stop it any time and carry on later; the map file works with GNU ddrescue too
