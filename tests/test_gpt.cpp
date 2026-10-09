@@ -5,6 +5,7 @@
 
 #include "testkit.h"
 
+#include "../src/format.h"
 #include "../src/gpt.h"
 
 #include <QFile>
@@ -113,10 +114,44 @@ void sectorSizeTests(int sectorSize)
 
 } // namespace
 
+// Type and Flags: what's offered, what typed-in types are refused, and flags it doesn't
+// show staying as they were.
+void typeAndFlags()
+{
+    const QVector<PartitionTypeChoice> gptTypes = partitionTypeChoices(QStringLiteral("gpt"));
+    const QVector<PartitionTypeChoice> dosTypes = partitionTypeChoices(QStringLiteral("dos"));
+    bool named = !gptTypes.isEmpty() && !dosTypes.isEmpty();
+    for (const PartitionTypeChoice &c : gptTypes + dosTypes)
+        named = named && !c.name.isEmpty() && !c.name.contains(c.value) && partitionTypeProblem(c.value.startsWith(QLatin1String("0x")) ? QStringLiteral("dos") : QStringLiteral("gpt"), c.value).isEmpty();
+    report(named, QStringLiteral("every offered type has a plain name and passes the checks"));
+    const QString gpt = QStringLiteral("gpt"), dos = QStringLiteral("dos");
+    report(partitionTypeProblem(gpt, QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4")).isEmpty()
+               && !partitionTypeProblem(gpt, QStringLiteral("00000000-0000-0000-0000-000000000000")).isEmpty()
+               && !partitionTypeProblem(gpt, QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de")).isEmpty()
+               && !partitionTypeProblem(gpt, QStringLiteral("0FC63DAF-8483-4772-8E79-3D69D8477DE4 ")).isEmpty()
+               && !partitionTypeProblem(gpt, QStringLiteral("0x83")).isEmpty(),
+           QStringLiteral("GPT types: a GUID, never the all-zero one that empties the entry"));
+    report(partitionTypeProblem(dos, QStringLiteral("0x83")).isEmpty() && partitionTypeProblem(dos, QStringLiteral("0xa5")).isEmpty()
+               && !partitionTypeProblem(dos, QStringLiteral("0x00")).isEmpty() && !partitionTypeProblem(dos, QStringLiteral("0x05")).isEmpty()
+               && !partitionTypeProblem(dos, QStringLiteral("0x0f")).isEmpty() && !partitionTypeProblem(dos, QStringLiteral("0x85")).isEmpty()
+               && !partitionTypeProblem(dos, QStringLiteral("83")).isEmpty() && !partitionTypeProblem(dos, QStringLiteral("0x183")).isEmpty()
+               && !partitionTypeProblem(QStringLiteral("loop"), QStringLiteral("0x83")).isEmpty(),
+           QStringLiteral("MBR types: two hex digits, never empty or extended"));
+    const quint64 secret = quint64(1) << 48; // a type-specific bit the dialog doesn't show
+    report(mergedPartitionFlags(gpt, secret | 1, quint64(1) << 63) == (secret | (quint64(1) << 63))
+               && mergedPartitionFlags(dos, 0, 0x80 | 0x01) == 0x80 && partitionFlagChoices(dos).size() == 1
+               && partitionFlagChoices(gpt).size() == 5,
+           QStringLiteral("flags the dialog doesn't show stay as they were"));
+    report(isBootPartitionType(QStringLiteral("c12a7328-f81f-11d2-ba4b-00a0c93ec93b")) && isBootPartitionType(QStringLiteral("0xef"))
+               && !isBootPartitionType(QStringLiteral("0x83")),
+           QStringLiteral("EFI and BIOS boot types are recognized (changing them warns)"));
+}
+
 void gptTests()
 {
     sectorSizeTests(512);
     sectorSizeTests(4096);
+    typeAndFlags();
 
     QTemporaryDir dir;
     const QString disk = dir.filePath(QStringLiteral("disk.img"));

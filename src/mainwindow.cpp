@@ -16,6 +16,7 @@
 #include "usagedialog.h"
 #include "dialogs.h"
 #include "tools.h"
+#include "typedialog.h"
 #include "diskmap.h"
 #include "format.h"
 #include "health.h"
@@ -245,6 +246,20 @@ void MainWindow::createActions()
     m_rename = new QAction(themeIcon("edit-rename", "document-edit"), tr("Change &Label…"), this);
     m_rename->setShortcut(QKeySequence(Qt::Key_F2));
     connect(m_rename, &QAction::triggered, this, &MainWindow::changeLabel);
+
+    m_typeFlags = new QAction(themeIcon("document-properties", "document-properties"), tr("Partition &Type and Flags…"), this);
+    connect(m_typeFlags, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        const Volume *v = selectedVolume();
+        if (!d || !v)
+            return;
+        const QString path = v->objectPath;
+        PartitionTypeDialog dialog(*d, *v, this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+        if (const Volume *fresh = volumeByPath(path)) // the list may have been rebuilt meanwhile
+            m_udisks->setPartitionTypeAndFlags(*fresh, dialog.typeChanged() ? dialog.type() : QString(), dialog.flagsChanged(), dialog.flags());
+    });
 
     m_resize = new QAction(themeIcon("transform-scale", "zoom-fit-best"), tr("&Resize…"), this);
     connect(m_resize, &QAction::triggered, this, &MainWindow::resizeVolume);
@@ -504,7 +519,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_unlock, m_lock, m_changePass});
     action->addSeparator();
-    action->addActions({m_newPartition, m_format, m_resize, m_rename, m_check, m_startup, m_delete});
+    action->addActions({m_newPartition, m_format, m_resize, m_rename, m_typeFlags, m_check, m_startup, m_delete});
     action->addSeparator();
     action->addActions({m_newTable, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
@@ -975,6 +990,8 @@ void MainWindow::updateActions()
     m_newPartition->setEnabled(changeable && kind == DiskMap::Selection::Kind::Free && !d->tableType.isEmpty());
     m_format->setEnabled(changeable && v && !v->isContainer);
     m_rename->setEnabled(changeable && v && v->canMount());
+    m_typeFlags->setEnabled(changeable && v && !v->isContainer
+                            && (d->tableType == QLatin1String("gpt") || d->tableType == QLatin1String("dos")));
     m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);
     m_startup->setEnabled(changeable && v && v->hasFilesystem && !v->encrypted && !v->uuid.isEmpty());
     {
@@ -1064,7 +1081,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
         menu->addSection(volumeTitle(*v));
         add({m_open, m_usage, m_mount, m_unmount, m_unlock, m_lock});
         menu->addSeparator();
-        add({m_format, m_resize, m_rename, m_check, m_startup, m_changePass, m_delete});
+        add({m_format, m_resize, m_rename, m_typeFlags, m_check, m_startup, m_changePass, m_delete});
         menu->addSeparator();
         add({m_backup, m_restore});
         if (v->effectiveFsType() == QLatin1String("btrfs"))

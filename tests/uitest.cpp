@@ -13,6 +13,7 @@
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
 #include "../src/noticebar.h"
+#include "../src/typedialog.h"
 #include "slowdisk.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
@@ -825,6 +826,70 @@ void stopWipe()
     slow.remove();
 }
 
+// Type and Flags through the window: pick Linux /home, tick Don't mount automatically,
+// press Change, and the partition has both.
+void typeAndFlags()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("types.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("64M"), image});
+    QProcess sfdisk;
+    sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("-q"), image});
+    sfdisk.waitForStarted();
+    sfdisk.write("label: gpt\n,,L\n");
+    sfdisk.closeWriteChannel();
+    sfdisk.waitForFinished();
+    QString loop;
+    sh(QStringLiteral("losetup"), {QStringLiteral("-fP"), QStringLiteral("--show"), image}, &loop);
+    loop = loop.trimmed();
+    const QString part = loop + QStringLiteral("p1");
+
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    waitUntil([&] {
+        udisks.refresh();
+        return window.selectDevice(part);
+    }, 15000);
+    QAction *action = findAction(window, QStringLiteral("Partition Type and Flags"));
+    report(action && action->isEnabled(), QStringLiteral("Type and Flags is offered for a partition"));
+    bool answered = false;
+    Answerer answerer;
+    answerer.answer = [&answered](QWidget *modal) {
+        auto *dialog = qobject_cast<PartitionTypeDialog *>(modal);
+        if (!dialog)
+            return false;
+        auto *types = dialog->findChild<QComboBox *>();
+        types->setCurrentIndex(types->findData(QStringLiteral("933ac7e1-2eb4-4f13-b844-0e14e2aef915")));
+        for (QCheckBox *check : dialog->findChildren<QCheckBox *>()) {
+            if (check->text() == QLatin1String("Don't mount automatically"))
+                check->setChecked(true);
+        }
+        if (QPushButton *change = findButton(dialog, QStringLiteral("Change"))) {
+            answered = change->isEnabled();
+            change->click();
+        }
+        return true;
+    };
+    if (action)
+        action->trigger();
+    const Volume *v = nullptr;
+    waitUntil([&] {
+        udisks.refresh();
+        for (const Disk &d : udisks.disks()) {
+            for (const Volume &x : d.volumes) {
+                if (x.device == part)
+                    v = &x;
+            }
+        }
+        return v && v->partType == QLatin1String("933ac7e1-2eb4-4f13-b844-0e14e2aef915") && v->partFlags == (quint64(1) << 63);
+    }, 20000);
+    report(answered && v && v->partType == QLatin1String("933ac7e1-2eb4-4f13-b844-0e14e2aef915") && v->partFlags == (quint64(1) << 63),
+           QStringLiteral("the dialog's type and flag end up on the partition"), v ? v->partType + QStringLiteral(" flags ") + QString::number(v->partFlags) : QString());
+    sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+}
+
 // Job bars, with jobs faked through the test hook: a firmware erase says it can't be
 // stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
 // end, the bars go.
@@ -988,6 +1053,7 @@ int main(int argc, char *argv[])
     cloneThroughWindow(window, udisks, dir);
     backupAndRestore(window, udisks, dir);
     stopWipe();
+    typeAndFlags();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

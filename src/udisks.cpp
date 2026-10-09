@@ -94,6 +94,7 @@ Volume makeVolume(const QString &path, const InterfaceMap &ifaces)
         v.offset = part.value(QStringLiteral("Offset")).toULongLong();
         v.size = part.value(QStringLiteral("Size")).toULongLong();
         v.partType = part.value(QStringLiteral("Type")).toString();
+        v.partFlags = part.value(QStringLiteral("Flags")).toULongLong();
         v.partName = cleanName(part.value(QStringLiteral("Name")).toString());
         v.isContainer = part.value(QStringLiteral("IsContainer")).toBool();
         v.isContained = part.value(QStringLiteral("IsContained")).toBool();
@@ -500,6 +501,30 @@ void UDisks::setLabel(const Volume &volume, const QString &label)
     call(volume.filesystemPath(), kFilesystem, QStringLiteral("SetLabel"), {label, options()},
          [name, label](const QDBusMessage &) { return tr("Renamed %1 to \"%2\"").arg(name, label); },
          tr("Couldn't rename %1").arg(name));
+}
+
+void UDisks::setPartitionTypeAndFlags(const Volume &volume, const QString &type, bool setFlags, quint64 flags)
+{
+    const QString name = shortDevice(volume.device);
+    const QString failure = tr("Couldn't change the type and flags of %1").arg(name);
+    if (refuseSystem(diskOf(volume), failure))
+        return;
+    const QString path = volume.objectPath;
+    auto flagsStep = [this, path, name, failure, flags] {
+        call(path, kPartition, QStringLiteral("SetFlags"), {QVariant::fromValue(qulonglong(flags)), options()},
+             [name](const QDBusMessage &) { return tr("Changed the type and flags of %1").arg(name); }, failure);
+    };
+    if (type.isEmpty()) {
+        if (setFlags)
+            flagsStep();
+        return;
+    }
+    callThen(path, kPartition, QStringLiteral("SetType"), {type, options()}, failure, [this, name, setFlags, flagsStep](const QDBusMessage &) {
+        if (setFlags)
+            flagsStep();
+        else
+            emit operationFinished(true, tr("Changed the type of %1").arg(name));
+    });
 }
 
 void UDisks::setUuid(const Volume &volume, const QString &uuid)

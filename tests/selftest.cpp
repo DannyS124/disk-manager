@@ -125,6 +125,16 @@ bool operations(UDisks &udisks)
                 QStringLiteral("it is mounted"), [](const Disk &d) { return !d.volumes[1].mountPoints.isEmpty(); })
         && step(udisks, QStringLiteral("rename ext4 partition"), [&] { udisks.setLabel(disk().volumes[0], QStringLiteral("RENAMED")); },
                 QStringLiteral("label is RENAMED"), [](const Disk &d) { return d.volumes[0].label == QLatin1String("RENAMED"); })
+        && step(udisks, QStringLiteral("change the ext4 partition's type to Linux /home, flag it Don't mount automatically"),
+                [&] {
+                    const Volume &v = disk().volumes[0];
+                    udisks.setPartitionTypeAndFlags(v, QStringLiteral("933ac7e1-2eb4-4f13-b844-0e14e2aef915"), true,
+                                                    mergedPartitionFlags(QStringLiteral("gpt"), v.partFlags, quint64(1) << 63));
+                },
+                QStringLiteral("type and flags read back"), [](const Disk &d) {
+                    const Volume &v = d.volumes[0];
+                    return v.partType == QLatin1String("933ac7e1-2eb4-4f13-b844-0e14e2aef915") && v.partFlags == (quint64(1) << 63);
+                })
         && step(udisks, QStringLiteral("format the mounted FAT32 partition as %1").arg(winFs),
                 [&] { udisks.format(disk().volumes[1], winFs, QStringLiteral("WINDOWS")); },
                 QStringLiteral("it is %1, unmounted, with the Microsoft partition type").arg(winFs), [&](const Disk &d) {
@@ -143,6 +153,11 @@ bool operations(UDisks &udisks)
                 [&] { const Span f = firstFree(disk()); udisks.createPartition(disk(), f.offset, f.size, QStringLiteral("vfat"), QStringLiteral("MBRFAT")); },
                 QStringLiteral("MBR partition is FAT32 with type 0x0c"), [](const Disk &d) {
                     return d.volumes.size() == 1 && d.volumes[0].fsType == QLatin1String("vfat") && d.volumes[0].partType == QLatin1String("0x0c");
+                })
+        && step(udisks, QStringLiteral("mark the MBR partition bootable, type 0x0b"),
+                [&] { udisks.setPartitionTypeAndFlags(disk().volumes[0], QStringLiteral("0x0b"), true, 0x80); },
+                QStringLiteral("type and boot flag read back"), [](const Disk &d) {
+                    return d.volumes.size() == 1 && d.volumes[0].partType == QLatin1String("0x0b") && d.volumes[0].partFlags == 0x80;
                 })
         && resizing(udisks)
         && extras(udisks);

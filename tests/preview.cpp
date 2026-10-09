@@ -22,6 +22,7 @@
 #include "../src/theme.h"
 #include "../src/thememaker.h"
 #include "../src/tools.h"
+#include "../src/typedialog.h"
 #include "../src/translations.h"
 #include "../src/udisks.h"
 
@@ -104,6 +105,13 @@ int main(int argc, char *argv[])
             save(window, out.filePath(QStringLiteral("main-stop.png")));
             udisks.setJobsForTest({});
             udisks.refresh();
+        }
+        for (const Disk &d : udisks.disks()) {
+            if (!d.isSystem && !d.volumes.isEmpty() && d.tableType == QLatin1String("gpt")) {
+                PartitionTypeDialog typeDialog(d, d.volumes.first());
+                save(typeDialog, out.filePath(QStringLiteral("type-flags.png")));
+                break;
+            }
         }
         for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);

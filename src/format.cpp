@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QHash>
+#include <QRegularExpression>
 #include <QLocale>
 #include <QStringList>
 
@@ -107,7 +108,9 @@ QString tableName(const Disk &d)
     return d.volumes.isEmpty() ? tr("Not initialized") : tr("No partition table");
 }
 
-QString partitionTypeName(const QString &type)
+namespace {
+
+const QHash<QString, const char *> &typeNames()
 {
     static const QHash<QString, const char *> names = {
         {QStringLiteral("c12a7328-f81f-11d2-ba4b-00a0c93ec93b"), "EFI System"},
@@ -119,6 +122,7 @@ QString partitionTypeName(const QString &type)
         {QStringLiteral("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f"), "Linux swap"},
         {QStringLiteral("e6d6d379-f507-44c2-a23c-238f2a3df928"), "Linux LVM"},
         {QStringLiteral("ca7d7ccb-63ed-4c53-861c-1742536059cc"), "Linux LUKS"},
+        {QStringLiteral("a19d880f-05fc-4d3b-a006-743f0f84911e"), "Linux RAID"},
         {QStringLiteral("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"), "Microsoft basic data"},
         {QStringLiteral("e3c9e316-0b5c-4db8-817d-f92df00215ae"), "Microsoft reserved"},
         {QStringLiteral("de94bba4-06d1-4d40-a16a-bfd50179d6ac"), "Windows recovery"},
@@ -131,9 +135,90 @@ QString partitionTypeName(const QString &type)
         {QStringLiteral("0x83"), "Linux"},
         {QStringLiteral("0x8e"), "Linux LVM"},
         {QStringLiteral("0xef"), "EFI System"},
+        {QStringLiteral("0xfd"), "Linux RAID"},
     };
-    const auto it = names.constFind(type.toLower());
-    return it == names.constEnd() ? type : QStringLiteral("%1 (%2)").arg(tr(*it), type);
+    return names;
+}
+
+QString plainTypeName(const QString &type)
+{
+    const auto it = typeNames().constFind(type.toLower());
+    return it == typeNames().constEnd() ? QString() : tr(*it);
+}
+
+} // namespace
+
+QString partitionTypeName(const QString &type)
+{
+    const QString name = plainTypeName(type);
+    return name.isEmpty() ? type : QStringLiteral("%1 (%2)").arg(name, type);
+}
+
+QVector<PartitionTypeChoice> partitionTypeChoices(const QString &tableType)
+{
+    const QStringList gpt = {QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4"), QStringLiteral("4f68bce3-e8cd-4db1-96e7-fbcaf984b709"),
+                             QStringLiteral("933ac7e1-2eb4-4f13-b844-0e14e2aef915"), QStringLiteral("0657fd6d-a4ab-43c4-84e5-0933c84b4f4f"),
+                             QStringLiteral("e6d6d379-f507-44c2-a23c-238f2a3df928"), QStringLiteral("a19d880f-05fc-4d3b-a006-743f0f84911e"),
+                             QStringLiteral("ca7d7ccb-63ed-4c53-861c-1742536059cc"), QStringLiteral("c12a7328-f81f-11d2-ba4b-00a0c93ec93b"),
+                             QStringLiteral("21686148-6449-6e6f-744e-656564454649"), QStringLiteral("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"),
+                             QStringLiteral("e3c9e316-0b5c-4db8-817d-f92df00215ae"), QStringLiteral("de94bba4-06d1-4d40-a16a-bfd50179d6ac")};
+    const QStringList dos = {QStringLiteral("0x83"), QStringLiteral("0x82"), QStringLiteral("0x8e"), QStringLiteral("0xfd"),
+                             QStringLiteral("0x07"), QStringLiteral("0x0c"), QStringLiteral("0xef")};
+    QVector<PartitionTypeChoice> out;
+    for (const QString &value : tableType == QLatin1String("gpt") ? gpt : tableType == QLatin1String("dos") ? dos : QStringList())
+        out.push_back({value, plainTypeName(value)});
+    return out;
+}
+
+QString partitionTypeProblem(const QString &tableType, const QString &value)
+{
+    if (tableType == QLatin1String("gpt")) {
+        static const QRegularExpression guid(QStringLiteral("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"));
+        if (!guid.match(value).hasMatch())
+            return tr("A GPT type looks like 0fc63daf-8483-4772-8e79-3d69d8477de4.");
+        if (value == QLatin1String("00000000-0000-0000-0000-000000000000"))
+            return tr("All zeros marks an unused entry: the partition would be gone.");
+        return {};
+    }
+    if (tableType == QLatin1String("dos")) {
+        static const QRegularExpression byte(QStringLiteral("^0x[0-9a-f]{2}$"));
+        if (!byte.match(value).hasMatch())
+            return tr("An MBR type is two hex digits, like 0x83.");
+        if (value == QLatin1String("0x00"))
+            return tr("0x00 marks an unused entry: the partition would be gone.");
+        if (value == QLatin1String("0x05") || value == QLatin1String("0x0f") || value == QLatin1String("0x85"))
+            return tr("That type marks an extended partition, which needs its own table inside.");
+        return {};
+    }
+    return tr("Only GPT and MBR partitions have a type.");
+}
+
+bool isBootPartitionType(const QString &type)
+{
+    return type == QLatin1String("c12a7328-f81f-11d2-ba4b-00a0c93ec93b") || type == QLatin1String("21686148-6449-6e6f-744e-656564454649")
+        || type == QLatin1String("0xef");
+}
+
+QVector<PartitionFlagChoice> partitionFlagChoices(const QString &tableType)
+{
+    if (tableType == QLatin1String("gpt")) {
+        return {{quint64(1) << 0, tr("Required by the platform"), tr("The firmware or the system needs it; tools are meant to leave it alone.")},
+                {quint64(1) << 2, tr("Legacy BIOS bootable"), tr("Old BIOS boot code looks for this.")},
+                {quint64(1) << 60, tr("Read-only"), tr("Windows and systemd mount it read-only.")},
+                {quint64(1) << 62, tr("Hidden"), tr("Windows doesn't show it.")},
+                {quint64(1) << 63, tr("Don't mount automatically"), tr("Windows gives it no drive letter, and systemd doesn't mount it by itself.")}};
+    }
+    if (tableType == QLatin1String("dos"))
+        return {{0x80, tr("Bootable (active)"), tr("Old BIOS boot code starts from the partition marked bootable.")}};
+    return {};
+}
+
+quint64 mergedPartitionFlags(const QString &tableType, quint64 old, quint64 chosen)
+{
+    quint64 shown = 0;
+    for (const PartitionFlagChoice &f : partitionFlagChoices(tableType))
+        shown |= f.bit;
+    return (old & ~shown) | (chosen & shown);
 }
 
 namespace {

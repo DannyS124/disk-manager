@@ -31,6 +31,7 @@ struct Volume {
     QString fsUsage;
     QString uuid;
     QString partType; // GUID (gpt) or "0x83" (dos)
+    quint64 partFlags = 0; // GPT attribute bits, or 0x80 = bootable (dos)
     bool isContainer = false; // MBR extended
     bool isContained = false; // MBR logical
     bool isEfi = false;
@@ -208,6 +209,8 @@ public:
     void mount(const Volume &volume);
     void unmount(const Volume &volume);
     void setLabel(const Volume &volume, const QString &label);
+    // Type and Flags: the type first (when it's not empty), then the flags (when asked to).
+    void setPartitionTypeAndFlags(const Volume &volume, const QString &type, bool setFlags, quint64 flags);
     // A new file system ID, for a clone kept next to its original.
     void setUuid(const Volume &volume, const QString &uuid);
     // passphrase non-empty: LUKS2 container with the filesystem inside
