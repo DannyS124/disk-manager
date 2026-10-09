@@ -52,12 +52,13 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
-    <release version="0.6.0" date="2026-10-08">
+    <release version="0.5.0" date="2026-10-08">
       <description>
-        <p>Clone drives, back up and restore, rescue a failing drive, a map of bad and slow areas, disk usage,
-        disk cleanup, TRIM, Btrfs snapshots, secure erase and an add-on list. Also everything from the
-        unreleased 0.5.0: disk health, writing images to USB, encrypted drives, wipe, check and repair, mount
-        at startup, safely remove, disk images, benchmark and add-ons.</p>
+        <p>Disk health, writing images to USB, encrypted drives, wipe, check and repair, mount at startup,
+        safely remove, disk images, benchmark, clone drives, back up and restore, rescue a failing drive, a map
+        of bad and slow areas, disk usage, disk cleanup, TRIM, Btrfs snapshots, secure erase and add-ons.</p>
+        <p>Add-ons are safer: drive names can't steer them, look-only add-ons run in a read-only sandbox,
+        risky ones always ask first, and the online add-on list is signed.</p>
       </description>
     </release>
     <release version="0.4.3" date="2026-10-08">

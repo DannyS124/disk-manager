@@ -40,15 +40,32 @@ File. There are examples in [`examples/addons`](../examples/addons).
     `{model}`, `{home}`.
   - `terminal`: `true` to run it in a terminal window so you can see the output.
   - `confirm`: a question to ask before running (placeholders work here too).
-  - `system_disks`: `true` to also offer it on the disk your system runs from. Only for tools that
-    don't change anything.
+  - `look_only`: `true` for actions that only look at things. They run in a read-only sandbox
+    (needs bubblewrap): no changing files, no network, and other programs' sockets aren't there.
+    A shell is fine in there.
+  - `system_disks`: `true` to also offer a `look_only` action on the disk your system runs from.
+    Without `look_only` it's ignored.
 
 ## Rules
-- Commands run as you, never as root, and without a shell, so a drive label can't sneak in extra
-  commands. If something needs root, put `sudo` or `pkexec` in the command and you'll be asked.
-- The first time an action runs, DiskForge shows the exact command and asks. If the add-on file
-  changes, it asks again.
-- Add-ons aren't offered for the system disk unless they set `system_disks`.
+- Commands run as you, never as root, and without a shell. If something needs root, put `pkexec` in
+  the command (or `sudo` with `"terminal": true`). DiskForge then warns and asks before every run.
+- Whoever made a drive picked its name, so values from the drive (`{label}`, `{model}`, `{uuid}`,
+  `{fstype}`, `{mountpoint}`) are checked first:
+  - one that would start an argument with `-` isn't run, so a drive named `--delete` can't become
+    an option. If a value goes first in an argument to a program that takes options, put `--`
+    before it anyway;
+  - `/` in a name becomes `_`, so a name stays one folder name (UDisks does the same under
+    /run/media);
+  - names that are `.` or `..`, or have hidden characters in them, are refused.
+- The program to run (the first part of `command`) can't come from the drive: only `{home}` works
+  there.
+- Before an action runs, DiskForge shows the command, one part per line, and asks. "Don't ask again"
+  is remembered for that exact add-on file, so any change to the file asks again. Actions that use
+  admin power, or run a shell or script interpreter, ask every time.
+- Only `look_only` actions with `system_disks` are offered for the disk your system runs from.
+- DiskForge notes the add-ons it installs. One that turns up in the folder some other way (or
+  changes) is marked "Added outside", and its actions warn about it until you press I Added It in
+  Tools → Add-ons. Hand-made add-ons get that too: press I Added It once you've checked yours.
 - Only install add-ons you trust, the same as any other program.
 
 ## Getting it into the list
@@ -57,5 +74,7 @@ The list in Tools → Add-ons → Get Add-ons comes from
 there with your `addons/<id>/addon.json`. Once it's merged it goes into the list.
 
 DiskForge only installs from that repository, only files pinned to a commit, and only if the file matches
-the checksum in the list. It still shows the commands and asks before installing, and again before each
-action first runs.
+the checksum in the list. The list itself is signed with the maintainer's key, which isn't stored on GitHub,
+and DiskForge only uses it if the signature checks out. It still shows the commands and asks before
+installing, and again before each action first runs. Shells and script interpreters are only accepted in
+`look_only` actions there.

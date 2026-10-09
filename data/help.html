@@ -85,8 +85,11 @@ zeros. Do this before you sell or give away a drive.</p>
 the disk name to confirm. Pick GPT unless it's for a really old computer.</p>
 
 <p><b>Add-ons:</b> Tools → Add-ons → Get Add-ons lists add-ons you can install, or use Install from File for
-one you have. They add extra actions, like backing up a drive or opening a terminal in it. They show up in the right-click menu and the Tools menu. The first time
-one runs, DiskForge shows exactly what it will run and asks first. Only install add-ons you trust.</p>
+one you have. They add extra actions, like backing up a drive or opening a terminal in it. They show up in the right-click menu and the Tools menu. Before
+one runs, DiskForge shows exactly what it will run and asks. Ones that use admin power (pkexec, sudo) or run a shell ask every
+time. Look-only add-ons run in a sandbox where they can't change anything, and they're the only ones offered for the disk your
+system runs from. An add-on that turns up without being installed through DiskForge is marked "Added outside": if you didn't
+put it there, remove it. Only install add-ons you trust.</p>
 
 <a name="filesystems"></a>
 <h2>Which file system?</h2>

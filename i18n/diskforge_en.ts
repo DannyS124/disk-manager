@@ -31,7 +31,7 @@
 <context>
     <name>BlockMapWidget</name>
     <message numerus="yes">
-        <location filename="../src/blockmapwidget.cpp" line="98"/>
+        <location filename="../src/blockmapwidget.cpp" line="99"/>
         <source>Slow (%n area(s))</source>
         <translation>
             <numerusform>Slow (%n area)</numerusform>
@@ -42,7 +42,7 @@
 <context>
     <name>CleanupDialog</name>
     <message numerus="yes">
-        <location filename="../src/systemtools.cpp" line="439"/>
+        <location filename="../src/systemtools.cpp" line="440"/>
         <source>%n item(s) couldn&apos;t be deleted (first: %1).</source>
         <translation>
             <numerusform>%n item couldn't be deleted (first: %1).</numerusform>
@@ -96,7 +96,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/usagedialog.cpp" line="48"/>
+        <location filename="../src/usagedialog.cpp" line="49"/>
         <source>%n file(s)</source>
         <translation>
             <numerusform>%n file</numerusform>
@@ -104,7 +104,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/addons.cpp" line="434"/>
+        <location filename="../src/addons.cpp" line="660"/>
         <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
         <translation>
             <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
@@ -115,7 +115,7 @@
 <context>
     <name>SnapshotsDialog</name>
     <message numerus="yes">
-        <location filename="../src/systemtools.cpp" line="533"/>
+        <location filename="../src/systemtools.cpp" line="534"/>
         <source>&lt;small&gt;%n snapshot(s). Sizes aren&apos;t shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</source>
         <translation>
             <numerusform>&lt;small&gt;%n snapshot. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
@@ -153,7 +153,7 @@
 <context>
     <name>UsageDialog</name>
     <message numerus="yes">
-        <location filename="../src/usagedialog.cpp" line="333"/>
+        <location filename="../src/usagedialog.cpp" line="335"/>
         <source>%n folder(s) couldn&apos;t be opened (they belong to the system or other users), so the total may be a little low.</source>
         <translation>
             <numerusform>%n folder couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>

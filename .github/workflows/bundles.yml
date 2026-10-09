@@ -4,7 +4,7 @@
 # Builds the Flatpak and the AppImage. On a push to main they're kept as test
 # downloads (Actions tab); when a release is published they're attached to it.
 # To redo them for a release that's already out (after fixing this file):
-#   gh workflow run bundles.yml -f tag=v0.6.0
+#   gh workflow run bundles.yml -f tag=v0.5.0
 name: bundles
 
 on:
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Build this release's source and attach the bundles to it (e.g. v0.6.0). Empty = just build.
+        description: Build this release's source and attach the bundles to it (e.g. v0.5.0). Empty = just build.
         required: false
         default: ''
 
