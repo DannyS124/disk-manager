@@ -50,3 +50,5 @@ void optimizeTests();
 void catalogTests();
 void fuzzTests();
 void healthTests();
+void jobsTests();
+void stopTests();

@@ -16,6 +16,18 @@ class QLabel;
 class QProgressBar;
 
 QString durationText(double seconds); // "about 5 minutes"
+
+// The long UDisks jobs the main window shows across the top, and whether they can be
+// stopped. Only jobs that are safe to stop halfway can be: a wipe (what's wiped is gone and
+// the rest stays as it was) and a check (it only reads).
+bool jobShown(const Job &job);
+bool jobSelfErasing(const Job &job); // firmware erase: can't be interrupted
+QString jobVerb(const Job &job);                      // "Wiping"
+QString jobCantStop(const Job &job);                  // why there's no Stop; empty when there is
+QString jobProgress(const Job &job, quint64 nowUsec); // "34%, 49.00 MB/s, about 2 hours left"
+QString jobStopQuestion(const Job &job, const QString &name, bool wholeDrive);
+QString jobStopButton(const Job &job);                // "Stop Wiping"
+QString jobStoppedMessage(const Job &job, const QString &name);
 // Long messages wrap onto more lines: make the dialog tall enough instead of squashing it.
 void fitHeight(QWidget *dialog);
 QString diskTitle(const Disk &d);     // "SanDisk Ultra (sdb, 32.00 GB)"

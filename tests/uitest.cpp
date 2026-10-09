@@ -13,6 +13,7 @@
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
 #include "../src/noticebar.h"
+#include "slowdisk.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
 #include "../src/copydialogs.h"
@@ -742,6 +743,146 @@ void banner()
     report(notices->isVisible() && bars().size() == 1, QStringLiteral("it comes back when it gets worse"));
 }
 
+// Stop from the bar on top: a real wipe on a slow test disk, stopped with the bar's own
+// button. The question is answered "Stop Wiping"; then the bar and the toolbar's Stop go,
+// and the status bar says where it stopped (no error box).
+void stopWipe()
+{
+    QTemporaryDir dir;
+    SlowDisk slow;
+    if (!slow.create(dir.path(), 128, 40)) {
+        report(false, QStringLiteral("make a slow test disk"), slow.error);
+        slow.remove();
+        return;
+    }
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    QString blockPath;
+    waitUntil([&] {
+        udisks.refresh();
+        for (const Disk &d : udisks.disks()) {
+            if (d.device == slow.loop)
+                blockPath = d.blockPath;
+        }
+        return !blockPath.isEmpty();
+    }, 15000);
+    if (blockPath.isEmpty()) {
+        report(false, QStringLiteral("the slow test disk shows up"), slow.loop);
+        slow.remove();
+        return;
+    }
+    udisks.wipe(*udisks.diskByPath(blockPath));
+    QAction *stop = findAction(window, QStringLiteral("Stop"));
+    NoticeBar *bar = nullptr;
+    QPushButton *stopWiping = nullptr;
+    waitUntil([&] {
+        for (NoticeBar *b : window.findChildren<NoticeBar *>(QStringLiteral("job"))) {
+            for (QPushButton *button : b->findChildren<QPushButton *>()) {
+                if (!b->isHidden() && button->text() == QLatin1String("Stop Wiping")) {
+                    bar = b;
+                    stopWiping = button;
+                }
+            }
+        }
+        return bar != nullptr;
+    }, 15000);
+    report(bar && stop && stop->isEnabled(), QStringLiteral("a running wipe gets a bar on top with Stop, and the toolbar's Stop is on"),
+           bar ? bar->text() : QString());
+    if (!stopWiping) {
+        slow.remove();
+        return;
+    }
+    QStringList asked;
+    Answerer answerer;
+    answerer.answer = [&asked](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            for (QAbstractButton *b : box->buttons()) {
+                if (b->text() == QLatin1String("Stop Wiping")) {
+                    asked << box->text();
+                    b->click();
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    stopWiping->click();
+    auto noBars = [&window] {
+        for (NoticeBar *b : window.findChildren<NoticeBar *>(QStringLiteral("job"))) {
+            if (!b->isHidden())
+                return false;
+        }
+        return true;
+    };
+    waitUntil([&] { return noBars() && !stop->isEnabled(); }, 20000);
+    const QString status = window.statusBar()->currentMessage();
+    report(asked.size() == 1 && asked[0].startsWith(QLatin1String("Stop wiping")) && noBars() && !stop->isEnabled()
+               && status.startsWith(QLatin1String("Stopped wiping")) && answerer.boxes.isEmpty(),
+           QStringLiteral("Stop asks first, then the wipe stops: no error box, and the bar and Stop go away"),
+           status + QStringLiteral(" | ") + answerer.boxes.join(QStringLiteral(" / ")));
+    slow.remove();
+}
+
+// Job bars, with jobs faked through the test hook: a firmware erase says it can't be
+// stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
+// end, the bars go.
+void jobBars()
+{
+    UDisks udisks;
+    udisks.setInteractive(false);
+    if (udisks.disks().isEmpty()) {
+        report(true, QStringLiteral("job bars (skipped: no drives)"));
+        return;
+    }
+    const Disk d = udisks.disks().constFirst();
+    Job erase;
+    erase.path = QStringLiteral("/test/jobs/erase");
+    erase.operation = QStringLiteral("ata-secure-erase");
+    erase.objects = {d.drivePath};
+    erase.progress = 0.1;
+    erase.progressValid = true;
+    udisks.setJobsForTest({erase});
+    udisks.refresh();
+    MainWindow window(&udisks);
+    window.show();
+    QAction *stop = findAction(window, QStringLiteral("Stop"));
+    auto jobBars = [&window] {
+        QList<NoticeBar *> out;
+        for (NoticeBar *b : window.findChildren<NoticeBar *>(QStringLiteral("job"))) {
+            if (!b->isHidden())
+                out << b;
+        }
+        return out;
+    };
+    QList<NoticeBar *> bars = jobBars();
+    report(bars.size() == 1 && bars[0]->text().contains(QLatin1String("can't be interrupted")) && bars[0]->findChildren<QPushButton *>().isEmpty()
+               && stop && !stop->isEnabled(),
+           QStringLiteral("a firmware erase gets a bar that says it can't be stopped, with no Stop"), bars.value(0) ? bars[0]->text() : QString());
+
+    Job wipe;
+    wipe.path = QStringLiteral("/test/jobs/wipe");
+    wipe.operation = QStringLiteral("format-erase");
+    wipe.cancelable = true;
+    wipe.objects = {d.blockPath};
+    wipe.progress = 0.34;
+    wipe.progressValid = true;
+    wipe.rate = 49000000;
+    udisks.setJobsForTest({wipe});
+    udisks.refresh();
+    bars = jobBars();
+    const QList<QPushButton *> buttons = bars.value(0) ? bars[0]->findChildren<QPushButton *>() : QList<QPushButton *>();
+    report(bars.size() == 1 && bars[0]->text().startsWith(QLatin1String("Wiping")) && bars[0]->text().contains(QLatin1String("34%"))
+               && buttons.size() == 1 && buttons[0]->text() == QLatin1String("Stop Wiping") && stop && stop->isEnabled(),
+           QStringLiteral("a wipe gets a bar with Stop Wiping, and the toolbar's Stop is on"), bars.value(0) ? bars[0]->text() : QString());
+
+    udisks.setJobsForTest({});
+    udisks.refresh();
+    QCoreApplication::processEvents();
+    report(jobBars().isEmpty() && stop && !stop->isEnabled(), QStringLiteral("when the jobs end, the bars and Stop go"));
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -752,6 +893,7 @@ int userScenarios()
     themes();
     maker();
     banner();
+    jobBars();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }
@@ -845,6 +987,7 @@ int main(int argc, char *argv[])
     systemMenus(window, udisks);
     cloneThroughWindow(window, udisks, dir);
     backupAndRestore(window, udisks, dir);
+    stopWipe();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

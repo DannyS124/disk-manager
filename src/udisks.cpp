@@ -200,7 +200,12 @@ void UDisks::refresh()
         if (it->contains(kJob)) {
             const QVariantMap j = it->value(kJob);
             Job job;
+            job.path = it.key().path();
             job.operation = j.value(QStringLiteral("Operation")).toString();
+            job.cancelable = j.value(QStringLiteral("Cancelable")).toBool();
+            job.bytes = j.value(QStringLiteral("Bytes")).toULongLong();
+            job.started = j.value(QStringLiteral("StartTime")).toULongLong();
+            job.expectedEnd = j.value(QStringLiteral("ExpectedEndTime")).toULongLong();
             job.progress = j.value(QStringLiteral("Progress")).toDouble();
             job.progressValid = j.value(QStringLiteral("ProgressValid")).toBool();
             job.rate = j.value(QStringLiteral("Rate")).toULongLong();
@@ -218,6 +223,7 @@ void UDisks::refresh()
             m_jobs.push_back(job);
         }
     }
+    m_jobs += m_testJobs;
 
     // whole disks
     QMap<QString, Disk> disks;
@@ -417,10 +423,16 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, failure, next](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         --m_pending;
-        if (w->isError())
+        if (w->isError() && w->error().name() == QLatin1String("org.freedesktop.UDisks2.Error.Cancelled")) {
+            // Stopped on purpose (Stop, or another program): not an error.
+            m_stopped = true;
+            emit operationFinished(false, m_stopMessages.isEmpty() ? tr("Stopped.") : m_stopMessages.takeFirst());
+            m_stopped = false;
+        } else if (w->isError()) {
             emit operationFinished(false, failure + QStringLiteral(": ") + w->error().message());
-        else
+        } else {
             next(w->reply());
+        }
     });
 }
 

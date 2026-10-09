@@ -19,6 +19,7 @@
 #include "diskmap.h"
 #include "format.h"
 #include "health.h"
+#include "jobui.h"
 #include "noticebar.h"
 #include "theme.h"
 #include "thememaker.h"
@@ -54,6 +55,8 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QSet>
+#include <QDateTime>
 #include <QTimer>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -160,12 +163,17 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     connect(m_udisks, &UDisks::changed, this, &MainWindow::rebuild);
     connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
         updateActions();
-        if (ok)
+        if (ok) {
             statusBar()->showMessage(message, 8000);
-        else {
+        } else if (m_udisks->wasStopped()) {
+            statusBar()->showMessage(message, 15000); // stopped on purpose: not an error
+        } else {
             statusBar()->clearMessage();
             QMessageBox::warning(this, windowTitle(), message);
         }
+    });
+    connect(m_udisks, &UDisks::jobStopFailed, this, [this](const QString &message) {
+        QMessageBox::warning(this, windowTitle(), message);
     });
     connect(m_udisks, &UDisks::checkFinished, this, [this](const QString &objectPath, bool clean) {
         const Volume *v = volumeByPath(objectPath);
@@ -438,6 +446,50 @@ void MainWindow::createActions()
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close); // closeEvent asks about running add-ons
 
+    // Stops what can safely be stopped halfway: a wipe, a check, a self-test.
+    m_stop = new QAction(themeIcon("process-stop", "media-playback-stop"), tr("&Stop"), this);
+    m_stop->setToolTip(tr("Stop the wipe, check or self-test that's running"));
+    m_stop->setEnabled(false);
+    connect(m_stop, &QAction::triggered, this, [this] {
+        // The selected drive's first, then any.
+        const Disk *selected = selectedDisk();
+        auto touches = [](const Job &j, const Disk &d) {
+            if (j.objects.contains(d.blockPath) || j.objects.contains(d.drivePath))
+                return true;
+            for (const Volume &v : d.volumes) {
+                if (j.objects.contains(v.objectPath) || (!v.cleartextPath.isEmpty() && j.objects.contains(v.cleartextPath)))
+                    return true;
+            }
+            return false;
+        };
+        QString chosen;
+        for (const Job &j : m_udisks->jobs()) {
+            if (!jobShown(j) || !jobCantStop(j).isEmpty())
+                continue;
+            const bool mine = selected && touches(j, *selected);
+            if (chosen.isEmpty() || mine)
+                chosen = j.path;
+            if (mine)
+                break;
+        }
+        if (!chosen.isEmpty()) {
+            stopJob(chosen);
+            return;
+        }
+        for (const Disk &d : m_udisks->disks()) {
+            if (d.health.selftestStatus == QLatin1String("inprogress") && (!selected || selected->blockPath == d.blockPath)) {
+                m_udisks->smartSelftestAbort(d);
+                return;
+            }
+        }
+    });
+    m_jobRecheck = new QTimer(this);
+    m_jobRecheck->setSingleShot(true);
+    connect(m_jobRecheck, &QTimer::timeout, this, [this] {
+        updateJobBars();
+        showNoticesIfAny();
+    });
+
     QMenu *file = menuBar()->addMenu(tr("&File"));
     file->addActions({m_openImage, m_writeImage});
     file->addSeparator();
@@ -446,6 +498,8 @@ void MainWindow::createActions()
     file->addAction(quit);
 
     QMenu *action = menuBar()->addMenu(tr("&Action"));
+    action->addAction(m_stop);
+    action->addSeparator();
     action->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
     action->addSeparator();
     action->addActions({m_unlock, m_lock, m_changePass});
@@ -550,7 +604,7 @@ void MainWindow::createActions()
     m_toolbar->setObjectName(QStringLiteral("mainToolbar"));
     m_toolbar->setMovable(false);
     m_toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_toolbar->addActions({m_refresh});
+    m_toolbar->addActions({m_refresh, m_stop});
     m_toolbar->addSeparator();
     m_toolbar->addActions({m_open, m_mount, m_unmount, m_safelyRemove});
     m_toolbar->addSeparator();
@@ -588,6 +642,7 @@ void MainWindow::runOnDrive(const QString &device, QAction *action)
 // dismissed. It comes back when it gets worse. At most three, then a count.
 void MainWindow::updateNotices()
 {
+    updateJobBars();
     QSettings settings(QStringLiteral("diskforge"), QStringLiteral("diskforge"));
     QVector<const Disk *> drives;
     for (const Disk &d : m_udisks->disks()) {
@@ -603,11 +658,13 @@ void MainWindow::updateNotices()
     for (const Disk *d : std::as_const(drives))
         key << d->blockPath + QLatin1Char(' ') + d->model + QLatin1Char(' ') + d->health.summary + QLatin1Char(' ')
                 + health::signature(d->health).join(QLatin1Char(','));
-    if (key == m_noticeKey)
+    if (key == m_noticeKey) {
+        showNoticesIfAny();
         return;
+    }
     m_noticeKey = key;
 
-    for (NoticeBar *old : m_notices->findChildren<NoticeBar *>(Qt::FindDirectChildrenOnly)) {
+    for (NoticeBar *old : m_notices->findChildren<NoticeBar *>(QStringLiteral("health"), Qt::FindDirectChildrenOnly)) {
         old->hide();
         old->deleteLater();
     }
@@ -620,6 +677,7 @@ void MainWindow::updateNotices()
         auto *bar = new NoticeBar(failing ? NoticeBar::Level::Danger : NoticeBar::Level::Warning,
                                   failing ? tr("%1 is failing. Copy what you want to keep to another drive now.").arg(name)
                                           : tr("%1: %2.").arg(name, h.summary));
+        bar->setObjectName(QStringLiteral("health"));
         // Spots it can't read stop a normal backup; Rescue Copy works around them.
         bool unreadable = failing;
         for (const HealthReason &r : h.reasons) {
@@ -650,11 +708,150 @@ void MainWindow::updateNotices()
             });
         });
         m_notices->layout()->addWidget(bar);
+        bar->show();
     }
-    if (drives.size() > shown)
-        m_notices->layout()->addWidget(new NoticeBar(NoticeBar::Level::Info,
-            tr("%n more drive(s) need a look; their health is in the Status column.", nullptr, int(drives.size() - shown))));
-    m_notices->setVisible(!drives.isEmpty());
+    if (drives.size() > shown) {
+        auto *more = new NoticeBar(NoticeBar::Level::Info,
+                                   tr("%n more drive(s) need a look; their health is in the Status column.", nullptr, int(drives.size() - shown)));
+        more->setObjectName(QStringLiteral("health"));
+        m_notices->layout()->addWidget(more);
+        more->show();
+    }
+    showNoticesIfAny();
+}
+
+void MainWindow::showNoticesIfAny()
+{
+    bool any = false;
+    for (NoticeBar *bar : m_notices->findChildren<NoticeBar *>(Qt::FindDirectChildrenOnly))
+        any = any || !bar->isHidden();
+    m_notices->setVisible(any);
+}
+
+// "sda (HGST HTS545050A7E380)" or "sda1 (SATA500)": what a job works on.
+QString MainWindow::jobTarget(const Job &job, bool *wholeDrive) const
+{
+    *wholeDrive = false;
+    for (const Disk &d : m_udisks->disks()) {
+        if (job.objects.contains(d.blockPath) || job.objects.contains(d.drivePath)) {
+            *wholeDrive = true;
+            return d.model.isEmpty() ? shortDevice(d.device) : tr("%1 (%2)").arg(shortDevice(d.device), d.model);
+        }
+        for (const Volume &v : d.volumes) {
+            if (job.objects.contains(v.objectPath) || (!v.cleartextPath.isEmpty() && job.objects.contains(v.cleartextPath)))
+                return v.label.isEmpty() ? shortDevice(v.device) : tr("%1 (%2)").arg(shortDevice(v.device), v.label);
+        }
+    }
+    return tr("a drive");
+}
+
+// A bar on top for each long job, updated in place (so a click on Stop never lands on a
+// bar that's being rebuilt). Quick jobs come and go without one.
+void MainWindow::updateJobBars()
+{
+    const quint64 now = quint64(QDateTime::currentMSecsSinceEpoch()) * 1000;
+    const quint64 settle = 2000000; // microseconds
+    QSet<QString> seen;
+    bool stoppable = false;
+    qint64 recheck = -1;
+    int index = 0;
+    auto place = [this, &index, &seen](const QString &key, NoticeBar::Level level, const QString &text,
+                                       const QString &buttonText, const std::function<void()> &onStop) {
+        seen << key;
+        NoticeBar *bar = m_jobBars.value(key);
+        if (!bar) {
+            bar = new NoticeBar(level, text);
+            bar->setObjectName(QStringLiteral("job"));
+            if (!buttonText.isEmpty()) {
+                QPushButton *stop = bar->addButton(buttonText);
+                // Queued: the question it asks runs a nested event loop.
+                connect(stop, &QPushButton::clicked, this, [this, onStop] { QTimer::singleShot(0, this, onStop); });
+            }
+            m_jobBars.insert(key, bar);
+            static_cast<QVBoxLayout *>(m_notices->layout())->insertWidget(index, bar);
+            bar->show(); // now, not on the next pass, so showNoticesIfAny() counts it
+        } else {
+            bar->setText(text);
+        }
+        ++index;
+    };
+    for (const Job &j : m_udisks->jobs()) {
+        if (!jobShown(j))
+            continue;
+        if (j.started && now < j.started + settle && !m_jobBars.contains(j.path)) {
+            const qint64 wait = qint64(j.started + settle - now) / 1000 + 50;
+            recheck = recheck < 0 ? wait : qMin(recheck, wait);
+            continue;
+        }
+        bool whole = false;
+        const QString name = jobTarget(j, &whole);
+        const QString cantStop = jobCantStop(j), progress = jobProgress(j, now);
+        QString text = progress.isEmpty() ? tr("%1 %2…").arg(jobVerb(j), name) : tr("%1 %2: %3.").arg(jobVerb(j), name, progress);
+        if (!cantStop.isEmpty())
+            text += QLatin1Char(' ') + cantStop;
+        stoppable = stoppable || cantStop.isEmpty();
+        const QString path = j.path;
+        place(path, jobSelfErasing(j) ? NoticeBar::Level::Warning : NoticeBar::Level::Info, text,
+              cantStop.isEmpty() ? jobStopButton(j) : QString(), [this, path] { stopJob(path); });
+    }
+    for (const Disk &d : m_udisks->disks()) {
+        if (d.health.selftestStatus != QLatin1String("inprogress"))
+            continue;
+        stoppable = true;
+        const QString name = d.model.isEmpty() ? shortDevice(d.device) : tr("%1 (%2)").arg(shortDevice(d.device), d.model);
+        const QString blockPath = d.blockPath;
+        place(QStringLiteral("selftest:") + d.blockPath, NoticeBar::Level::Info,
+              d.health.selftestPercentRemaining >= 0 ? tr("Self-test on %1: %2% to go.").arg(name).arg(d.health.selftestPercentRemaining)
+                                                     : tr("Self-test running on %1.").arg(name),
+              tr("Stop Test"), [this, blockPath] {
+                  if (const Disk *disk = m_udisks->diskByPath(blockPath))
+                      m_udisks->smartSelftestAbort(*disk);
+              });
+    }
+    for (auto it = m_jobBars.begin(); it != m_jobBars.end();) {
+        if (seen.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        it.value()->hide();
+        it.value()->deleteLater();
+        it = m_jobBars.erase(it);
+    }
+    m_stop->setEnabled(stoppable);
+    if (recheck >= 0)
+        m_jobRecheck->start(int(qMin<qint64>(recheck, 5000)));
+}
+
+void MainWindow::stopJob(const QString &jobPath)
+{
+    auto find = [this, &jobPath]() -> const Job * {
+        for (const Job &j : m_udisks->jobs()) {
+            if (j.path == jobPath)
+                return &j;
+        }
+        return nullptr;
+    };
+    const Job *job = find();
+    if (!job || !jobCantStop(*job).isEmpty())
+        return;
+    bool whole = false;
+    const QString name = jobTarget(*job, &whole);
+    const Job asked = *job; // the job list is rebuilt while the question is open
+    QMessageBox box(QMessageBox::Question, tr("Stop"), jobStopQuestion(asked, name, whole), QMessageBox::NoButton, this);
+    box.setTextFormat(Qt::PlainText); // names come from the drive
+    QPushButton *stop = box.addButton(jobStopButton(asked), QMessageBox::DestructiveRole);
+    QPushButton *keep = box.addButton(tr("Keep Going"), QMessageBox::RejectRole);
+    box.setDefaultButton(keep);
+    box.setEscapeButton(keep);
+    box.exec();
+    if (box.clickedButton() != stop)
+        return;
+    const Job *still = find();
+    if (!still) {
+        statusBar()->showMessage(tr("It had already finished."), 8000);
+        return;
+    }
+    m_udisks->cancelJob(jobPath, jobStoppedMessage(*still, name));
 }
 
 bool MainWindow::selectDevice(const QString &device)

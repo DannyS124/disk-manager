@@ -15,7 +15,7 @@
 <context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1117"/>
+        <location filename="../src/tools.cpp" line="1125"/>
         <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
         <translation>
             <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
@@ -23,7 +23,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1145"/>
+        <location filename="../src/tools.cpp" line="1153"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -31,7 +31,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1190"/>
+        <location filename="../src/tools.cpp" line="1198"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -75,7 +75,7 @@
 <context>
     <name>MainWindow</name>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="656"/>
+        <location filename="../src/mainwindow.cpp" line="715"/>
         <source>%n more drive(s) need a look; their health is in the Status column.</source>
         <translation>
             <numerusform>%n more drive need a look; their health is in the Status column.</numerusform>
@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1377"/>
+        <location filename="../src/mainwindow.cpp" line="1574"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -94,7 +94,7 @@
 <context>
     <name>QObject</name>
     <message numerus="yes">
-        <location filename="../src/jobui.cpp" line="21"/>
+        <location filename="../src/jobui.cpp" line="22"/>
         <source>about %n minute(s)</source>
         <translation>
             <numerusform>about %n minute</numerusform>
@@ -102,7 +102,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/jobui.cpp" line="22"/>
+        <location filename="../src/jobui.cpp" line="23"/>
         <source>about %n hour(s)</source>
         <translation>
             <numerusform>about %n hour</numerusform>

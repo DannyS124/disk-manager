@@ -115,9 +115,10 @@ void SecureEraseDialog::updateState()
             text += QStringLiteral("<br>") + redText(diskWarning(*d));
         // UDisks sets the ATA password "xxxx" for the erase; an interrupted erase leaves it set.
         text += QStringLiteral("<br>")
-              + (m_ata ? tr("Keep the PC on and the drive plugged in until it's done. If the erase is cut off, the drive stays locked "
-                            "with the password <b>xxxx</b> until it's unlocked (see Help).")
-                       : tr("Keep the PC on until it's done."));
+              + (m_ata ? tr("Once it starts it can't be stopped: the drive does the erasing itself. Keep the PC on and the drive "
+                            "plugged in until it's done. If the erase is cut off, the drive stays locked with the password "
+                            "<b>xxxx</b> until it's unlocked (see Help).")
+                       : tr("Once it starts it can't be stopped: the drive does the erasing itself. Keep the PC on until it's done."));
         const QString name = shortDevice(d->device);
         text += QStringLiteral("<br>") + tr("Type <b>%1</b> to confirm:").arg(name);
         m_confirm->setPlaceholderText(name);

@@ -894,6 +894,12 @@ int main(int argc, char *argv[])
         fuzzTests();
     } else if (args.contains(QStringLiteral("--health"))) {
         healthTests();
+    } else if (args.contains(QStringLiteral("--jobs"))) {
+        jobsTests();
+    } else if (args.contains(QStringLiteral("--stop"))) {
+        if (needsRoot("--stop"))
+            return 2;
+        stopTests();
     } else if (args.contains(QStringLiteral("--cleanup"))) {
         cleanupTests();
         snapperTests();

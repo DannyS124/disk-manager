@@ -83,6 +83,7 @@ private:
     QTreeWidget *m_attributes;
     QLabel *m_meaning; // what the selected attribute is
     QPushButton *m_selftest;
+    QPushButton *m_stopTest; // while one runs
     void checkFirmware();
     firmware::Result m_firmware;
     bool m_firmwareBusy = false;

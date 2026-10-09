@@ -282,6 +282,30 @@ void UDisks::smartSelftest(const Disk &disk, const QString &type)
          tr("Couldn't start a self-test on %1").arg(name));
 }
 
+void UDisks::smartSelftestAbort(const Disk &disk)
+{
+    const QString name = shortDevice(disk.device);
+    call(disk.drivePath, disk.health.nvme ? kNvme : kAta, QStringLiteral("SmartSelftestAbort"), {options()},
+         [name](const QDBusMessage &) { return tr("Stopped the self-test on %1").arg(name); },
+         tr("Couldn't stop the self-test on %1").arg(name));
+}
+
+void UDisks::cancelJob(const QString &jobPath, const QString &stoppedMessage)
+{
+    m_stopMessages << stoppedMessage;
+    QDBusMessage message = QDBusMessage::createMethodCall(kService, jobPath, kJob, QStringLiteral("Cancel"));
+    message.setArguments({options()});
+    message.setInteractiveAuthorizationAllowed(m_interactive);
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, 60000), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, stoppedMessage] {
+        watcher->deleteLater();
+        if (watcher->isError()) {
+            m_stopMessages.removeOne(stoppedMessage);
+            emit jobStopFailed(tr("Couldn't stop it: %1").arg(watcher->error().message()));
+        }
+    });
+}
+
 void UDisks::powerOff(const Disk &disk)
 {
     const QString name = shortDevice(disk.device);

@@ -268,8 +268,15 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
         if (const Disk *d = m_udisks->diskByPath(m_blockPath))
             BadSectorsDialog(m_udisks, *d, this).exec();
     });
+    m_stopTest = new QPushButton(tr("Stop Test"));
+    m_stopTest->setVisible(false);
+    connect(m_stopTest, &QPushButton::clicked, this, [this] {
+        if (const Disk *d = m_udisks->diskByPath(m_blockPath))
+            m_udisks->smartSelftestAbort(*d);
+    });
     auto *buttons = new QHBoxLayout;
     buttons->addWidget(m_selftest);
+    buttons->addWidget(m_stopTest);
     buttons->addWidget(longTest);
     buttons->addWidget(scan);
     buttons->addWidget(refresh);
@@ -385,6 +392,7 @@ void HealthDialog::reload()
         m_form->addRow(firmwareName, firmwareBox);
     }
     m_selftest->setEnabled(h.selftestStatus != QLatin1String("inprogress"));
+    m_stopTest->setVisible(h.selftestStatus == QLatin1String("inprogress"));
 
     const QVector<SmartAttribute> attrs = m_udisks->smartAttributes(*disk);
     m_attributes->clear();

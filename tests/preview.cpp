@@ -87,6 +87,24 @@ int main(int argc, char *argv[])
         MainWindow window(&udisks);
         window.resize(1200, 760);
         save(window, out.filePath(QStringLiteral("main.png")));
+        // A wipe running on the second drive (faked), with its Stop bar on top.
+        if (udisks.disks().size() > 1) {
+            const Disk &d = udisks.disks()[1];
+            Job wipe;
+            wipe.path = QStringLiteral("/preview/jobs/wipe");
+            wipe.operation = QStringLiteral("format-erase");
+            wipe.cancelable = true;
+            wipe.objects = {d.blockPath};
+            wipe.progress = 0.34;
+            wipe.progressValid = true;
+            wipe.rate = 49 * 1000 * 1000;
+            wipe.bytes = d.size;
+            udisks.setJobsForTest({wipe});
+            udisks.refresh();
+            save(window, out.filePath(QStringLiteral("main-stop.png")));
+            udisks.setJobsForTest({});
+            udisks.refresh();
+        }
         for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);
             save(window, out.filePath(QStringLiteral("main-%1.png").arg(QLatin1String(id))));

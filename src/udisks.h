@@ -118,11 +118,16 @@ struct Disk {
 
 // A long-running UDisks2 operation (format, erase, check...).
 struct Job {
+    QString path; // the job's object, for Cancel
     QString operation;
     double progress = 0;
     bool progressValid = false;
     QStringList objects;
     quint64 rate = 0; // bytes per second, 0 if unknown
+    bool cancelable = false;
+    quint64 bytes = 0;       // how much it works through, 0 if unknown
+    quint64 started = 0;     // microseconds since the epoch
+    quint64 expectedEnd = 0; // the same, 0 if unknown
 };
 
 struct FsType {
@@ -243,6 +248,13 @@ public:
     // SMART
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
+    void smartSelftestAbort(const Disk &disk);
+    // Asks UDisks to stop a job. The call that started it then fails as "cancelled", which
+    // is reported through operationFinished with `stoppedMessage` and wasStopped() true.
+    void cancelJob(const QString &jobPath, const QString &stoppedMessage);
+    bool wasStopped() const { return m_stopped; } // during operationFinished
+    // For tests: jobs to report next to the real ones, from the next refresh on.
+    void setJobsForTest(const QVector<Job> &jobs) { m_testJobs = jobs; }
     QVector<SmartAttribute> smartAttributes(const Disk &disk); // blocking
     // Raw access to a whole disk or one partition. Everything except the read-only
     // benchmark mode unmounts first; writable modes refuse system disks. polkit asks
@@ -256,6 +268,7 @@ public:
 signals:
     void changed();
     void operationFinished(bool ok, const QString &message);
+    void jobStopFailed(const QString &message);
     void checkFinished(const QString &objectPath, bool clean);
     void imageOpened(const QString &loopBlockPath);
     void deviceOpened(const QString &blockPath, int fd); // fd = -1 on failure (reported via operationFinished)
@@ -294,4 +307,7 @@ private:
     };
     QMap<QString, HealthCache> m_healthCache;
     QMap<QString, Health> m_testHealth;
+    QVector<Job> m_testJobs;
+    QStringList m_stopMessages; // for jobs asked to stop, in order
+    bool m_stopped = false;
 };
