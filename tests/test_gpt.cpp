@@ -9,6 +9,7 @@
 #include "../src/gpt.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 #include <fcntl.h>
@@ -114,6 +115,94 @@ void sectorSizeTests(int sectorSize)
 
 } // namespace
 
+// The inspector, on images sfdisk made: an intact table, then each kind of damage.
+gpt::Report inspectFile(const QString &path, int sectorSize)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return {};
+    gpt::Report r = gpt::inspect(fd, sectorSize);
+    ::close(fd);
+    return r;
+}
+
+void zeroSector(const QString &path, int sectorSize, qint64 lba)
+{
+    QFile f(path);
+    if (f.open(QIODevice::ReadWrite) && f.seek(lba * sectorSize))
+        f.write(QByteArray(sectorSize, '\0'));
+}
+
+void inspectorTests(int sectorSize)
+{
+    const QString tag = QStringLiteral(" (%1-byte sectors)").arg(sectorSize);
+    QTemporaryDir dir;
+    const QString disk = dir.filePath(QStringLiteral("inspect.img"));
+    if (!makeDisk(disk, sectorSize))
+        return report(false, QStringLiteral("make a GPT test disk") + tag);
+    gpt::Report r = inspectFile(disk, sectorSize);
+    const qint64 last = QFileInfo(disk).size() / sectorSize - 1;
+    report(r.problems.isEmpty() && r.primary.valid() && r.backup.valid() && r.backupMatches && r.mbr.protective() && r.primary.entries.size() == 3
+               && r.primary.entries[0].firstLba == quint64(1024 * 1024 / sectorSize) && r.backup.lba == quint64(last)
+               && r.primary.entries[0].type == QLatin1String("0fc63daf-8483-4772-8e79-3d69d8477de4"),
+           QStringLiteral("an intact table reads back: both headers, three partitions, protective MBR") + tag, r.problems.join(QStringLiteral(" | ")));
+
+    const QString copy = dir.filePath(QStringLiteral("copy.img"));
+    auto fresh = [&] {
+        QFile::remove(copy);
+        QFile::copy(disk, copy);
+    };
+    fresh();
+    zeroSector(copy, sectorSize, 1);
+    r = inspectFile(copy, sectorSize);
+    report(!r.primary.present && r.backup.valid() && r.problems.join(QLatin1Char(' ')).contains(QLatin1String("main GPT header is missing")),
+           QStringLiteral("a wiped main header is found, and the backup is still good") + tag, r.problems.join(QStringLiteral(" | ")));
+    fresh();
+    {
+        QFile f(copy);
+        if (f.open(QIODevice::ReadWrite) && f.seek(2 * sectorSize + 40))
+            f.write("\x07", 1); // a partition's end, without fixing the checksum
+    }
+    r = inspectFile(copy, sectorSize);
+    report(r.primary.headerCrcOk && !r.primary.entriesCrcOk && r.problems.join(QLatin1Char(' ')).contains(QLatin1String("partition list is damaged")),
+           QStringLiteral("a changed partition list fails its checksum") + tag, r.problems.join(QStringLiteral(" | ")));
+    fresh();
+    zeroSector(copy, sectorSize, last);
+    r = inspectFile(copy, sectorSize);
+    report(r.primary.valid() && !r.backup.present && r.problems.join(QLatin1Char(' ')).contains(QLatin1String("backup GPT header")),
+           QStringLiteral("a missing backup header is found") + tag, r.problems.join(QStringLiteral(" | ")));
+    fresh();
+    zeroSector(copy, sectorSize, 0);
+    r = inspectFile(copy, sectorSize);
+    report(r.primary.valid() && r.problems.join(QLatin1Char(' ')).contains(QLatin1String("protective MBR")),
+           QStringLiteral("a missing protective MBR is noticed") + tag, r.problems.join(QStringLiteral(" | ")));
+    fresh();
+    grow(copy, 96 * MiB);
+    r = inspectFile(copy, sectorSize);
+    report(r.primary.valid() && r.backupElsewhere && r.backup.valid() && r.problems.join(QLatin1Char(' ')).contains(QLatin1String("isn't at the end")),
+           QStringLiteral("a backup left in the middle (copied to a bigger drive) is found") + tag, r.problems.join(QStringLiteral(" | ")));
+}
+
+void mbrInspectorTests()
+{
+    QTemporaryDir dir;
+    const QString disk = dir.filePath(QStringLiteral("mbr.img"));
+    {
+        QFile f(disk);
+        if (!f.open(QIODevice::WriteOnly) || !f.resize(32 * MiB))
+            return report(false, QStringLiteral("make an MBR test disk"));
+    }
+    sh(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("printf 'label: dos\\nsize=8MiB, type=83, bootable\\ntype=c\\n' | sfdisk --quiet '%1'").arg(disk)});
+    const gpt::Report r = inspectFile(disk, 512);
+    report(r.problems.isEmpty() && r.mbr.signature && r.mbr.entries.size() == 2 && r.mbr.entries[0].bootable && r.mbr.entries[0].type == 0x83
+               && r.mbr.entries[1].type == 0x0c && !r.primary.present,
+           QStringLiteral("an MBR table reads back, with its boot flag"), r.problems.join(QStringLiteral(" | ")));
+    const QString dump = gpt::hexDump(QByteArray("EFI PART\x00\x00\x01\x00\x5c\x00\x00\x00 tail", 21), 512);
+    report(dump.startsWith(QLatin1String("00000200  45 46 49 20 50 41 52 54  00 00 01 00 5c 00 00 00  |EFI PART....\\...|"))
+               && dump.count(QLatin1Char('\n')) == 2,
+           QStringLiteral("the hex view shows offsets, bytes and text"), dump.left(80));
+}
+
 // Type and Flags: what's offered, what typed-in types are refused, and flags it doesn't
 // show staying as they were.
 void typeAndFlags()
@@ -151,6 +240,9 @@ void gptTests()
 {
     sectorSizeTests(512);
     sectorSizeTests(4096);
+    inspectorTests(512);
+    inspectorTests(4096);
+    mbrInspectorTests();
     typeAndFlags();
 
     QTemporaryDir dir;

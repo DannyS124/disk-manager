@@ -13,6 +13,7 @@
 #include "../src/blockmapwidget.h"
 #include "../src/copydialogs.h"
 #include "../src/imagebackup.h"
+#include "../src/inspectdialog.h"
 #include "../src/powerbox.h"
 #include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
@@ -37,11 +38,14 @@
 #include <QSpinBox>
 #include <QTextStream>
 #include <QFile>
+#include <QProcess>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
 #include <QElapsedTimer>
+
+#include <fcntl.h>
 #include <QProgressBar>
 #include <QLabel>
 
@@ -107,6 +111,27 @@ int main(int argc, char *argv[])
             save(window, out.filePath(QStringLiteral("main-stop.png")));
             udisks.setJobsForTest({});
             udisks.refresh();
+        }
+        {
+            // The inspector, on an image with a damaged main header (the backup is still good).
+            QTemporaryDir tmp;
+            const QString image = tmp.filePath(QStringLiteral("inspect.img"));
+            QFile f(image);
+            if (f.open(QIODevice::WriteOnly) && f.resize(64 * 1024 * 1024)) {
+                f.close();
+                QProcess sfdisk;
+                sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("--quiet"), image});
+                sfdisk.waitForStarted();
+                sfdisk.write("label: gpt\nsize=16MiB, type=uefi, name=\"EFI\"\nsize=32MiB, type=linux, name=\"root\"\ntype=swap\n");
+                sfdisk.closeWriteChannel();
+                sfdisk.waitForFinished();
+                if (f.open(QIODevice::ReadWrite) && f.seek(512 + 16)) {
+                    f.write("\x01", 1); // the header's checksum no longer fits
+                    f.close();
+                }
+                TableInspectorDialog inspector(::open(QFile::encodeName(image).constData(), O_RDONLY | O_CLOEXEC), QStringLiteral("inspect.img"));
+                save(inspector, out.filePath(QStringLiteral("inspector.png")));
+            }
         }
         for (const Disk &d : udisks.disks()) {
             if (PowerBox::applies(d)) {

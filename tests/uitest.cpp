@@ -13,6 +13,7 @@
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
 #include "../src/diskmap.h"
+#include "../src/inspectdialog.h"
 #include "../src/noticebar.h"
 #include "../src/typedialog.h"
 #include "slowdisk.h"
@@ -982,6 +983,49 @@ void lockInMap()
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
 }
 
+// Inspect Partition Table on the system disk: read-only, so it opens without unmounting
+// anything, and the table it shows is intact.
+void inspector()
+{
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    QString system;
+    for (const Disk &d : udisks.disks()) {
+        if (d.isSystem)
+            system = d.device;
+    }
+    if (system.isEmpty() || !window.selectDevice(system)) {
+        report(true, QStringLiteral("the inspector on the system disk (skipped: no system disk found)"));
+        return;
+    }
+    QString mountsBefore, mountsAfter;
+    sh(QStringLiteral("findmnt"), {QStringLiteral("-rno"), QStringLiteral("TARGET,SOURCE")}, &mountsBefore);
+    QAction *inspect = findAction(window, QStringLiteral("Inspect Partition Table"));
+    report(inspect && inspect->isEnabled(), QStringLiteral("Inspect Partition Table is offered for the system disk"));
+    gpt::Report seen;
+    bool shown = false;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        auto *dialog = qobject_cast<TableInspectorDialog *>(modal);
+        if (!dialog)
+            return false;
+        if (dialog->isReady()) {
+            seen = dialog->report();
+            shown = true;
+            dialog->close();
+        }
+        return true;
+    };
+    if (inspect)
+        inspect->trigger();
+    sh(QStringLiteral("findmnt"), {QStringLiteral("-rno"), QStringLiteral("TARGET,SOURCE")}, &mountsAfter);
+    report(shown && mountsAfter == mountsBefore, QStringLiteral("it opens read-only: nothing got unmounted"));
+    report(shown && (seen.primary.present ? seen.primary.valid() && seen.backupMatches : seen.mbr.signature),
+           QStringLiteral("and it reads the system disk's table as intact"), seen.problems.join(QStringLiteral(" | ")));
+}
+
 // Job bars, with jobs faked through the test hook: a firmware erase says it can't be
 // stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
 // end, the bars go.
@@ -1147,6 +1191,7 @@ int main(int argc, char *argv[])
     stopWipe();
     typeAndFlags();
     lockInMap();
+    inspector();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

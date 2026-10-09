@@ -4,6 +4,7 @@
 #include "gpt.h"
 
 #include "blockio.h"
+#include "format.h"
 
 #include <QObject>
 #include <QRandomGenerator>
@@ -187,6 +188,209 @@ Result relocateBackup(int fd, int sectorSize, bool newGuids)
     }
     r.ok = true;
     return r;
+}
+
+QString guidText(const char *p)
+{
+    const auto b = [p](int i) { return quint8(p[i]); };
+    return QStringLiteral("%1-%2-%3-%4%5-%6%7%8%9%10%11")
+        .arg(le32(p), 8, 16, QLatin1Char('0'))
+        .arg(quint16(quint8(p[4]) | quint8(p[5]) << 8), 4, 16, QLatin1Char('0'))
+        .arg(quint16(quint8(p[6]) | quint8(p[7]) << 8), 4, 16, QLatin1Char('0'))
+        .arg(b(8), 2, 16, QLatin1Char('0'))
+        .arg(b(9), 2, 16, QLatin1Char('0'))
+        .arg(b(10), 2, 16, QLatin1Char('0'))
+        .arg(b(11), 2, 16, QLatin1Char('0'))
+        .arg(b(12), 2, 16, QLatin1Char('0'))
+        .arg(b(13), 2, 16, QLatin1Char('0'))
+        .arg(b(14), 2, 16, QLatin1Char('0'))
+        .arg(b(15), 2, 16, QLatin1Char('0'));
+}
+
+bool Mbr::hybrid() const
+{
+    bool gpt = false, other = false;
+    for (const MbrEntry &e : entries) {
+        gpt = gpt || e.type == 0xEE;
+        other = other || e.type != 0xEE;
+    }
+    return gpt && other;
+}
+
+Mbr parseMbr(const char *sector0)
+{
+    Mbr m;
+    m.signature = quint8(sector0[510]) == 0x55 && quint8(sector0[511]) == 0xAA;
+    for (int i = 0; i < 4; ++i) {
+        const char *e = sector0 + 446 + i * 16;
+        MbrEntry entry;
+        entry.index = i + 1;
+        entry.bootable = quint8(e[0]) == 0x80;
+        entry.type = quint8(e[4]);
+        entry.firstLba = le32(e + 8);
+        entry.sectors = le32(e + 12);
+        if (entry.type != 0)
+            m.entries.push_back(entry);
+    }
+    return m;
+}
+
+Header parseHeader(const char *sector, int sectorSize, quint64 lba)
+{
+    Header h;
+    h.lba = lba;
+    h.present = std::memcmp(sector, "EFI PART", 8) == 0;
+    if (!h.present)
+        return h;
+    h.revision = le32(sector + 8);
+    h.headerSize = le32(sector + kHeaderSize);
+    h.sizeOk = h.headerSize >= 92 && h.headerSize <= 512 && int(h.headerSize) <= sectorSize;
+    if (h.sizeOk) {
+        char copy[512];
+        std::memcpy(copy, sector, h.headerSize);
+        h.headerCrcOk = headerCrc(copy) == le32(sector + kHeaderCrc);
+    }
+    h.myLba = le64(sector + kMyLba);
+    h.alternateLba = le64(sector + kAlternateLba);
+    h.firstUsable = le64(sector + 40);
+    h.lastUsable = le64(sector + kLastUsable);
+    h.diskGuid = guidText(sector + kDiskGuid);
+    h.entriesLba = le64(sector + kEntriesLba);
+    h.entryCount = le32(sector + kEntryCount);
+    h.entrySize = le32(sector + kEntrySize);
+    h.entriesCrc = le32(sector + kEntriesCrc);
+    return h;
+}
+
+void parseEntries(Header &h, const char *list, quint64 listBytes)
+{
+    const quint64 bytes = quint64(h.entryCount) * h.entrySize;
+    if (h.entrySize < 128 || h.entryCount == 0 || bytes > listBytes || bytes > 16 * 1024 * 1024)
+        return;
+    h.entriesRead = true;
+    h.entriesCrcOk = crc32(list, bytes) == h.entriesCrc;
+    static const char zero[16] = {};
+    for (quint32 i = 0; i < h.entryCount; ++i) {
+        const char *e = list + quint64(i) * h.entrySize;
+        if (std::memcmp(e, zero, 16) == 0)
+            continue;
+        Entry entry;
+        entry.index = int(i) + 1;
+        entry.type = guidText(e);
+        entry.guid = guidText(e + 16);
+        entry.firstLba = le64(e + 32);
+        entry.lastLba = le64(e + 40);
+        entry.attributes = le64(e + 48);
+        char16_t name[36];
+        std::memcpy(name, e + 56, sizeof(name));
+        int length = 0;
+        while (length < 36 && name[length] != 0)
+            ++length;
+        entry.name = cleanName(QString::fromUtf16(name, length));
+        h.entries.push_back(entry);
+    }
+}
+
+namespace {
+
+// Reads a header at `lba` and, when it's sound, its partition list.
+Header readHeader(int fd, quint64 sector, quint64 lastLba, quint64 lba)
+{
+    blockio::Buffer buf = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    if (!buf || lba > lastLba || !blockio::readAt(fd, buf.get(), sector, lba * sector))
+        return {};
+    Header h = parseHeader(buf.get(), int(sector), lba);
+    if (!h.present || !h.sizeOk)
+        return h;
+    const quint64 bytes = quint64(h.entryCount) * h.entrySize;
+    if (h.entrySize < 128 || h.entryCount == 0 || bytes > 16 * 1024 * 1024)
+        return h;
+    const quint64 sectors = (bytes + sector - 1) / sector;
+    if (h.entriesLba == 0 || h.entriesLba > lastLba || sectors > lastLba - h.entriesLba + 1)
+        return h;
+    blockio::Buffer list = blockio::alignedBuffer(size_t(sectors * sector));
+    if (list && blockio::readAt(fd, list.get(), sectors * sector, h.entriesLba * sector))
+        parseEntries(h, list.get(), sectors * sector);
+    return h;
+}
+
+} // namespace
+
+Report inspect(int fd, int sectorSize)
+{
+    Report r;
+    r.sectorSize = sectorSize > 0 ? sectorSize : blockio::logicalSize(fd);
+    const quint64 sector = quint64(std::max(r.sectorSize, 512));
+    const quint64 size = blockio::deviceSize(fd);
+    if (size < sector * 2) {
+        r.problems << QObject::tr("The drive is too small to hold a partition table.");
+        return r;
+    }
+    r.lastLba = size / sector - 1;
+    blockio::Buffer first = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    if (!first || !blockio::readAt(fd, first.get(), sector, 0)) {
+        r.problems << QObject::tr("Couldn't read the start of the drive.");
+        return r;
+    }
+    r.mbr = parseMbr(first.get());
+    r.primary = readHeader(fd, sector, r.lastLba, 1);
+    r.backup = readHeader(fd, sector, r.lastLba, r.lastLba);
+    if (r.primary.valid() && r.primary.alternateLba != r.lastLba) {
+        r.backupElsewhere = true;
+        const Header there = readHeader(fd, sector, r.lastLba, r.primary.alternateLba);
+        if (!r.backup.present && there.present)
+            r.backup = there;
+    }
+    r.backupMatches = r.primary.valid() && r.backup.valid() && r.primary.diskGuid == r.backup.diskGuid
+        && r.primary.entriesCrc == r.backup.entriesCrc && r.primary.entryCount == r.backup.entryCount;
+
+    const bool anyGpt = r.primary.present || r.backup.present;
+    if (!anyGpt && !r.mbr.signature)
+        r.problems << QObject::tr("There's no partition table: the drive is empty, or its table was wiped.");
+    if (!anyGpt)
+        return r; // a plain MBR disk
+    if (!r.primary.present)
+        r.problems << QObject::tr("The main GPT header is missing.");
+    else if (!r.primary.sizeOk || !r.primary.headerCrcOk)
+        r.problems << QObject::tr("The main GPT header is damaged (its checksum doesn't match).");
+    else if (!r.primary.entriesRead || !r.primary.entriesCrcOk)
+        r.problems << QObject::tr("The main partition list is damaged (its checksum doesn't match).");
+    if (!r.backup.present)
+        r.problems << QObject::tr("The backup GPT header at the end of the drive is missing.");
+    else if (!r.backup.valid())
+        r.problems << QObject::tr("The backup GPT header or its partition list is damaged.");
+    else if (r.primary.valid() && !r.backupMatches)
+        r.problems << QObject::tr("The backup doesn't match the main table.");
+    if (r.backupElsewhere)
+        r.problems << QObject::tr("The backup isn't at the end of the drive; it was probably copied from a smaller one.");
+    if (!r.mbr.signature || r.mbr.entries.isEmpty())
+        r.problems << QObject::tr("There's no protective MBR, so older tools may think the drive is empty.");
+    else if (r.mbr.hybrid())
+        r.problems << QObject::tr("It has a hybrid MBR (GPT and MBR partitions at once). Some tools get confused by that.");
+    else if (!r.mbr.protective())
+        r.problems << QObject::tr("The MBR describes other partitions than the GPT.");
+    return r;
+}
+
+QString hexDump(const QByteArray &data, quint64 firstOffset)
+{
+    QString out;
+    for (qsizetype line = 0; line < data.size(); line += 16) {
+        QString hex, text;
+        for (int i = 0; i < 16; ++i) {
+            if (line + i < data.size()) {
+                const quint8 c = quint8(data[line + i]);
+                hex += QStringLiteral("%1 ").arg(c, 2, 16, QLatin1Char('0'));
+                text += c >= 0x20 && c < 0x7f ? QChar(c) : QLatin1Char('.');
+            } else {
+                hex += QStringLiteral("   ");
+            }
+            if (i == 7)
+                hex += QLatin1Char(' ');
+        }
+        out += QStringLiteral("%1  %2 |%3|\n").arg(firstOffset + quint64(line), 8, 16, QLatin1Char('0')).arg(hex, text);
+    }
+    return out;
 }
 
 } // namespace gpt

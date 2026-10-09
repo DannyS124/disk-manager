@@ -20,6 +20,7 @@
 #include "diskmap.h"
 #include "format.h"
 #include "health.h"
+#include "inspectdialog.h"
 #include "jobui.h"
 #include "noticebar.h"
 #include "powerbox.h"
@@ -261,6 +262,12 @@ void MainWindow::createActions()
     m_rename = new QAction(themeIcon("edit-rename", "document-edit"), tr("Change &Label…"), this);
     m_rename->setShortcut(QKeySequence(Qt::Key_F2));
     connect(m_rename, &QAction::triggered, this, &MainWindow::changeLabel);
+
+    m_inspect = new QAction(themeIcon("document-preview", "edit-find"), tr("&Inspect Partition Table…"), this);
+    connect(m_inspect, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            TableInspectorDialog(m_udisks, *d, this).exec();
+    });
 
     m_typeFlags = new QAction(themeIcon("document-properties", "document-properties"), tr("Partition &Type and Flags…"), this);
     connect(m_typeFlags, &QAction::triggered, this, [this] {
@@ -537,7 +544,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newPartition, m_format, m_resize, m_rename, m_typeFlags, m_check, m_startup, m_delete});
     action->addSeparator();
-    action->addActions({m_newTable, m_wipe, m_secureErase, m_detachImage});
+    action->addActions({m_newTable, m_inspect, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
     action->addActions({m_health, m_badSectors, m_benchmark});
     action->addSeparator();
@@ -1006,6 +1013,7 @@ void MainWindow::updateActions()
     m_newPartition->setEnabled(changeable && kind == DiskMap::Selection::Kind::Free && !d->tableType.isEmpty());
     m_format->setEnabled(changeable && v && !v->isContainer);
     m_rename->setEnabled(changeable && v && v->canMount());
+    m_inspect->setEnabled(d && d->size > 0 && !busy); // read-only: the system disk too
     m_typeFlags->setEnabled(changeable && v && !v->isContainer
                             && (d->tableType == QLatin1String("gpt") || d->tableType == QLatin1String("dos")));
     m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);

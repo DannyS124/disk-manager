@@ -602,6 +602,50 @@ void firmwareAnswers()
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void tableInspector(const QString &tmp)
+{
+    // Damaged MBRs, GPT headers and partition lists: no crash, nothing read past the buffer
+    // (ASan watches), and a header only counts as checked when its size could be.
+    const QString image = tmp + QStringLiteral("/inspect.img");
+    {
+        QFile f(image);
+        if (!f.open(QIODevice::WriteOnly) || !f.resize(8 * 1024 * 1024))
+            return report(false, QStringLiteral("make a table to damage"));
+    }
+    QProcess sfdisk;
+    sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("--quiet"), image});
+    sfdisk.waitForStarted();
+    sfdisk.write("label: gpt\nsize=2MiB, type=linux, name=\"one\"\ntype=linux\n");
+    sfdisk.closeWriteChannel();
+    sfdisk.waitForFinished();
+    const QByteArray disk = readFile(image);
+    if (disk.size() < 34 * 512)
+        return report(false, QStringLiteral("make a table to damage"));
+    const QByteArray mbr = disk.left(512), header = disk.mid(512, 512), list = disk.mid(1024, 32 * 512);
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        QByteArray m = mutate(mbr);
+        m.resize(512, '\0');
+        if (gpt::parseMbr(m.constData()).entries.size() > 4)
+            bad << QStringLiteral("mbr %1").arg(i);
+        QByteArray h = rng.bounded(4) ? mutate(header) : header;
+        h.resize(512, '\0');
+        gpt::Header parsed = gpt::parseHeader(h.constData(), 512, 1);
+        if (parsed.headerCrcOk && !parsed.sizeOk)
+            bad << QStringLiteral("header %1").arg(i);
+        const QByteArray l = rng.bounded(4) ? mutate(list) : list;
+        if (rng.bounded(3) == 0) {
+            parsed.entryCount = rng.generate();
+            parsed.entrySize = rng.bounded(3) ? 128 : rng.generate();
+        }
+        gpt::parseEntries(parsed, l.constData(), quint64(l.size()));
+        if (parsed.entries.size() > qsizetype(parsed.entryCount) || (!parsed.entriesRead && !parsed.entries.isEmpty()))
+            bad << QStringLiteral("entries %1").arg(i);
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 damaged partition tables: the inspector stays inside what it read").arg(rounds()),
+           bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void btrfsCounts()
 {
     // Damaged error_stats text: no crash, nothing negative, and a total that can't overflow.
@@ -688,5 +732,6 @@ void fuzzTests()
     healthVerdicts();
     firmwareAnswers();
     btrfsCounts();
+    tableInspector(tmp.path());
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

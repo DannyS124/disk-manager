@@ -75,7 +75,7 @@
 <context>
     <name>MainWindow</name>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="746"/>
+        <location filename="../src/mainwindow.cpp" line="753"/>
         <source>%n more drive(s) need a look; their health is in the Status column.</source>
         <translation>
             <numerusform>%n more drive need a look; their health is in the Status column.</numerusform>
@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1611"/>
+        <location filename="../src/mainwindow.cpp" line="1619"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -304,6 +304,25 @@
         <translation>
             <numerusform>&lt;small&gt;%n snapshot. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
             <numerusform>&lt;small&gt;%n snapshots. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>TableInspectorDialog</name>
+    <message numerus="yes">
+        <location filename="../src/inspectdialog.cpp" line="150"/>
+        <source>%n sector(s) of %1 bytes</source>
+        <translation>
+            <numerusform>%n sector of %1 bytes</numerusform>
+            <numerusform>%n sectors of %1 bytes</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/inspectdialog.cpp" line="173"/>
+        <source>%n in use</source>
+        <translation>
+            <numerusform>%n in use</numerusform>
+            <numerusform>%n in use</numerusform>
         </translation>
     </message>
 </context>
