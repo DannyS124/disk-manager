@@ -466,7 +466,7 @@ void HealthDialog::reloadBtrfs()
             layout->addWidget(box);
             continue;
         }
-        const btrfscheck::Counts counts = btrfscheck::read(QFileInfo(v.encrypted ? v.cleartextDevice : v.device).fileName());
+        const btrfscheck::Counts counts = btrfscheck::read(kernelName(v.encrypted ? v.cleartextDevice : v.device));
         auto *countsText = new QLabel(btrfscheck::describe(counts)
                                       + (counts.total() > 0 ? QLatin1Char(' ') + tr("They stay until reset with: sudo btrfs device stats -z %1")
                                                                                      .arg(btrfscheck::scrubMountPoint(v.mounts()))
@@ -556,7 +556,7 @@ void HealthDialog::startScrub(const QString &device, const QString &mountPoint)
     qint64 before = 0;
     for (const Volume &v : disk ? disk->volumes : QVector<Volume>()) {
         if (v.device == device)
-            before = btrfscheck::read(QFileInfo(v.encrypted ? v.cleartextDevice : v.device).fileName()).total();
+            before = btrfscheck::read(kernelName(v.encrypted ? v.cleartextDevice : v.device)).total();
     }
     m_errorsBefore.insert(unit, before);
     m_stopped.remove(unit);

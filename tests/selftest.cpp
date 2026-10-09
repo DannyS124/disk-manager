@@ -921,6 +921,10 @@ int main(int argc, char *argv[])
         if (needsRoot("--raid"))
             return 2;
         raidTests();
+    } else if (args.contains(QStringLiteral("--lvm"))) {
+        if (needsRoot("--lvm"))
+            return 2;
+        lvmTests();
     } else if (args.contains(QStringLiteral("--stop"))) {
         if (needsRoot("--stop"))
             return 2;

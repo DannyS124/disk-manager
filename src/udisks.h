@@ -29,6 +29,13 @@ struct Volume {
     QString partName; // GPT only
     QString partUuid; // the partition's own ID (GPT), or "<disk signature>-<number>" (MBR)
     QString raidMemberOf; // part of a RAID array: the array's device (md127)
+    // A logical volume in an LVM group. Active ones are ordinary block devices; inactive
+    // ones have no device, and objectPath is the volume's own object.
+    bool isLv = false;
+    bool lvActive = false;
+    QString lvPath;       // its LogicalVolume object
+    QString lvmMemberOf;  // a physical volume of a group: the group's name
+    bool lvmUnknown = false; // an LVM member, but UDisks' lvm2 module isn't there to say more
     QString fsType;
     QString fsUsage;
     QString uuid;
@@ -126,6 +133,11 @@ struct Disk {
     quint64 raidSyncRate = 0; // bytes per second
     quint64 raidSyncLeftUs = 0;
     QString raidMemberOf;     // a whole drive in an array: the array's device
+    // An LVM volume group, listed like a drive: its logical volumes are the volumes, its
+    // free space the unallocated part. blockPath is the group's object (not a block device).
+    bool isLvm = false;
+    int lvmMissing = 0;       // physical volumes it's missing
+    QString lvmMemberOf;      // a whole drive that's a physical volume: the group's name
     // Power settings (ATA): what the drive can do, and what UDisks keeps for it.
     bool ataPm = false;
     bool ataApm = false;
@@ -340,6 +352,7 @@ private:
     };
     QMap<QString, HealthCache> m_healthCache;
     QMap<QString, Health> m_testHealth;
+    bool m_lvmAsked = false; // asked UDisks to load its lvm2 module
     QVector<Job> m_testJobs;
     QStringList m_stopMessages; // for jobs asked to stop, in order
     bool m_stopped = false;

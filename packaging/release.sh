@@ -88,7 +88,7 @@ case "$cmd" in
     run_tests window-user env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest --user
     # As root: test devices made with losetup and dmsetup.
     run_tests disks sudo ./build/diskforge-selftest
-    for suite in badsectors blockmap rescue clone btrfs optimize stop raid; do
+    for suite in badsectors blockmap rescue clone btrfs optimize stop raid lvm; do
         run_tests $suite sudo ./build/diskforge-selftest --$suite
     done
     run_tests window sudo env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest

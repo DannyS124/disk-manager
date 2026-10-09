@@ -10,6 +10,7 @@
 
 #include <QCollator>
 #include <QFileInfo>
+#include <QTimer>
 #include <QFile>
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -242,8 +243,32 @@ void UDisks::refresh()
             arrayDevice.insert(runsAs, device);
         }
     }
-    auto memberOf = [&objects, &arrayDevice](const QString &blockPath) {
-        const QString array = objectPath(objects.value(QDBusObjectPath(blockPath)).value(kBlock).value(QStringLiteral("MDRaidMember")));
+    // Members: the array lists the ones it runs on (ActiveDevices); udev's MDRaidMember on the
+    // member itself can lag behind after the array is made, so it's only the fallback.
+    QMap<QString, QString> activeMember; // member block -> array
+    for (auto it = arrays.cbegin(); it != arrays.cend(); ++it) {
+        const QVariant devices = it->value(QStringLiteral("ActiveDevices"));
+        if (!devices.canConvert<QDBusArgument>())
+            continue;
+        const QDBusArgument arg = devices.value<QDBusArgument>();
+        arg.beginArray();
+        while (!arg.atEnd()) {
+            QDBusObjectPath block;
+            int slot = 0;
+            QStringList state;
+            qulonglong errors = 0;
+            QVariantMap expansion;
+            arg.beginStructure();
+            arg >> block >> slot >> state >> errors >> expansion;
+            arg.endStructure();
+            activeMember.insert(block.path(), it.key());
+        }
+        arg.endArray();
+    }
+    auto memberOf = [&objects, &arrayDevice, &activeMember](const QString &blockPath) {
+        QString array = activeMember.value(blockPath);
+        if (array.isEmpty())
+            array = objectPath(objects.value(QDBusObjectPath(blockPath.isEmpty() ? QStringLiteral("/") : blockPath)).value(kBlock).value(QStringLiteral("MDRaidMember")));
         if (array.isEmpty() || array == QLatin1String("/"))
             return QString();
         return shortDevice(arrayDevice.value(array, QStringLiteral("md")));
@@ -352,6 +377,81 @@ void UDisks::refresh()
             disk->volumes.push_back(makeVolume(it.key().path(), it.value()));
     }
 
+    // LVM volume groups (UDisks' lvm2 module): listed like drives, their logical volumes one
+    // after the other and their free space at the end.
+    QMap<QString, QString> groupName; // VolumeGroup object -> name
+    bool lvmMembers = false;
+    for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
+        lvmMembers = lvmMembers || it->value(kBlock).value(QStringLiteral("IdType")).toString() == QLatin1String("LVM2_member");
+        if (!it->contains(kVolumeGroup))
+            continue;
+        const QVariantMap vg = it->value(kVolumeGroup);
+        Disk d;
+        d.isLvm = true;
+        d.blockPath = it.key().path();
+        d.drivePath = QStringLiteral("/");
+        const QString name = cleanName(vg.value(QStringLiteral("Name")).toString());
+        groupName.insert(d.blockPath, name);
+        d.device = QStringLiteral("/dev/") + name;
+        d.model = tr("LVM volume group %1").arg(name);
+        d.size = vg.value(QStringLiteral("Size")).toULongLong();
+        d.lvmMissing = int(vg.value(QStringLiteral("MissingPhysicalVolumes")).toStringList().size());
+        d.health.key = health::keyFor(QStringLiteral("lvm-") + vg.value(QStringLiteral("UUID")).toString(), d.blockPath);
+        QVector<QPair<QString, QVariantMap>> lvs;
+        for (auto lv = objects.cbegin(); lv != objects.cend(); ++lv) {
+            if (lv->contains(kLogicalVolume) && objectPath(lv->value(kLogicalVolume).value(QStringLiteral("VolumeGroup"))) == d.blockPath)
+                lvs.push_back({lv.key().path(), lv->value(kLogicalVolume)});
+        }
+        std::sort(lvs.begin(), lvs.end(), [](const auto &a, const auto &b) {
+            return a.second.value(QStringLiteral("Name")).toString() < b.second.value(QStringLiteral("Name")).toString();
+        });
+        quint64 at = 0;
+        int number = 0;
+        for (const auto &[path, lv] : std::as_const(lvs)) {
+            const QString block = objectPath(lv.value(QStringLiteral("BlockDevice")));
+            const QDBusObjectPath blockObject(block.isEmpty() ? QStringLiteral("/") : block);
+            Volume v = block != QLatin1String("/") && objects.contains(blockObject) ? makeVolume(block, objects.value(blockObject)) : Volume();
+            const QString lvName = cleanName(lv.value(QStringLiteral("Name")).toString());
+            if (v.objectPath.isEmpty()) {
+                v.objectPath = path;
+                v.device = d.device + QLatin1Char('/') + lvName;
+            }
+            v.isLv = true;
+            v.lvPath = path;
+            v.lvActive = lv.value(QStringLiteral("Active")).toBool() && block != QLatin1String("/");
+            v.partName = lvName; // shown when the file system has no label
+            v.number = ++number;
+            v.size = lv.value(QStringLiteral("Size")).toULongLong();
+            v.offset = at;
+            at += v.size;
+            d.volumes.push_back(v);
+        }
+        d.size = std::max(d.size, at);
+        if (d.lvmMissing > 0) {
+            health::add(d.health, {HealthReason::Level::Warning, QStringLiteral("lvm-missing"), d.lvmMissing,
+                                   tr("The volume group %1 is missing %n of its drives. What was on them can't be read.", nullptr, d.lvmMissing).arg(name)});
+        }
+        disks.insert(d.blockPath, d);
+    }
+    // LVM members but no module to say more: ask UDisks to load it (once; no password needed).
+    const bool lvmLoaded = objects.value(QDBusObjectPath(kManagerPath)).contains(kManagerLvm);
+    if (lvmMembers && !lvmLoaded && !m_lvmAsked) {
+        m_lvmAsked = true;
+        QDBusMessage enable = QDBusMessage::createMethodCall(kService, kManagerPath, kManager, QStringLiteral("EnableModule"));
+        enable << QStringLiteral("lvm2") << true;
+        enable.setInteractiveAuthorizationAllowed(false);
+        auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(enable, 30000), this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher] {
+            watcher->deleteLater();
+            if (!watcher->isError())
+                QTimer::singleShot(500, this, &UDisks::refresh);
+        });
+    }
+    auto pvOf = [&objects, &groupName](const QString &blockPath) {
+        const QString group = objectPath(objects.value(QDBusObjectPath(blockPath.isEmpty() ? QStringLiteral("/") : blockPath)).value(kPhysicalVolume).value(QStringLiteral("VolumeGroup")));
+        return groupName.value(group);
+    };
+
     // unlocked LUKS: where the cleartext device is mounted
     for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
         const QString backing = objectPath(it->value(kBlock).value(QStringLiteral("CryptoBackingDevice")));
@@ -406,17 +506,24 @@ void UDisks::refresh()
             if (v.effectiveFsType() != QLatin1String("btrfs") || v.mounts().isEmpty())
                 continue;
             const QString device = v.encrypted ? v.cleartextDevice : v.device;
-            const btrfscheck::Counts counts = btrfscheck::read(QFileInfo(device).fileName());
+            const btrfscheck::Counts counts = btrfscheck::read(kernelName(device));
             if (counts.total() > 0) {
                 health::add(d.health, {HealthReason::Level::Warning, QStringLiteral("btrfs-") + QFileInfo(v.device).fileName(), counts.total(),
                                        tr("Btrfs on %1 has seen errors. %2 A scrub (in Disk Health) checks everything.")
                                            .arg(QFileInfo(v.device).fileName(), btrfscheck::describe(counts))});
             }
         }
-        // RAID: members say which array they're in; a degraded array goes into its health.
+        // RAID and LVM: members say what they're part of; a degraded array goes into its health.
         d.raidMemberOf = memberOf(d.blockPath);
-        for (Volume &v : d.volumes)
+        if (!d.isLvm)
+            d.lvmMemberOf = pvOf(d.blockPath);
+        for (Volume &v : d.volumes) {
             v.raidMemberOf = memberOf(v.objectPath);
+            if (!v.isLv) {
+                v.lvmMemberOf = pvOf(v.encrypted ? v.cleartextPath : v.objectPath);
+                v.lvmUnknown = v.lvmMemberOf.isEmpty() && (v.fsType == QLatin1String("LVM2_member") || v.cleartextFsType == QLatin1String("LVM2_member"));
+            }
+        }
         if (d.isRaid && d.raidDegraded > 0) {
             health::add(d.health, {HealthReason::Level::Warning, QStringLiteral("raid-degraded"), d.raidDegraded,
                                    tr("%1 is missing %2 of its %3 drives. It still works, but losing another one can lose "

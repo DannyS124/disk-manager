@@ -53,4 +53,5 @@ void healthTests();
 void jobsTests();
 void recoverTests();
 void raidTests();
+void lvmTests();
 void stopTests();

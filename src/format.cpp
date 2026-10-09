@@ -4,6 +4,7 @@
 #include "format.h"
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
 #include <QLocale>
@@ -33,7 +34,7 @@ QString volumeTitle(const Volume &v)
 {
     const QString name = !v.label.isEmpty() ? v.label : v.partName;
     const QString dev = shortDevice(v.device);
-    return name.isEmpty() ? dev : QStringLiteral("%1 (%2)").arg(name, dev);
+    return name.isEmpty() || name == dev ? dev : QStringLiteral("%1 (%2)").arg(name, dev);
 }
 
 QString volumeStatus(const Volume &v, bool brief)
@@ -47,6 +48,12 @@ QString volumeStatus(const Volume &v, bool brief)
     QStringList parts;
     if (!v.raidMemberOf.isEmpty())
         parts << tr("RAID member of %1").arg(v.raidMemberOf);
+    if (!v.lvmMemberOf.isEmpty())
+        parts << tr("LVM: part of %1").arg(v.lvmMemberOf);
+    if (v.lvmUnknown)
+        parts << tr("LVM: install udisks2-lvm2 to see what's in it");
+    if (v.isLv && !v.lvActive)
+        parts << tr("Inactive logical volume");
     if (v.isEfi)
         parts << tr("EFI System");
     if (v.isSystem)
@@ -82,6 +89,12 @@ QString volumeStatus(const Volume &v, bool brief)
     return parts.join(QStringLiteral(" · "));
 }
 
+QString kernelName(const QString &device)
+{
+    const QString real = QFileInfo(device).canonicalFilePath();
+    return QFileInfo(real.isEmpty() ? device : real).fileName();
+}
+
 QString raidLevelName(const QString &level)
 {
     if (level.startsWith(QLatin1String("raid")))
@@ -109,6 +122,8 @@ QString raidStatus(const Disk &d)
 
 QString diskKind(const Disk &d)
 {
+    if (d.isLvm)
+        return tr("LVM");
     if (d.isRaid)
         return raidLevelName(d.raidLevel);
     if (d.isLoop)
@@ -128,6 +143,8 @@ QString diskKind(const Disk &d)
 
 QString tableName(const Disk &d)
 {
+    if (d.isLvm)
+        return tr("Volume group");
     if (d.tableType == QLatin1String("gpt"))
         return tr("GPT");
     if (d.tableType == QLatin1String("dos"))

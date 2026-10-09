@@ -24,6 +24,11 @@ inline const QString kLoop = QStringLiteral("org.freedesktop.UDisks2.Loop");
 inline const QString kJob = QStringLiteral("org.freedesktop.UDisks2.Job");
 inline const QString kNvmeNamespace = QStringLiteral("org.freedesktop.UDisks2.NVMe.Namespace");
 inline const QString kMDRaid = QStringLiteral("org.freedesktop.UDisks2.MDRaid");
+// LVM, from UDisks' lvm2 module
+inline const QString kVolumeGroup = QStringLiteral("org.freedesktop.UDisks2.VolumeGroup");
+inline const QString kLogicalVolume = QStringLiteral("org.freedesktop.UDisks2.LogicalVolume");
+inline const QString kPhysicalVolume = QStringLiteral("org.freedesktop.UDisks2.PhysicalVolume");
+inline const QString kManagerLvm = QStringLiteral("org.freedesktop.UDisks2.Manager.LVM2");
 
 // Wipes, checks and image writes can take hours, and polkit may wait for a password:
 // never give up on a reply (INT_MAX is libdbus's "no timeout").

@@ -181,6 +181,50 @@ int main(int argc, char *argv[])
             map.resize(900, map.sizeHint().height());
             save(map, out.filePath(QStringLiteral("map-locks.png")));
 
+            // An LVM volume group and a RAID array, as rows of their own.
+            Disk group;
+            group.isLvm = true;
+            group.device = QStringLiteral("/dev/vault");
+            group.blockPath = QStringLiteral("/preview/vault");
+            group.model = QStringLiteral("LVM volume group vault");
+            group.size = 120ULL * 1000 * 1000 * 1000;
+            Volume lvData;
+            lvData.objectPath = QStringLiteral("/preview/vault/data");
+            lvData.device = QStringLiteral("/dev/vault/data");
+            lvData.isLv = true;
+            lvData.lvActive = true;
+            lvData.partName = QStringLiteral("data");
+            lvData.number = 1;
+            lvData.size = 60ULL * 1000 * 1000 * 1000;
+            lvData.fsType = QStringLiteral("ext4");
+            lvData.hasFilesystem = true;
+            Volume lvOld = lvData;
+            lvOld.objectPath = QStringLiteral("/preview/vault/old");
+            lvOld.device = QStringLiteral("/dev/vault/old");
+            lvOld.lvActive = false;
+            lvOld.hasFilesystem = false;
+            lvOld.fsType.clear();
+            lvOld.partName = QStringLiteral("old");
+            lvOld.number = 2;
+            lvOld.offset = lvData.size;
+            lvOld.size = 20ULL * 1000 * 1000 * 1000;
+            group.volumes = {lvData, lvOld};
+            Disk array;
+            array.isRaid = true;
+            array.device = QStringLiteral("/dev/md/mirror");
+            array.blockPath = QStringLiteral("/preview/mirror");
+            array.model = QStringLiteral("RAID 1 array mirror");
+            array.raidLevel = QStringLiteral("raid1");
+            array.raidDevices = 2;
+            array.raidSync = QStringLiteral("check");
+            array.raidSyncDone = 0.12;
+            array.size = 500ULL * 1000 * 1000 * 1000;
+            array.health.state = Health::State::Healthy;
+            DiskMap storage;
+            storage.setDisks({group, array});
+            storage.resize(900, storage.sizeHint().height());
+            save(storage, out.filePath(QStringLiteral("map-lvm-raid.png")));
+
             // Recover Partitions on the same made-up drive, after its second partition was
             // deleted: the layout from before is offered.
             fake.health.key = QStringLiteral("Example-Drive-Preview");

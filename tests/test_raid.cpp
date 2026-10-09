@@ -76,17 +76,25 @@ void raidTests()
 
     UDisks udisks;
     udisks.setInteractive(false);
-    const bool listed = waitFor(udisks, [&] { return arrayIn(udisks) != nullptr; });
+    // UDisks fills in an array and its members over a moment: wait for the whole picture.
+    auto members = [&] {
+        const Disk *array = arrayIn(udisks);
+        int count = 0;
+        for (const Disk &d : udisks.disks()) {
+            if (array && loops.contains(d.device) && d.raidMemberOf == shortDevice(array->device))
+                ++count;
+        }
+        return count;
+    };
+    const bool listed = waitFor(udisks, [&] {
+        const Disk *array = arrayIn(udisks);
+        return array && array->raidDevices == 2 && array->raidLevel == QLatin1String("raid1") && members() == 2;
+    });
     const Disk *a = arrayIn(udisks);
     report(listed && a && a->raidLevel == QLatin1String("raid1") && a->raidDevices == 2 && a->raidDegraded == 0 && a->raidRunning
                && a->model == QLatin1String("RAID 1 array dftest") && a->health.state != Health::State::Warning,
            QStringLiteral("it shows up like a drive: RAID 1, two drives, all there"), a ? a->model + QStringLiteral(" ") + a->device : QString());
-    int members = 0;
-    for (const Disk &d : udisks.disks()) {
-        if (loops.contains(d.device) && a && d.raidMemberOf == shortDevice(a->device))
-            ++members;
-    }
-    report(members == 2, QStringLiteral("both loop devices say they're members of it"), QString::number(members));
+    report(members() == 2, QStringLiteral("both loop devices say they're members of it"), QString::number(members()));
 
     if (a) {
         QString message;

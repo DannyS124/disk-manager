@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1669"/>
+        <location filename="../src/mainwindow.cpp" line="1673"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -395,6 +395,14 @@
             <numerusform>%n media errors</numerusform>
         </translation>
     </message>
+    <message numerus="yes">
+        <location filename="../src/udisks.cpp" line="432"/>
+        <source>The volume group %1 is missing %n of its drives. What was on them can&apos;t be read.</source>
+        <translation>
+            <numerusform>The volume group %1 is missing %n of its drives. What was on them can't be read.</numerusform>
+            <numerusform>The volume group %1 is missing %n of its drives. What was on them can't be read.</numerusform>
+        </translation>
+    </message>
 </context>
 <context>
     <name>UsageDialog</name>
@@ -410,7 +418,7 @@
 <context>
     <name>format</name>
     <message numerus="yes">
-        <location filename="../src/format.cpp" line="107"/>
+        <location filename="../src/format.cpp" line="120"/>
         <source>%n drive(s), all there</source>
         <translation>
             <numerusform>%n drive, all there</numerusform>

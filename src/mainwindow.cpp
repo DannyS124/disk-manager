@@ -1048,6 +1048,10 @@ void MainWindow::updateActions()
     const bool mounted = v && !v->mounts().isEmpty();
     const bool busy = m_udisks->isBusy();
     const bool changeable = d && !d->isSystem && !busy;
+    // LVM groups: only what works on a logical volume's own device for now (mount, check,
+    // label...); changes to the group and its volumes come later.
+    const bool lvm = d && d->isLvm;
+    const bool tableChangeable = changeable && !lvm;
     const FsType *fs = v ? m_udisks->filesystem(v->effectiveFsType()) : nullptr;
 
     m_open->setEnabled(mounted);
@@ -1057,14 +1061,14 @@ void MainWindow::updateActions()
     m_unlock->setEnabled(v && v->encrypted && v->cleartextPath.isEmpty() && !busy);
     m_lock->setEnabled(v && v->encrypted && !v->cleartextPath.isEmpty() && !v->isSystem && !busy);
     m_changePass->setEnabled(changeable && v && v->encrypted);
-    m_newPartition->setEnabled(changeable && kind == DiskMap::Selection::Kind::Free && !d->tableType.isEmpty());
-    m_format->setEnabled(changeable && v && !v->isContainer);
+    m_newPartition->setEnabled(tableChangeable && kind == DiskMap::Selection::Kind::Free && !d->tableType.isEmpty());
+    m_format->setEnabled(tableChangeable && v && !v->isContainer);
     m_rename->setEnabled(changeable && v && v->canMount());
-    m_inspect->setEnabled(d && d->size > 0 && !busy); // read-only: the system disk too
-    m_recover->setEnabled(d && d->size > 0 && !d->isSystem && !busy);
+    m_inspect->setEnabled(d && !lvm && d->size > 0 && !busy); // read-only: the system disk too
+    m_recover->setEnabled(d && !lvm && d->size > 0 && !d->isSystem && !busy);
     m_raidCheck->setEnabled(d && d->isRaid && d->raidRunning && d->raidDegraded == 0 && !busy
                             && (d->raidSync.isEmpty() || d->raidSync == QLatin1String("idle")));
-    m_typeFlags->setEnabled(changeable && v && !v->isContainer
+    m_typeFlags->setEnabled(tableChangeable && v && !v->isContainer
                             && (d->tableType == QLatin1String("gpt") || d->tableType == QLatin1String("dos")));
     m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);
     m_startup->setEnabled(changeable && v && v->hasFilesystem && !v->encrypted && !v->uuid.isEmpty());
@@ -1072,32 +1076,32 @@ void MainWindow::updateActions()
         const QSignalBlocker block(m_startup);
         m_startup->setChecked(v && !v->fstab.isEmpty());
     }
-    m_delete->setEnabled(changeable && v && v->number > 0);
+    m_delete->setEnabled(tableChangeable && v && v->number > 0);
     const ResizeLimits limits = v ? m_udisks->resizeLimits(*v) : ResizeLimits{};
-    m_resize->setEnabled(changeable && limits.possible);
-    m_newTable->setEnabled(changeable);
-    m_wipe->setEnabled(changeable);
-    m_secureErase->setEnabled(changeable && !d->isLoop && (d->ataEraseMinutes > 0 || d->ataEnhancedEraseMinutes > 0 || d->nvmeNamespace));
+    m_resize->setEnabled(tableChangeable && limits.possible);
+    m_newTable->setEnabled(tableChangeable);
+    m_wipe->setEnabled(tableChangeable);
+    m_secureErase->setEnabled(tableChangeable && !d->isLoop && (d->ataEraseMinutes > 0 || d->ataEnhancedEraseMinutes > 0 || d->nvmeNamespace));
     m_detachImage->setEnabled(d && d->isLoop && !busy);
     m_openImage->setEnabled(!busy);
     m_writeImage->setEnabled(!busy);
     m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
-    m_benchmark->setEnabled(d && !busy);
-    m_badSectors->setEnabled(d && !d->isLoop && !busy);
+    m_benchmark->setEnabled(d && !lvm && !busy);
+    m_badSectors->setEnabled(d && !lvm && !d->isLoop && !busy);
     m_copy->setEnabled(d && kind != DiskMap::Selection::Kind::Free);
     // Clone and Rescue read the whole drive and refuse the running system; Back Up works on
     // anything that can be unmounted (or isn't mounted); Restore writes, so not the system disk.
-    m_clone->setEnabled(d && !d->isSystem && !busy && d->size > 0);
-    m_rescue->setEnabled(d && !d->isSystem && !d->isLoop && !busy);
+    m_clone->setEnabled(d && !lvm && !d->isSystem && !busy && d->size > 0);
+    m_rescue->setEnabled(d && !lvm && !d->isSystem && !d->isLoop && !busy);
     const bool partition = v && !v->isContainer;
     bool anyMounted = false;
     if (d) {
         for (const Volume &x : d->volumes)
             anyMounted = anyMounted || ((!v || &x == v) && !x.mounts().isEmpty());
     }
-    m_backup->setEnabled(d && !busy && kind != DiskMap::Selection::Kind::Free && (!v || partition)
+    m_backup->setEnabled(d && !busy && kind != DiskMap::Selection::Kind::Free && (!v || partition) && !(lvm && (!v || !v->lvActive))
                          && !(d->isSystem && (!v || v->isSystem || anyMounted)));
-    m_restore->setEnabled(changeable && kind != DiskMap::Selection::Kind::Free && (!v || partition));
+    m_restore->setEnabled(tableChangeable && kind != DiskMap::Selection::Kind::Free && (!v || partition));
     m_backup->setText(partition ? tr("&Back Up Partition…") : tr("&Back Up Drive…"));
     m_usage->setEnabled(mounted);
     m_snapshots->setEnabled(!snapper::mountedSubvolumes().isEmpty());
