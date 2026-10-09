@@ -225,10 +225,33 @@ QString windowsusb::inputLocaleFor(const QString &xkbLayout)
     return layouts.value(xkbLayout.section(QLatin1Char(','), 0, 0).trimmed().toLower());
 }
 
+QString windowsusb::windowsTimeZone(const QByteArray &ianaId, const QByteArray &tzdataLinks)
+{
+    QByteArray id = ianaId;
+    // Old names like US/Central are links to the real one (America/Chicago), which is the only
+    // one Qt can translate. tzdata.zi lists them as "L <real name> <old name>".
+    for (int hops = 0; hops < 3; ++hops) {
+        const QByteArray windows = QTimeZone::ianaIdToWindowsId(id);
+        if (!windows.isEmpty())
+            return QString::fromLatin1(windows);
+        QByteArray target;
+        for (const QByteArray &line : tzdataLinks.split('\n')) {
+            const QList<QByteArray> parts = line.simplified().split(' ');
+            if (parts.size() == 3 && parts[0] == "L" && parts[2] == id)
+                target = parts[1];
+        }
+        if (target.isEmpty())
+            break;
+        id = target;
+    }
+    return {};
+}
+
 void windowsusb::fillRegionFromThisPc(Options &options)
 {
     options.userLocale = QLocale::system().name().replace(QLatin1Char('_'), QLatin1Char('-'));
-    options.timeZone = QString::fromLatin1(QTimeZone::ianaIdToWindowsId(QTimeZone::systemTimeZoneId()));
+    QFile links(QStringLiteral("/usr/share/zoneinfo/tzdata.zi"));
+    options.timeZone = windowsTimeZone(QTimeZone::systemTimeZoneId(), links.open(QIODevice::ReadOnly) ? links.readAll() : QByteArray());
     // The keyboard: KDE's own setting first, then the system's.
     QString layout = QSettings(QDir::homePath() + QStringLiteral("/.config/kxkbrc"), QSettings::IniFormat)
                          .value(QStringLiteral("Layout/LayoutList"))

@@ -60,6 +60,9 @@ QByteArray unattendXml(const Options &options, const QString &arch);
 QString userName(const QString &typed, QString *error);
 // This PC's region, in Windows' terms, into `options`.
 void fillRegionFromThisPc(Options &options);
+// An IANA time zone ("Europe/Berlin", or an old name like "US/Central" when `tzdataLinks`,
+// the system's tzdata.zi, has it) as Windows names it, or empty.
+QString windowsTimeZone(const QByteArray &ianaId, const QByteArray &tzdataLinks);
 // An XKB keyboard layout ("us", "de") as a Windows input locale, or empty.
 QString inputLocaleFor(const QString &xkbLayout);
 

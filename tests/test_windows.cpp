@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTimeZone>
 #include <QXmlStreamReader>
 
 namespace {
@@ -160,6 +161,16 @@ void names()
                && windowsusb::inputLocaleFor(QStringLiteral("de,us")) == QLatin1String("0407:00000407")
                && windowsusb::inputLocaleFor(QStringLiteral("klingon")).isEmpty(),
            QStringLiteral("keyboard layouts: the first one counts, unknown ones are left to Windows"));
+    // The way tzdata.zi has them, a link to a link included.
+    const QByteArray links = "# version 2026a\nL America/Chicago US/Central\nL Etc/UTC UTC\nL Asia/Kolkata Asia/Calcutta\n"
+                             "L US/Central Made/Up\nZ America/Chicago -5:50:36 - LMT 1883 N 18 18u\n";
+    const QString chicago = windowsusb::windowsTimeZone("America/Chicago", {});
+    report(chicago == QLatin1String("Central Standard Time") && windowsusb::windowsTimeZone("US/Central", links) == chicago
+               && windowsusb::windowsTimeZone("Made/Up", links) == chicago
+               && windowsusb::windowsTimeZone("Asia/Calcutta", links) == QLatin1String("India Standard Time")
+               && windowsusb::windowsTimeZone("US/Central", {}).isEmpty() == QTimeZone::ianaIdToWindowsId("US/Central").isEmpty()
+               && windowsusb::windowsTimeZone("Nowhere/Special", links).isEmpty(),
+           QStringLiteral("time zones: old names like US/Central go through tzdata's links"), chicago);
 }
 
 void recognizing(const QString &dir)
