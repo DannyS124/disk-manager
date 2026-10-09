@@ -51,4 +51,5 @@ void catalogTests();
 void fuzzTests();
 void healthTests();
 void jobsTests();
+void recoverTests();
 void stopTests();

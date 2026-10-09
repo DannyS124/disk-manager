@@ -75,7 +75,7 @@
 <context>
     <name>MainWindow</name>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="753"/>
+        <location filename="../src/mainwindow.cpp" line="768"/>
         <source>%n more drive(s) need a look; their health is in the Status column.</source>
         <translation>
             <numerusform>%n more drive need a look; their health is in the Status column.</numerusform>
@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1619"/>
+        <location filename="../src/mainwindow.cpp" line="1635"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -293,6 +293,25 @@
         <translation>
             <numerusform>%n hour</numerusform>
             <numerusform>%n hours</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>RecoverDialog</name>
+    <message numerus="yes">
+        <location filename="../src/recoverdialog.cpp" line="147"/>
+        <source>The backup copy at the end of the drive: %n partition(s)</source>
+        <translation>
+            <numerusform>The backup copy at the end of the drive: %n partition</numerusform>
+            <numerusform>The backup copy at the end of the drive: %n partitions</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/recoverdialog.cpp" line="245"/>
+        <source>The partition table of %1 is back: %n partition(s).</source>
+        <translation>
+            <numerusform>The partition table of %1 is back: %n partition.</numerusform>
+            <numerusform>The partition table of %1 is back: %n partitions.</numerusform>
         </translation>
     </message>
 </context>

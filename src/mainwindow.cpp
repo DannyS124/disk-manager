@@ -21,6 +21,7 @@
 #include "format.h"
 #include "health.h"
 #include "inspectdialog.h"
+#include "recoverdialog.h"
 #include "jobui.h"
 #include "noticebar.h"
 #include "powerbox.h"
@@ -267,6 +268,12 @@ void MainWindow::createActions()
     connect(m_inspect, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
             TableInspectorDialog(m_udisks, *d, this).exec();
+    });
+
+    m_recover = new QAction(themeIcon("edit-undo", "document-revert"), tr("Re&cover Partitions…"), this);
+    connect(m_recover, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk())
+            RecoverDialog(m_udisks, *d, this).exec();
     });
 
     m_typeFlags = new QAction(themeIcon("document-properties", "document-properties"), tr("Partition &Type and Flags…"), this);
@@ -544,7 +551,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newPartition, m_format, m_resize, m_rename, m_typeFlags, m_check, m_startup, m_delete});
     action->addSeparator();
-    action->addActions({m_newTable, m_inspect, m_wipe, m_secureErase, m_detachImage});
+    action->addActions({m_newTable, m_inspect, m_recover, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
     action->addActions({m_health, m_badSectors, m_benchmark});
     action->addSeparator();
@@ -651,6 +658,14 @@ void MainWindow::createActions()
 
 void MainWindow::rebuild()
 {
+    // Remember each drive's partition layout, so Recover Partitions can put it back. Not
+    // while something is being changed: the steps in between aren't worth keeping.
+    if (!m_udisks->isBusy() && m_udisks->jobs().isEmpty()) {
+        for (const Disk &d : m_udisks->disks()) {
+            if (!d.isLoop && !d.health.key.isEmpty() && !d.tableType.isEmpty())
+                recover::remember(d.health.key, recover::fromDisk(d));
+        }
+    }
     m_map->setDisks(m_udisks->disks());
     fillTable();
     syncTableToMap();
@@ -1014,6 +1029,7 @@ void MainWindow::updateActions()
     m_format->setEnabled(changeable && v && !v->isContainer);
     m_rename->setEnabled(changeable && v && v->canMount());
     m_inspect->setEnabled(d && d->size > 0 && !busy); // read-only: the system disk too
+    m_recover->setEnabled(d && d->size > 0 && !d->isSystem && !busy);
     m_typeFlags->setEnabled(changeable && v && !v->isContainer
                             && (d->tableType == QLatin1String("gpt") || d->tableType == QLatin1String("dos")));
     m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);

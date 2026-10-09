@@ -97,4 +97,27 @@ QString guidText(const char *p); // the mixed-endian GPT form
 // "00000000  45 46 49 20 ...  |EFI PART...|", 16 bytes a line.
 QString hexDump(const QByteArray &data, quint64 firstOffset);
 
+// --- Writing a table back (Recover Partitions) ---------------------------------------
+// Both work on the fd DiskForge already holds, with exact sector positions. They write the
+// backup first, so a write cut off halfway still leaves one good copy.
+
+bool guidBytes(const QString &text, char *out); // the mixed-endian GPT form; false if malformed
+// A complete new GPT: protective MBR, both headers and lists. diskGuid empty = a new one;
+// an entry's guid empty = a new one. Entries need index 1-128 (unique) or 0 (next free slot).
+Result writeTable(int fd, int sectorSize, const QString &diskGuid, const QVector<Entry> &entries);
+// The backup at the end is intact and the main copy isn't: copy it back to the front.
+Result restoreFromBackup(int fd, int sectorSize = 0);
+
+struct MbrPart {
+    int slot = 0; // 1-4 for primary ones (so their numbers stay), 0 = the next free one
+    quint8 type = 0;
+    bool bootable = false;
+    bool logical = false; // inside the extended partition
+    quint64 firstLba = 0;
+    quint64 sectors = 0;
+};
+// A new MBR table: up to four primary partitions (one of them may be extended, type 0x05
+// or 0x0f), and logical ones inside it, each with an EBR in the gap before it.
+Result writeMbr(int fd, int sectorSize, quint32 diskSignature, const QVector<MbrPart> &parts);
+
 } // namespace gpt

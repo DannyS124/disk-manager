@@ -1,0 +1,256 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Recover Partitions, on image files (as the user): a GPT put back from its own backup and
+// from a saved layout, an MBR with logical partitions, both sector sizes, remembering
+// layouts, and layouts that must be refused. "The same" means sfdisk --dump says so.
+
+#include "testkit.h"
+
+#include "../src/gpt.h"
+#include "../src/partrecover.h"
+
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QRegularExpression>
+#include <QTemporaryDir>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace {
+
+constexpr qint64 MiB = 1024 * 1024;
+
+bool makeImage(const QString &path, qint64 size, const QByteArray &script, int sectorSize)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || !f.resize(size))
+        return false;
+    f.close();
+    QFile s(path + QStringLiteral(".sfdisk"));
+    if (!s.open(QIODevice::WriteOnly))
+        return false;
+    s.write(script);
+    s.close();
+    int code = -1;
+    sh(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("sfdisk --quiet --sector-size %1 '%2' < '%3'").arg(sectorSize).arg(path, s.fileName())}, &code);
+    return code == 0;
+}
+
+QString dump(const QString &path, int sectorSize, bool firstLba = true)
+{
+    // The device line names the file, which differs between copies; the rest must match.
+    QString out = sh(QStringLiteral("sfdisk"), {QStringLiteral("--dump"), QStringLiteral("--sector-size"), QString::number(sectorSize), path})
+                      .remove(QRegularExpression(QStringLiteral("^device: .*$"), QRegularExpression::MultilineOption))
+                      .replace(path, QStringLiteral("IMG"));
+    // Where the usable area starts isn't part of a saved layout (UDisks doesn't say), and
+    // the writer uses the smallest; sfdisk starts it at 1 MiB. No partition moves either way.
+    if (!firstLba)
+        out.remove(QRegularExpression(QStringLiteral("^first-lba: .*$"), QRegularExpression::MultilineOption));
+    return out;
+}
+
+void zero(const QString &path, qint64 offset, qint64 length)
+{
+    QFile f(path);
+    if (f.open(QIODevice::ReadWrite) && f.seek(offset))
+        f.write(QByteArray(length, '\0'));
+}
+
+template <typename Fn>
+auto withFd(const QString &path, Fn fn)
+{
+    const int fd = ::open(QFile::encodeName(path).constData(), O_RDWR | O_CLOEXEC);
+    auto result = fn(fd);
+    if (fd >= 0)
+        ::close(fd);
+    return result;
+}
+
+void gptRecovery(int sectorSize)
+{
+    const QString tag = QStringLiteral(" (%1-byte sectors)").arg(sectorSize);
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("gpt.img"));
+    if (!makeImage(image, 64 * MiB,
+                   "label: gpt\nsize=8MiB, type=uefi, name=\"EFI\"\nsize=16MiB, type=linux, name=\"root\"\nsize=20MiB, type=linux, name=\"home\"\n",
+                   sectorSize))
+        return report(false, QStringLiteral("make a GPT image") + tag);
+    const QString original = dump(image, sectorSize);
+    QFile::copy(image, image + QStringLiteral(".orig"));
+    const qint64 sectors = 64 * MiB / sectorSize;
+
+    // The main header wiped: the backup puts it back exactly.
+    zero(image, sectorSize, sectorSize);
+    gpt::Result r = withFd(image, [sectorSize](int fd) { return gpt::restoreFromBackup(fd, sectorSize); });
+    report(r.ok && dump(image, sectorSize) == original && withFd(image, [sectorSize](int fd) { return gpt::inspect(fd, sectorSize); }).problems.isEmpty(),
+           QStringLiteral("a wiped main GPT header is put back from the backup, exactly") + tag, r.error);
+
+    // Both copies wiped: a saved layout puts it back exactly (through JSON, like it's kept).
+    const recover::Layout taken = recover::fromReport(withFd(image, [sectorSize](int fd) { return gpt::inspect(fd, sectorSize); }), false);
+    recover::Layout kept;
+    const bool roundTrip = recover::fromJson(QJsonDocument::fromJson(QJsonDocument(recover::toJson(taken)).toJson()).object(), &kept)
+        && kept.fingerprint() == taken.fingerprint();
+    report(roundTrip && taken.parts.size() == 3, QStringLiteral("a layout survives being saved and read back") + tag);
+    zero(image, 0, 34 * sectorSize);
+    zero(image, (sectors - 33) * sectorSize, 33 * sectorSize);
+    report(withFd(image, [sectorSize](int fd) { return gpt::inspect(fd, sectorSize); }).problems.join(QLatin1Char(' ')).contains(QLatin1String("no partition table")),
+           QStringLiteral("with both copies wiped, there's no table left") + tag);
+    r = withFd(image, [&kept, sectorSize](int fd) { return recover::write(fd, kept, sectorSize); });
+    report(r.ok && dump(image, sectorSize, false) == dump(dir.filePath(QStringLiteral("gpt.img.orig")), sectorSize, false),
+           QStringLiteral("a saved layout puts it all back exactly (IDs, names, types)") + tag, r.ok ? dump(image, sectorSize, false) : r.error);
+}
+
+void mbrRecovery()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("mbr.img"));
+    if (!makeImage(image, 64 * MiB,
+                   "label: dos\nlabel-id: 0x1234abcd\nsize=8MiB, type=83, bootable\ntype=5\nsize=12MiB, type=83\nsize=16MiB, type=c\n", 512))
+        return report(false, QStringLiteral("make an MBR image with logical partitions"));
+    const QString original = dump(image, 512);
+    // A layout made the way UDisks reports the partitions (as fromDisk would see them).
+    const QJsonArray parts = QJsonDocument::fromJson(sh(QStringLiteral("sfdisk"), {QStringLiteral("--json"), image}).toUtf8())
+                                 .object()
+                                 .value(QStringLiteral("partitiontable"))
+                                 .toObject()
+                                 .value(QStringLiteral("partitions"))
+                                 .toArray();
+    recover::Layout layout;
+    layout.saved = QDateTime::currentDateTimeUtc();
+    layout.table = QStringLiteral("dos");
+    layout.diskSize = quint64(64 * MiB);
+    layout.diskId = QStringLiteral("1234abcd");
+    for (const QJsonValue &v : parts) {
+        const QJsonObject o = v.toObject();
+        recover::Part p;
+        p.number = o.value(QStringLiteral("node")).toString().section(QLatin1Char('g'), -1).toInt(); // ".../mbr.img5" -> 5
+        p.start = quint64(o.value(QStringLiteral("start")).toInteger()) * 512;
+        p.size = quint64(o.value(QStringLiteral("size")).toInteger()) * 512;
+        p.type = QStringLiteral("0x%1").arg(o.value(QStringLiteral("type")).toString().toUInt(nullptr, 16), 2, 16, QLatin1Char('0'));
+        p.flags = o.value(QStringLiteral("bootable")).toBool() ? 0x80 : 0;
+        p.container = p.type == QLatin1String("0x05");
+        p.logical = p.number >= 5;
+        layout.parts.push_back(p);
+    }
+    report(layout.parts.size() == 4 && recover::problem(layout, quint64(64 * MiB), 512).isEmpty(), QStringLiteral("the MBR layout reads as four partitions, two of them logical"),
+           recover::problem(layout, quint64(64 * MiB), 512));
+    // Wipe the MBR and every EBR (the first sector of each gap before a logical partition).
+    zero(image, 0, 512);
+    for (const recover::Part &p : std::as_const(layout.parts)) {
+        if (p.container)
+            zero(image, qint64(p.start), 512);
+    }
+    zero(image, qint64(layout.parts.value(2).start + layout.parts.value(2).size), 512);
+    report(dump(image, 512) != original, QStringLiteral("the MBR and the logical partitions' EBRs are wiped"));
+    const gpt::Result r = withFd(image, [&layout](int fd) { return recover::write(fd, layout, 512); });
+    report(r.ok && dump(image, 512) == original, QStringLiteral("the MBR comes back exactly, logical partitions and boot flag included"),
+           r.ok ? dump(image, 512) : r.error);
+}
+
+void remembering()
+{
+    QTemporaryDir data;
+    qputenv("XDG_DATA_HOME", QFile::encodeName(data.path()));
+    recover::Layout one;
+    one.saved = QDateTime::currentDateTimeUtc();
+    one.table = QStringLiteral("gpt");
+    one.diskSize = 100 * MiB;
+    recover::Part p;
+    p.number = 1;
+    p.start = MiB;
+    p.size = 10 * MiB;
+    p.type = QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
+    one.parts = {p};
+    const QString key = QStringLiteral("HGST-HTS545050A7E380-TEST");
+    report(recover::remember(key, one) && !recover::remember(key, one), QStringLiteral("a layout is kept once, not again when nothing changed"));
+    for (int i = 2; i <= 13; ++i) {
+        recover::Layout next = one;
+        next.parts[0].size = quint64(i) * MiB;
+        recover::remember(key, next);
+    }
+    const QVector<recover::Layout> list = recover::saved(key);
+    report(list.size() == 10 && list.first().parts[0].size == 13 * MiB, QStringLiteral("only the last 10 different layouts are kept, newest first"));
+    recover::Layout empty = one;
+    empty.parts.clear();
+    report(!recover::remember(key, empty), QStringLiteral("an empty table isn't kept"));
+    recover::remember(QStringLiteral("../../escape"), one);
+    recover::remember(QStringLiteral("."), one);
+    const QStringList files = QDir(recover::folder()).entryList(QDir::Files);
+    bool inside = !QFile::exists(data.path() + QStringLiteral("/escape.json")) && !QFile::exists(QDir(data.path()).filePath(QStringLiteral("../escape.json")));
+    for (const QString &f : files)
+        inside = inside && !f.startsWith(QLatin1Char('.'));
+    report(inside && files.size() == 3, QStringLiteral("odd drive names stay inside the layouts folder"), files.join(QLatin1Char(' ')));
+}
+
+void refusals()
+{
+    recover::Layout l;
+    l.saved = QDateTime::currentDateTimeUtc();
+    l.table = QStringLiteral("gpt");
+    recover::Part a;
+    a.number = 1;
+    a.start = MiB;
+    a.size = 10 * MiB;
+    a.type = QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
+    recover::Part b = a;
+    b.number = 2;
+    b.start = 5 * MiB;
+    l.parts = {a, b};
+    report(recover::problem(l, 100 * MiB, 512).contains(QLatin1String("overlap")), QStringLiteral("overlapping partitions are refused"));
+    l.parts = {a};
+    report(recover::problem(l, 8 * MiB, 512).contains(QLatin1String("past the end")), QStringLiteral("a layout bigger than the drive is refused"));
+    recover::Part odd = a;
+    odd.start = MiB + 100;
+    l.parts = {odd};
+    report(recover::problem(l, 100 * MiB, 512).contains(QLatin1String("sector")), QStringLiteral("partitions off the sector grid are refused"));
+    recover::Part early = a;
+    early.start = 512;
+    l.parts = {early};
+    report(recover::problem(l, 100 * MiB, 512).contains(QLatin1String("table itself")), QStringLiteral("a partition where the GPT itself goes is refused"));
+    l.table = QStringLiteral("dos");
+    l.parts.clear();
+    for (int i = 0; i < 5; ++i) {
+        recover::Part m = a;
+        m.number = i + 1;
+        m.start = quint64(i + 1) * MiB;
+        m.size = MiB;
+        m.type = QStringLiteral("0x83");
+        l.parts.push_back(m);
+    }
+    report(recover::problem(l, 100 * MiB, 512).contains(QLatin1String("four")), QStringLiteral("five primary MBR partitions are refused"));
+
+    // The writer refuses too, and writes nothing then.
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("refuse.img"));
+    QFile f(image);
+    if (!f.open(QIODevice::WriteOnly) || !f.resize(32 * MiB))
+        return report(false, QStringLiteral("make an empty image"));
+    f.close();
+    gpt::Entry e1, e2;
+    e1.index = 1;
+    e1.type = QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
+    e1.firstLba = 2048;
+    e1.lastLba = 10000;
+    e2 = e1;
+    e2.index = 2;
+    e2.firstLba = 9000;
+    e2.lastLba = 20000;
+    const gpt::Result r = withFd(image, [&](int fd) { return gpt::writeTable(fd, 512, QString(), {e1, e2}); });
+    const QByteArray after = sh(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("head -c 1048576 '%1' | tr -d '\\000' | wc -c").arg(image)}).trimmed().toLatin1();
+    report(!r.ok && r.error.contains(QLatin1String("overlap")) && after == "0", QStringLiteral("the GPT writer refuses overlaps and writes nothing"), r.error);
+}
+
+} // namespace
+
+void recoverTests()
+{
+    gptRecovery(512);
+    gptRecovery(4096);
+    mbrRecovery();
+    remembering();
+    refusals();
+}

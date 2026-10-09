@@ -14,6 +14,7 @@
 #include "../src/addonmaker.h"
 #include "../src/diskmap.h"
 #include "../src/inspectdialog.h"
+#include "../src/recoverdialog.h"
 #include "../src/noticebar.h"
 #include "../src/typedialog.h"
 #include "slowdisk.h"
@@ -42,6 +43,7 @@
 #include <QToolBar>
 #include <QInputDialog>
 #include <QMouseEvent>
+#include <QListWidget>
 #include <QStatusBar>
 #include <QShortcut>
 #include <QMenuBar>
@@ -1026,6 +1028,78 @@ void inspector()
            QStringLiteral("and it reads the system disk's table as intact"), seen.problems.join(QStringLiteral(" | ")));
 }
 
+// Recover Partitions through the window: a loop device whose main GPT header was wiped is
+// put back from the backup copy, typing the device name to confirm.
+void recoverThroughWindow()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("recover.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("64M"), image});
+    QProcess sfdisk;
+    sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("-q"), image});
+    sfdisk.waitForStarted();
+    sfdisk.write("label: gpt\nsize=16MiB, type=linux, name=\"one\"\nsize=24MiB, type=linux, name=\"two\"\n");
+    sfdisk.closeWriteChannel();
+    sfdisk.waitForFinished();
+    QString loop;
+    sh(QStringLiteral("losetup"), {QStringLiteral("-fP"), QStringLiteral("--show"), image}, &loop);
+    loop = loop.trimmed();
+    {
+        QFile d(loop);
+        if (d.open(QIODevice::ReadWrite) && d.seek(512)) {
+            d.write(QByteArray(512, '\0')); // the main header
+            d.flush();
+        }
+    }
+    QString verify;
+    sh(QStringLiteral("sfdisk"), {QStringLiteral("--verify"), loop}, &verify);
+
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    waitUntil([&] {
+        udisks.refresh();
+        return window.selectDevice(loop);
+    }, 15000);
+    QAction *recoverAction = findAction(window, QStringLiteral("Recover Partitions"));
+    report(recoverAction && recoverAction->isEnabled(), QStringLiteral("Recover Partitions is offered for a drive"), verify.simplified().left(120));
+    bool written = false, success = false;
+    QString result, offered;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        auto *dialog = qobject_cast<RecoverDialog *>(modal);
+        if (!dialog)
+            return false;
+        if (!written && dialog->sourceCount() > 0) {
+            written = true;
+            offered = dialog->findChild<QListWidget *>()->item(0)->text();
+            QObject::connect(dialog, &RecoverDialog::done, dialog, [&, dialog](bool ok, const QString &message) {
+                success = ok;
+                result = message;
+                dialog->close();
+            });
+            for (QLineEdit *edit : dialog->findChildren<QLineEdit *>())
+                edit->setText(QFileInfo(loop).fileName());
+            if (QPushButton *write = findButton(dialog, QStringLiteral("Write Partition Table")))
+                write->click();
+        }
+        return true;
+    };
+    if (recoverAction)
+        recoverAction->trigger();
+    // sfdisk quietly uses the backup when the main header is gone, so look at sector 1 itself.
+    QByteArray header;
+    {
+        QFile d(loop);
+        if (d.open(QIODevice::ReadOnly) && d.seek(512))
+            header = d.read(8);
+    }
+    report(offered.contains(QLatin1String("backup copy")) && success && header == "EFI PART",
+           QStringLiteral("the main header is put back from the backup copy, through the window"), offered + QStringLiteral(" | ") + result);
+    sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+}
+
 // Job bars, with jobs faked through the test hook: a firmware erase says it can't be
 // stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
 // end, the bars go.
@@ -1192,6 +1266,7 @@ int main(int argc, char *argv[])
     typeAndFlags();
     lockInMap();
     inspector();
+    recoverThroughWindow();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

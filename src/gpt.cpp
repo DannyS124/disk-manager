@@ -8,7 +8,9 @@
 
 #include <QObject>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 
+#include <algorithm>
 #include <cstring>
 #include <unistd.h>
 
@@ -369,6 +371,297 @@ Report inspect(int fd, int sectorSize)
         r.problems << QObject::tr("It has a hybrid MBR (GPT and MBR partitions at once). Some tools get confused by that.");
     else if (!r.mbr.protective())
         r.problems << QObject::tr("The MBR describes other partitions than the GPT.");
+    return r;
+}
+
+bool guidBytes(const QString &text, char *out)
+{
+    static const QRegularExpression form(QStringLiteral("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"));
+    if (!form.match(text).hasMatch())
+        return false;
+    const QByteArray hex = QString(text).remove(QLatin1Char('-')).toLatin1();
+    const QByteArray raw = QByteArray::fromHex(hex);
+    // The first three groups are stored little-endian, the rest as written.
+    const int order[16] = {3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15};
+    for (int i = 0; i < 16; ++i)
+        out[i] = raw[order[i]];
+    return true;
+}
+
+namespace {
+
+void protectiveMbr(char *sector0, quint64 lastLba)
+{
+    // Boot code (0-439) is kept; the disk signature and the four entries are new.
+    std::memset(sector0 + 440, 0, 72);
+    char *e = sector0 + 446;
+    e[1] = 0x00;
+    e[2] = 0x02;
+    e[3] = 0x00; // CHS 0/0/2
+    e[4] = char(0xEE);
+    e[5] = char(0xFF);
+    e[6] = char(0xFF);
+    e[7] = char(0xFF);
+    put32(e + 8, 1);
+    put32(e + 12, quint32(std::min<quint64>(lastLba, 0xFFFFFFFFu)));
+    sector0[510] = 0x55;
+    sector0[511] = char(0xAA);
+}
+
+bool zeroGuid(const char *p)
+{
+    static const char zero[16] = {};
+    return std::memcmp(p, zero, 16) == 0;
+}
+
+} // namespace
+
+Result writeTable(int fd, int sectorSize, const QString &diskGuid, const QVector<Entry> &entries)
+{
+    Result r;
+    const quint64 sector = quint64(sectorSize > 0 ? sectorSize : blockio::logicalSize(fd));
+    const quint64 size = blockio::deviceSize(fd);
+    constexpr quint32 count = 128, entrySize = 128;
+    const quint64 listBytes = quint64(count) * entrySize;
+    const quint64 listSectors = (listBytes + sector - 1) / sector;
+    if (sector < 512 || size / sector < 2 * listSectors + 8) {
+        r.error = QObject::tr("The drive is too small for a GPT");
+        return r;
+    }
+    const quint64 lastLba = size / sector - 1;
+    const quint64 firstUsable = 2 + listSectors, lastUsable = lastLba - listSectors - 1;
+    if (entries.size() > int(count)) {
+        r.error = QObject::tr("Too many partitions for a GPT");
+        return r;
+    }
+
+    blockio::Buffer list = blockio::alignedBuffer(size_t(listSectors * sector));
+    if (!list) {
+        r.error = QObject::tr("Out of memory");
+        return r;
+    }
+    std::memset(list.get(), 0, listSectors * sector);
+    QVector<bool> used(count, false);
+    QVector<QPair<quint64, quint64>> spans;
+    for (const Entry &e : entries) {
+        if (e.firstLba < firstUsable || e.lastLba > lastUsable || e.firstLba > e.lastLba) {
+            r.error = QObject::tr("Partition %1 doesn't fit on the drive").arg(e.index);
+            return r;
+        }
+        for (const auto &[first, last] : std::as_const(spans)) {
+            if (e.firstLba <= last && first <= e.lastLba) {
+                r.error = QObject::tr("Partitions overlap");
+                return r;
+            }
+        }
+        spans.push_back({e.firstLba, e.lastLba});
+        int slot = e.index - 1;
+        if (slot < 0)
+            slot = int(used.indexOf(false));
+        if (slot < 0 || slot >= int(count) || used[slot]) {
+            r.error = QObject::tr("Partition number %1 is taken or too high").arg(e.index);
+            return r;
+        }
+        used[slot] = true;
+        char *p = list.get() + quint64(slot) * entrySize;
+        if (!guidBytes(e.type, p) || zeroGuid(p)) {
+            r.error = QObject::tr("Partition %1 has no valid type").arg(e.index);
+            return r;
+        }
+        if (e.guid.isEmpty() || !guidBytes(e.guid, p + 16) || zeroGuid(p + 16))
+            randomGuid(p + 16);
+        put64(p + 32, e.firstLba);
+        put64(p + 40, e.lastLba);
+        put64(p + 48, e.attributes);
+        const QString name = e.name.left(36);
+        std::memcpy(p + 56, name.utf16(), size_t(name.size()) * 2);
+    }
+
+    blockio::Buffer header = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    std::memset(header.get(), 0, sector);
+    char *h = header.get();
+    std::memcpy(h, "EFI PART", 8);
+    put32(h + 8, 0x00010000);
+    put32(h + kHeaderSize, 92);
+    put64(h + kMyLba, 1);
+    put64(h + kAlternateLba, lastLba);
+    put64(h + 40, firstUsable);
+    put64(h + kLastUsable, lastUsable);
+    if (diskGuid.isEmpty() || !guidBytes(diskGuid, h + kDiskGuid) || zeroGuid(h + kDiskGuid))
+        randomGuid(h + kDiskGuid);
+    put64(h + kEntriesLba, 2);
+    put32(h + kEntryCount, count);
+    put32(h + kEntrySize, entrySize);
+    put32(h + kEntriesCrc, crc32(list.get(), listBytes));
+    put32(h + kHeaderCrc, headerCrc(h));
+
+    blockio::Buffer backup = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    std::memcpy(backup.get(), h, sector);
+    char *b = backup.get();
+    put64(b + kMyLba, lastLba);
+    put64(b + kAlternateLba, 1);
+    put64(b + kEntriesLba, lastLba - listSectors);
+    put32(b + kHeaderCrc, 0);
+    put32(b + kHeaderCrc, headerCrc(b));
+
+    blockio::Buffer mbr = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    if (!blockio::readAt(fd, mbr.get(), sector, 0))
+        std::memset(mbr.get(), 0, sector);
+    protectiveMbr(mbr.get(), lastLba);
+
+    if (!blockio::writeAt(fd, list.get(), listSectors * sector, (lastLba - listSectors) * sector)
+        || !blockio::writeAt(fd, b, sector, lastLba * sector) || ::fdatasync(fd) != 0
+        || !blockio::writeAt(fd, list.get(), listSectors * sector, 2 * sector) || !blockio::writeAt(fd, h, sector, sector)
+        || !blockio::writeAt(fd, mbr.get(), sector, 0) || ::fdatasync(fd) != 0) {
+        r.error = QObject::tr("Couldn't write the partition table");
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+Result restoreFromBackup(int fd, int sectorSize)
+{
+    Result r;
+    const Report report = inspect(fd, sectorSize);
+    const quint64 sector = quint64(std::max(report.sectorSize, 512));
+    const Header &b = report.backup;
+    if (!b.valid() || b.lba != report.lastLba) {
+        r.error = QObject::tr("The backup copy isn't intact, so it can't be used");
+        return r;
+    }
+    const quint64 listBytes = quint64(b.entryCount) * b.entrySize;
+    const quint64 listSectors = (listBytes + sector - 1) / sector;
+    if (b.firstUsable < 2 + listSectors || b.myLba != report.lastLba) {
+        r.error = QObject::tr("The backup copy doesn't describe this drive, so it was left alone");
+        return r;
+    }
+    blockio::Buffer header = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    blockio::Buffer list = blockio::alignedBuffer(size_t(listSectors * sector));
+    if (!header || !list || !blockio::readAt(fd, header.get(), sector, report.lastLba * sector)
+        || !blockio::readAt(fd, list.get(), listSectors * sector, b.entriesLba * sector)) {
+        r.error = QObject::tr("Couldn't read the backup copy");
+        return r;
+    }
+    char *h = header.get();
+    put64(h + kMyLba, 1);
+    put64(h + kAlternateLba, report.lastLba);
+    put64(h + kEntriesLba, 2);
+    put32(h + kHeaderCrc, headerCrc(h));
+
+    blockio::Buffer mbr = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    const bool fixMbr = !report.mbr.signature || !report.mbr.protective();
+    if (fixMbr) {
+        if (!blockio::readAt(fd, mbr.get(), sector, 0))
+            std::memset(mbr.get(), 0, sector);
+        protectiveMbr(mbr.get(), report.lastLba);
+    }
+    if (!blockio::writeAt(fd, list.get(), listSectors * sector, 2 * sector) || !blockio::writeAt(fd, h, sector, sector)
+        || (fixMbr && !blockio::writeAt(fd, mbr.get(), sector, 0)) || ::fdatasync(fd) != 0) {
+        r.error = QObject::tr("Couldn't write the partition table");
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+Result writeMbr(int fd, int sectorSize, quint32 diskSignature, const QVector<MbrPart> &parts)
+{
+    Result r;
+    const quint64 sector = quint64(sectorSize > 0 ? sectorSize : blockio::logicalSize(fd));
+    const quint64 total = blockio::deviceSize(fd) / sector;
+    auto fail = [&r](const QString &why) {
+        r.error = why;
+        return r;
+    };
+    QVector<MbrPart> primary, logical;
+    for (const MbrPart &p : parts)
+        (p.logical ? logical : primary).push_back(p);
+    const auto extended = [](const MbrPart &p) { return p.type == 0x05 || p.type == 0x0f || p.type == 0x85; };
+    const auto ext = std::find_if(primary.cbegin(), primary.cend(), extended);
+    if (primary.size() > 4 || std::count_if(primary.cbegin(), primary.cend(), extended) > 1)
+        return fail(QObject::tr("An MBR holds four primary partitions, one of them extended"));
+    if (!logical.isEmpty() && ext == primary.cend())
+        return fail(QObject::tr("Logical partitions need an extended partition"));
+    QVector<QPair<quint64, quint64>> spans;
+    for (const MbrPart &p : primary) {
+        if (p.type == 0 || p.firstLba == 0 || p.sectors == 0 || p.firstLba + p.sectors > total || p.firstLba > 0xFFFFFFFFu
+            || p.sectors > 0xFFFFFFFFu)
+            return fail(QObject::tr("A partition doesn't fit in an MBR on this drive"));
+        for (const auto &[first, last] : std::as_const(spans)) {
+            if (p.firstLba <= last && first <= p.firstLba + p.sectors - 1)
+                return fail(QObject::tr("Partitions overlap"));
+        }
+        spans.push_back({p.firstLba, p.firstLba + p.sectors - 1});
+    }
+    // Every check before anything is written.
+    bool taken[4] = {};
+    for (const MbrPart &p : std::as_const(primary)) {
+        if (p.slot >= 1 && p.slot <= 4 && !taken[p.slot - 1])
+            taken[p.slot - 1] = true;
+        else if (p.slot != 0)
+            return fail(QObject::tr("Partition number %1 is taken or too high").arg(p.slot));
+    }
+    // Logical partitions in order; each needs its EBR in the gap before it.
+    std::sort(logical.begin(), logical.end(), [](const MbrPart &a, const MbrPart &b) { return a.firstLba < b.firstLba; });
+    QVector<quint64> ebrs;
+    if (!logical.isEmpty()) {
+        const quint64 extStart = ext->firstLba, extEnd = ext->firstLba + ext->sectors - 1;
+        quint64 next = extStart;
+        for (const MbrPart &l : std::as_const(logical)) {
+            if (l.type == 0 || extended(l) || l.sectors == 0 || l.firstLba <= next || l.firstLba + l.sectors - 1 > extEnd)
+                return fail(QObject::tr("A logical partition doesn't fit in the extended one"));
+            ebrs.push_back(next);
+            next = l.firstLba + l.sectors; // the next EBR goes right after this partition
+        }
+    }
+
+    blockio::Buffer buf = blockio::alignedBuffer(std::max<size_t>(sector, blockio::kAlign));
+    auto entry = [](char *e, const MbrPart &p, quint64 start, quint64 sectors) {
+        e[0] = p.bootable ? char(0x80) : 0;
+        e[1] = char(0xFE); // CHS: "use the LBA values"
+        e[2] = char(0xFF);
+        e[3] = char(0xFF);
+        e[4] = char(p.type);
+        e[5] = char(0xFE);
+        e[6] = char(0xFF);
+        e[7] = char(0xFF);
+        put32(e + 8, quint32(start));
+        put32(e + 12, quint32(sectors));
+    };
+    // EBRs first (from the last), the MBR itself last.
+    for (int i = int(logical.size()) - 1; i >= 0; --i) {
+        std::memset(buf.get(), 0, sector);
+        const MbrPart &l = logical[i];
+        entry(buf.get() + 446, l, l.firstLba - ebrs[i], l.sectors);
+        if (i + 1 < logical.size()) {
+            MbrPart link;
+            link.type = 0x05;
+            const quint64 nextEnd = logical[i + 1].firstLba + logical[i + 1].sectors;
+            entry(buf.get() + 462, link, ebrs[i + 1] - ext->firstLba, nextEnd - ebrs[i + 1]);
+        }
+        buf.get()[510] = 0x55;
+        buf.get()[511] = char(0xAA);
+        if (!blockio::writeAt(fd, buf.get(), sector, ebrs[i] * sector))
+            return fail(QObject::tr("Couldn't write the partition table"));
+    }
+    if (!blockio::readAt(fd, buf.get(), sector, 0))
+        std::memset(buf.get(), 0, sector);
+    std::memset(buf.get() + 440, 0, 72);
+    put32(buf.get() + 440, diskSignature);
+    for (const MbrPart &p : std::as_const(primary)) {
+        int slot = p.slot - 1;
+        if (slot < 0) {
+            slot = int(std::find(std::begin(taken), std::end(taken), false) - std::begin(taken));
+            taken[slot] = true;
+        }
+        entry(buf.get() + 446 + slot * 16, p, p.firstLba, p.sectors);
+    }
+    buf.get()[510] = 0x55;
+    buf.get()[511] = char(0xAA);
+    if (!blockio::writeAt(fd, buf.get(), sector, 0) || ::fdatasync(fd) != 0)
+        return fail(QObject::tr("Couldn't write the partition table"));
+    r.ok = true;
     return r;
 }
 

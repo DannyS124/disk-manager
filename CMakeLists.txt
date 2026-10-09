@@ -63,6 +63,7 @@ add_library(diskforge-core STATIC
     src/firmware.cpp src/firmware.h
     src/btrfscheck.cpp src/btrfscheck.h
     src/drivepower.cpp src/drivepower.h
+    src/partrecover.cpp src/partrecover.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
@@ -90,6 +91,7 @@ add_library(diskforge-ui STATIC
     src/typedialog.cpp src/typedialog.h
     src/powerbox.cpp src/powerbox.h
     src/inspectdialog.cpp src/inspectdialog.h
+    src/recoverdialog.cpp src/recoverdialog.h
     src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h
@@ -120,7 +122,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

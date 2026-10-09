@@ -96,6 +96,7 @@ Volume makeVolume(const QString &path, const InterfaceMap &ifaces)
         v.partType = part.value(QStringLiteral("Type")).toString();
         v.partFlags = part.value(QStringLiteral("Flags")).toULongLong();
         v.partName = cleanName(part.value(QStringLiteral("Name")).toString());
+        v.partUuid = part.value(QStringLiteral("UUID")).toString();
         v.isContainer = part.value(QStringLiteral("IsContainer")).toBool();
         v.isContained = part.value(QStringLiteral("IsContained")).toBool();
     }

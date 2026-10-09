@@ -20,6 +20,7 @@
 #include "../src/btrfscheck.h"
 #include "../src/firmware.h"
 #include "../src/health.h"
+#include "../src/partrecover.h"
 #include "../src/imagebackup.h"
 #include "../src/outputfilter.h"
 #include "../src/rescuecopy.h"
@@ -30,6 +31,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QSet>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QRandomGenerator>
@@ -646,6 +648,75 @@ void tableInspector(const QString &tmp)
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void savedLayouts(const QString &tmp)
+{
+    // Damaged layout files: anything accepted is sane. And random layouts that pass the
+    // checks write cleanly and read back with the same partitions.
+    recover::Layout seed;
+    seed.saved = QDateTime::currentDateTimeUtc();
+    seed.table = QStringLiteral("gpt");
+    seed.diskSize = 32 * 1024 * 1024;
+    seed.diskId = QStringLiteral("81e11847-bbe1-4575-877b-9b568c68e928");
+    recover::Part p;
+    p.number = 1;
+    p.start = 1024 * 1024;
+    p.size = 8 * 1024 * 1024;
+    p.type = QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
+    p.name = QStringLiteral("root");
+    seed.parts = {p};
+    const QByteArray json = QJsonDocument(recover::toJson(seed)).toJson();
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        recover::Layout l;
+        if (!recover::fromJson(QJsonDocument::fromJson(mutate(json)).object(), &l))
+            continue;
+        bool sane = (l.table == QLatin1String("gpt") || l.table == QLatin1String("dos")) && !l.parts.isEmpty() && l.parts.size() <= 128;
+        for (const recover::Part &part : std::as_const(l.parts))
+            sane = sane && part.number >= 1 && part.number <= 128 && !hasHiddenCharacters(part.name) && part.name.size() <= 36;
+        if (!sane)
+            bad << QStringLiteral("json %1").arg(i);
+    }
+    const QString image = tmp + QStringLiteral("/layouts.img");
+    int written = 0;
+    for (int i = 0; i < rounds() / 20; ++i) {
+        recover::Layout l = seed;
+        l.parts.clear();
+        const int count = 1 + int(rng.bounded(5));
+        for (int n = 0; n < count; ++n) {
+            recover::Part part = p;
+            part.number = 1 + int(rng.bounded(8));
+            part.start = quint64(rng.bounded(64)) * 512 * 1024 + (rng.bounded(4) ? 0 : 512 * quint64(rng.bounded(3)));
+            part.size = quint64(1 + rng.bounded(16)) * 512 * 1024;
+            part.guid.clear();
+            l.parts.push_back(part);
+        }
+        if (!recover::problem(l, seed.diskSize, 512).isEmpty())
+            continue;
+        QFile::remove(image);
+        QFile f(image);
+        if (!f.open(QIODevice::WriteOnly) || !f.resize(qint64(seed.diskSize)))
+            continue;
+        f.close();
+        const int fd = ::open(QFile::encodeName(image).constData(), O_RDWR | O_CLOEXEC);
+        const gpt::Result r = recover::write(fd, l, 512);
+        const gpt::Report back = gpt::inspect(fd, 512);
+        ::close(fd);
+        QSet<quint64> starts;
+        for (const recover::Part &part : std::as_const(l.parts))
+            starts << part.start / 512;
+        QSet<quint64> read;
+        for (const gpt::Entry &e : back.primary.entries)
+            read << e.firstLba;
+        // Numbers may clash (the writer refuses that); otherwise it has to come back as written.
+        if (r.ok && (!back.problems.isEmpty() || read != starts))
+            bad << QStringLiteral("write %1").arg(i);
+        written += r.ok ? 1 : 0;
+    }
+    report(bad.isEmpty() && written > 0,
+           QStringLiteral("%1 damaged layout files and random layouts: nothing odd accepted, %2 written and read back").arg(rounds()).arg(written),
+           bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void btrfsCounts()
 {
     // Damaged error_stats text: no crash, nothing negative, and a total that can't overflow.
@@ -710,7 +781,8 @@ void driveNames()
 void fuzzTests()
 {
     bool given = false;
-    const quint32 seed = quint32(qEnvironmentVariableIntValue("DISKFORGE_FUZZ_SEED", &given));
+    // Unsigned: half the seeds it prints are above INT_MAX, and those have to replay too.
+    const quint32 seed = qEnvironmentVariable("DISKFORGE_FUZZ_SEED").toUInt(&given);
     const quint32 used = given ? seed : QRandomGenerator::system()->generate();
     rng.seed(used);
     out << "seed " << used << " (DISKFORGE_FUZZ_SEED=" << used << " repeats this run)" << Qt::endl;
@@ -733,5 +805,6 @@ void fuzzTests()
     firmwareAnswers();
     btrfsCounts();
     tableInspector(tmp.path());
+    savedLayouts(tmp.path());
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

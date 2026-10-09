@@ -27,6 +27,7 @@ struct Volume {
     quint64 size = 0;
     QString label;
     QString partName; // GPT only
+    QString partUuid; // the partition's own ID (GPT), or "<disk signature>-<number>" (MBR)
     QString fsType;
     QString fsUsage;
     QString uuid;

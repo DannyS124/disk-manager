@@ -7,6 +7,7 @@
 #include "testkit.h"
 
 #include "../src/format.h"
+#include "../src/recoverdialog.h"
 #include "../src/udisks.h"
 
 #include <QCoreApplication>
@@ -853,6 +854,9 @@ void guard(UDisks &udisks)
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("powering off %1 is refused").arg(shortDevice(d.device)), message);
         ok = run(udisks, {}, [&] { udisks.setMountAtStartup(v, true); }, &message);
         report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("startup mount on %1 is refused").arg(name), message);
+        ok = run(udisks, {}, [&] { udisks.setPartitionTypeAndFlags(v, QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4"), true, 0); }, &message);
+        report(!ok && message.contains(QLatin1String("running system")), QStringLiteral("changing the type and flags of %1 is refused").arg(name), message);
+        report(!RecoverDialog::refusal(d).isEmpty(), QStringLiteral("Recover Partitions won't write %1's table").arg(shortDevice(d.device)), RecoverDialog::refusal(d));
         const int fd = openFd(udisks, d, true, false);
         report(fd < 0, QStringLiteral("raw write access to %1 is refused").arg(shortDevice(d.device)));
         // Reading (a backup) would unmount it first, so that's refused as well.
@@ -911,6 +915,8 @@ int main(int argc, char *argv[])
         healthTests();
     } else if (args.contains(QStringLiteral("--jobs"))) {
         jobsTests();
+    } else if (args.contains(QStringLiteral("--recover"))) {
+        recoverTests();
     } else if (args.contains(QStringLiteral("--stop"))) {
         if (needsRoot("--stop"))
             return 2;

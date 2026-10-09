@@ -98,6 +98,7 @@ private:
     QAction *m_rename = nullptr;
     QAction *m_typeFlags = nullptr;
     QAction *m_inspect = nullptr;
+    QAction *m_recover = nullptr;
     QAction *m_newTable = nullptr;
     QAction *m_safelyRemove = nullptr;
     QAction *m_check = nullptr;

@@ -14,6 +14,8 @@
 #include "../src/copydialogs.h"
 #include "../src/imagebackup.h"
 #include "../src/inspectdialog.h"
+#include "../src/partrecover.h"
+#include "../src/recoverdialog.h"
 #include "../src/powerbox.h"
 #include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
@@ -178,6 +180,22 @@ int main(int argc, char *argv[])
             map.setDisks({fake});
             map.resize(900, map.sizeHint().height());
             save(map, out.filePath(QStringLiteral("map-locks.png")));
+
+            // Recover Partitions on the same made-up drive, after its second partition was
+            // deleted: the layout from before is offered.
+            fake.health.key = QStringLiteral("Example-Drive-Preview");
+            for (Volume &v : fake.volumes) {
+                v.encrypted = false;
+                v.cleartextPath.clear();
+                v.number = int(&v - fake.volumes.data()) + 1;
+                v.partType = QStringLiteral("0fc63daf-8483-4772-8e79-3d69d8477de4");
+                v.fsType = QStringLiteral("ext4");
+            }
+            fake.volumes[0].label = QStringLiteral("System");
+            recover::remember(fake.health.key, recover::fromDisk(fake));
+            fake.volumes.removeLast();
+            RecoverDialog recoverDialog(&udisks, fake, gpt::Report());
+            save(recoverDialog, out.filePath(QStringLiteral("recover.png")));
         }
         for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);
