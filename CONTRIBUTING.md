@@ -5,7 +5,12 @@ PRs are welcome. If you change anything in `src/udisks.cpp`, run the self-test f
 sudo ./build/diskforge-selftest
 ./build/diskforge-selftest --guard
 ```
+If you change code that reads files or anything from a drive (add-ons, backups, rescue maps,
+partition tables, names), run the crash tests too: `./build/diskforge-selftest --fuzz`.
+
 Don't open block devices directly or run anything as root. Everything goes through udisks2.
+DiskForge also never listens for other programs (no sockets, no D-Bus service of its own);
+the release script stops if that changes.
 
 Want to add something without touching the code? Make an add-on instead: see `docs/ADDONS.md`.
 
