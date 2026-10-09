@@ -48,9 +48,12 @@ wrong time is unlikely to break it. The 30 newest are kept.
 
 The logs have the PC's and the drives' serial numbers in them. Look before posting them somewhere public.
 
-When the ISO runs as a CD (a VM's CD drive) there's no stick to write to. Pick "Detailed
-messages" in the boot menu and give the VM a serial port that writes to a file: the kernel and the system
-log go there as they happen. In VMware: VM Settings → Add → Serial Port → Use output file.
+When the ISO runs as a CD (a VM's CD drive) it can't write to itself. Two ways around that:
+- Plug in a stick made from the same ISO (in VMware: VM → Removable Devices → the stick → Connect). The
+  logs go to that stick.
+- Pick "Detailed messages" in the boot menu and give the VM a serial port that writes to a file: the
+  kernel and the system log go there as they happen. In VMware: VM Settings → Add → Serial Port → Use
+  output file.
 
 ## Building it
 ```

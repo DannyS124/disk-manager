@@ -55,9 +55,10 @@ They're plain text, so any PC can open them. If something didn't work, they're w
 along with the bug report. They do contain the PC's and the drives' serial numbers, so look
 before posting them somewhere public.
 
-When the ISO runs as a CD (in VMware or VirtualBox, say), there's no stick to write to. Pick
-"Detailed messages" in the boot menu and give the VM a serial port that writes to a file;
-everything that happens while it starts ends up in that file.
+When the ISO runs as a CD (in VMware or VirtualBox, say), it can't write to itself. Plug in a
+stick made from the same ISO and the logs go there. Or pick "Detailed messages" in the boot
+menu and give the VM a serial port that writes to a file; everything that happens while it
+starts ends up in that file.
 
 Making the stick
 ----------------

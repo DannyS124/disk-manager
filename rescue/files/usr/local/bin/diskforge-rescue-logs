@@ -70,11 +70,13 @@ boot_mode() {
     fi
 }
 
-# The stick this system started from. With "copy to memory" live-boot lets go of it, so it's
-# looked for by its build file and mounted here just while the logs are copied (the point of
-# copying to memory is that the stick is free to come out).
+# The stick to write to: the one this system started from, or, when it started from the ISO
+# (a CD, a VM), a stick made from that same ISO that's plugged in. Those are found by their
+# build file and mounted here just while the logs are copied. With "copy to memory" that's
+# the stick it started from too: live-boot lets go of it so it's free to come out.
 find_stick() {
-    if mountpoint -q /run/live/medium && [ -e "/run/live/medium/.disk/diskforge-$BUILD_ID" ]; then
+    if mountpoint -q /run/live/medium && [ -e "/run/live/medium/.disk/diskforge-$BUILD_ID" ] &&
+        [ "$(findmnt -no FSTYPE /run/live/medium)" = vfat ]; then
         echo /run/live/medium
         return 0
     fi
@@ -167,7 +169,7 @@ done
 
 result=0
 if [ -z "$stick" ]; then
-    message="The rescue stick isn't plugged in, or this is the ISO (a CD in a VM). The logs are in $dir for now."
+    message="There's no rescue stick to write to (started from the ISO, or the stick came out). The logs are in $dir for now. Plug in a stick made from this ISO and save again."
     result=2
 elif [ "$(findmnt -no FSTYPE "$stick")" != vfat ]; then
     message="This copy of DiskForge Rescue is read-only (written as an ISO), so the logs are in $dir for now."
