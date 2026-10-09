@@ -418,8 +418,10 @@ QVector<AddonField> parseFields(const QJsonArray &list, bool settings, QString *
             else
                 f.choices.push_back({choice.value(QStringLiteral("label")).toString(), choice.value(QStringLiteral("value")).toString()});
         }
-        f.min = j.value(QStringLiteral("min")).toInteger(0);
-        f.max = j.value(QStringLiteral("max")).toInteger(1000000);
+        if (f.type == AddonField::Type::Number) { // only numbers have limits; others keep the defaults
+            f.min = j.value(QStringLiteral("min")).toInteger(0);
+            f.max = j.value(QStringLiteral("max")).toInteger(1000000);
+        }
 
         QStringList texts = {f.label, f.defaultValue, f.on, f.off};
         for (const auto &choice : std::as_const(f.choices))
