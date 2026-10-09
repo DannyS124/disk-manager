@@ -30,7 +30,7 @@ struct Walker {
 
     void walk(int dirFd, const QString &path, UsageNode *node, int depth)
     {
-        DIR *dir = ::fdopendir(::dup(dirFd));
+        DIR *dir = ::fdopendir(::fcntl(dirFd, F_DUPFD_CLOEXEC, 0));
         if (!dir) {
             node->skipped = true;
             ++unreadable;

@@ -24,7 +24,7 @@ namespace {
 QByteArrayList entries(int dirFd)
 {
     QByteArrayList names;
-    DIR *dir = ::fdopendir(::dup(dirFd));
+    DIR *dir = ::fdopendir(::fcntl(dirFd, F_DUPFD_CLOEXEC, 0));
     if (!dir)
         return names;
     while (dirent *e = ::readdir(dir)) {

@@ -562,7 +562,8 @@ void UDisks::openBlock(const QString &objectPath, OpenMode mode)
                 return;
             }
             const auto fd = w->reply().arguments().value(0).value<QDBusUnixFileDescriptor>();
-            emit deviceOpened(objectPath, fd.isValid() ? ::dup(fd.fileDescriptor()) : -1);
+            // Close-on-exec: programs DiskForge starts (add-ons, terminals) must never inherit a disk.
+            emit deviceOpened(objectPath, fd.isValid() ? ::fcntl(fd.fileDescriptor(), F_DUPFD_CLOEXEC, 0) : -1);
         });
     };
     // Reading for a benchmark or a rescue works while mounted; everything else gets

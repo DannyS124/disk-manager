@@ -293,6 +293,12 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
         a.error = QObject::tr("\"id\" must be lowercase letters, digits and dashes");
         return a;
     }
+    // Names end up in menus and questions; invisible characters (or a tab, which fakes a
+    // shortcut column in a menu) could make them look like something else.
+    if (hasHiddenCharacters(a.name) || hasHiddenCharacters(a.author)) {
+        a.error = QObject::tr("The name and author can't have hidden characters");
+        return a;
+    }
 
     QVector<AddonAction> actions;
     for (const QJsonValue &value : o.value(QStringLiteral("actions")).toArray()) {
@@ -314,6 +320,16 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
         if (act.label.isEmpty() || act.command.isEmpty() || act.command.first().isEmpty()) {
             a.error = QObject::tr("Every action needs a \"label\" and a \"command\"");
             return a;
+        }
+        if (hasHiddenCharacters(act.label)) {
+            a.error = QObject::tr("The label \"%1\" has hidden characters").arg(cleanName(act.label));
+            return a;
+        }
+        for (const AddonAction &other : actions) {
+            if (other.label == act.label) {
+                a.error = QObject::tr("Two actions are called \"%1\"").arg(act.label);
+                return a;
+            }
         }
         if (!QStringList{QStringLiteral("volume"), QStringLiteral("disk"), QStringLiteral("free"), QStringLiteral("any")}.contains(act.appliesTo)) {
             a.error = QObject::tr("\"applies_to\" must be volume, disk, free or any");

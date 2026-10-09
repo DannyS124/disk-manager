@@ -1017,7 +1017,9 @@ bool MainWindow::addAddonActions(QMenu *menu)
         // Copies: the selection or the add-on list may change before the menu item is clicked.
         const Addon a = *addon;
         const AddonAction act = *action;
-        menu->addAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))), act.label, this,
+        // "&&" so an "&" in the label shows as one instead of making a shortcut letter.
+        menu->addAction(QIcon::fromTheme(act.icon, QIcon::fromTheme(QStringLiteral("application-x-addon"))),
+                        QString(act.label).replace(QLatin1Char('&'), QStringLiteral("&&")), this,
                         [this, a, act] { runAddon(a, act); });
     }
     return !actions.isEmpty();

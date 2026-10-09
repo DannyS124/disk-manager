@@ -311,6 +311,16 @@ bool extras(UDisks &udisks)
     report(fd >= 0, QStringLiteral("open the image disk for writing"));
     if (fd < 0)
         return false;
+    {
+        // Programs DiskForge starts (add-ons, terminals) must never get an open disk.
+        const QString device = diskWithFile(udisks, second)->device;
+        QProcess child;
+        child.start(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("for f in /proc/$$/fd/*; do readlink \"$f\"; done")});
+        child.waitForFinished();
+        const QString inherited = QString::fromLocal8Bit(child.readAllStandardOutput());
+        report((::fcntl(fd, F_GETFD) & FD_CLOEXEC) && !inherited.contains(device), QStringLiteral("a program started meanwhile doesn't get the open disk"),
+               inherited.simplified());
+    }
     bool written = false;
     QString writeMessage;
     {
@@ -459,6 +469,12 @@ void addonTests()
            QStringLiteral("a program on the drive can't be the command"));
     broken(R"({"id":"x","actions":[{"label":"L","look_only":true,"command":["pkexec","ls"]}]})", "look_only",
            QStringLiteral("look-only actions can't use admin power"));
+    broken(R"({"id":"x","actions":[{"label":"Back Up\tCtrl+Q","command":["echo"]}]})", "hidden",
+           QStringLiteral("a label with a tab (a fake shortcut in menus) is refused"));
+    broken(R"({"id":"x","actions":[{"label":"A","command":["echo"]},{"label":"A","command":["ls"]}]})", "Two actions",
+           QStringLiteral("two actions with the same label are refused"));
+    broken(R"({"id":"x","name":"Safe\u202Eexe.sh","actions":[{"label":"A","command":["echo"]}]})", "hidden",
+           QStringLiteral("a name with hidden characters is refused"));
     {
         const Addon a = Addons::parseData(R"({"id":"x","actions":[{"label":"L","command":["{home}/bin/tool","{device}"]}]})", QString());
         report(a.error.isEmpty(), QStringLiteral("a program in your home folder is fine"), a.error);
