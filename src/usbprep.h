@@ -3,14 +3,10 @@
 
 #pragma once
 
-#include <QObject>
+#include "udiskssteps.h"
+
 #include <QStringList>
 #include <QVector>
-
-#include <functional>
-#include <memory>
-
-class UDisks;
 
 // Sets a USB stick up through UDisks, one step at a time: a new partition table, its
 // partitions (each with its file system and label), their flags, then mounts the ones asked
@@ -18,7 +14,7 @@ class UDisks;
 // Rescue USB, the file copy mode of Write Image to USB and Make a Windows USB use it.
 //
 // It erases the stick: the dialogs ask first.
-class UsbPrep : public QObject
+class UsbPrep : public UDisksSteps
 {
     Q_OBJECT
 public:
@@ -42,35 +38,20 @@ public:
     QStringList mountPoints() const { return m_mounts; }
 
 signals:
-    void phase(const QString &text);
     void ready(const QStringList &mountPoints);
-    // A step failed. `shownAlready`: it was a UDisks error, which the main window shows itself.
-    void failed(const QString &message, bool shownAlready);
     void done(bool ok, const QString &message);
 
 private:
-    void listen();
     void makeTable();
     void makePartition(int index);
     void setFlags(int index);
     void mountNext(int index);
     void unmountNext(int index);
-    // The next UDisks result goes to `next`; a failure ends it, unless `failureIsFine`.
-    void expect(const std::function<void()> &next, bool failureIsFine = false);
-    void waitFor(const std::function<bool()> &ready, int seconds, const std::function<void()> &then,
-                 const QString &timeoutMessage);
-    void fail(const QString &message, bool shownAlready = false);
     QString mountPointOf(const QString &volumePath) const;
 
-    UDisks *m_udisks;
     QString m_disk;
     QString m_table;
     QVector<Partition> m_partitions;
     QStringList m_volumes;
     QStringList m_mounts;
-    std::function<void()> m_next;
-    bool m_failureIsFine = false;
-    bool m_running = false;
-    QMetaObject::Connection m_opConn;
-    std::shared_ptr<bool> m_waiting;
 };

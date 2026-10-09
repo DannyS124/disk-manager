@@ -73,6 +73,7 @@ add_library(diskforge-core STATIC
     src/isofs.cpp src/isofs.h
     src/filecopy.cpp src/filecopy.h
     src/isomode.cpp src/isomode.h
+    src/windowsusb.cpp src/windowsusb.h
     src/hostprocess.cpp src/hostprocess.h
     src/rescuestick.cpp src/rescuestick.h
     src/stickcheck.cpp src/stickcheck.h
@@ -89,7 +90,11 @@ add_library(diskforge-ui STATIC
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
     src/rescueusbdialog.cpp src/rescueusbdialog.h
+    src/udiskssteps.cpp src/udiskssteps.h
     src/usbprep.cpp src/usbprep.h
+    src/isomount.cpp src/isomount.h
+    src/windowsusbjob.cpp src/windowsusbjob.h
+    src/windowsusbdialog.cpp src/windowsusbdialog.h
     src/isocopy.cpp src/isocopy.h
     src/stickcheckdialog.cpp src/stickcheckdialog.h
     src/blockmapwidget.cpp src/blockmapwidget.h
@@ -138,7 +143,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_images.cpp tests/test_isomode.cpp tests/test_raid.cpp tests/test_lvm.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_images.cpp tests/test_isomode.cpp tests/test_windows.cpp tests/test_raid.cpp tests/test_lvm.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
@@ -198,6 +203,6 @@ set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "udisks2, polkitd, qt6-svg-plugins")
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "dosfstools, exfatprogs, ntfs-3g, btrfs-progs")
-set(CPACK_DEBIAN_PACKAGE_SUGGESTS "xfsprogs, bubblewrap, fwupd, udisks2-lvm2, snapper")
+set(CPACK_DEBIAN_PACKAGE_SUGGESTS "xfsprogs, bubblewrap, fwupd, udisks2-lvm2, snapper, wimtools")
 set(CPACK_STRIP_FILES ON)
 include(CPack)

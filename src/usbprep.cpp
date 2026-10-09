@@ -6,10 +6,7 @@
 #include "applog.h"
 #include "udisks.h"
 
-#include <QTimer>
-
 #include <algorithm>
-#include <utility>
 
 namespace {
 
@@ -28,8 +25,7 @@ QString fsName(const QString &fsType)
 
 UsbPrep::UsbPrep(UDisks *udisks, const QString &diskPath, const QString &tableType, const QVector<Partition> &partitions,
                  QObject *parent)
-    : QObject(parent)
-    , m_udisks(udisks)
+    : UDisksSteps(udisks, parent)
     , m_disk(diskPath)
     , m_table(tableType)
     , m_partitions(partitions)
@@ -42,70 +38,6 @@ void UsbPrep::start()
     m_mounts = QStringList(m_partitions.size(), QString());
     listen();
     makeTable();
-}
-
-void UsbPrep::listen()
-{
-    if (m_running)
-        return;
-    m_running = true;
-    m_opConn = connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
-        if (!m_running || !m_next)
-            return;
-        const std::function<void()> next = std::exchange(m_next, nullptr);
-        if (!ok && !m_failureIsFine)
-            return fail(message, true);
-        next();
-    });
-}
-
-void UsbPrep::fail(const QString &message, bool shownAlready)
-{
-    disconnect(m_opConn);
-    m_next = nullptr;
-    if (m_waiting)
-        *m_waiting = false;
-    m_running = false;
-    qCInfo(lcOps).noquote() << "Setting up" << m_disk << "failed:" << message;
-    emit failed(message, shownAlready);
-}
-
-void UsbPrep::expect(const std::function<void()> &next, bool failureIsFine)
-{
-    m_next = next;
-    m_failureIsFine = failureIsFine;
-}
-
-void UsbPrep::waitFor(const std::function<bool()> &ready, int seconds, const std::function<void()> &then,
-                      const QString &timeoutMessage)
-{
-    if (m_waiting)
-        *m_waiting = false;
-    auto alive = std::make_shared<bool>(true);
-    m_waiting = alive;
-    auto conn = std::make_shared<QMetaObject::Connection>();
-    auto *timer = new QTimer(this);
-    timer->setSingleShot(true);
-    auto check = [alive, ready, then, conn, timer] {
-        if (!*alive || !ready())
-            return;
-        *alive = false;
-        QObject::disconnect(*conn);
-        timer->stop();
-        timer->deleteLater();
-        then();
-    };
-    *conn = connect(m_udisks, &UDisks::changed, this, check);
-    connect(timer, &QTimer::timeout, this, [this, alive, conn, timer, timeoutMessage] {
-        timer->deleteLater();
-        if (!*alive)
-            return;
-        *alive = false;
-        disconnect(*conn);
-        fail(timeoutMessage);
-    });
-    timer->start(seconds * 1000);
-    QTimer::singleShot(0, this, check); // it may be true already
 }
 
 QString UsbPrep::mountPointOf(const QString &volumePath) const
@@ -234,8 +166,7 @@ void UsbPrep::unmountNext(int index)
     while (index < m_partitions.size() && (m_volumes[index].isEmpty() || mountPointOf(m_volumes[index]).isEmpty()))
         ++index;
     if (index >= m_partitions.size()) {
-        disconnect(m_opConn);
-        m_running = false;
+        stopListening();
         emit done(true, QString());
         return;
     }

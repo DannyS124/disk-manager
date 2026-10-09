@@ -15,11 +15,13 @@
 #include "imagesource.h"
 #include "isocopy.h"
 #include "imagewriter.h"
+#include "rescuestick.h"
 #include "surfacescan.h"
 #include "health.h"
 #include "systemd.h"
 #include "btrfscheck.h"
 #include "theme.h"
+#include "windowsusbdialog.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -904,6 +906,16 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     layout->addWidget(wrappingLabel(tr("<small>Works for Linux ISOs (Arch, Ubuntu, Fedora...), disk and SD card images, "
                                        "compressed or not. For Windows ISOs there's Make a Windows USB in the File menu.</small>")));
     layout->addWidget(m_warning);
+    m_toWindows = new QPushButton(tr("Make a Windows USB From It…"));
+    m_toWindows->setVisible(false);
+    connect(m_toWindows, &QPushButton::clicked, this, [this] {
+        const QString iso = m_image->text().trimmed();
+        const QString disk = m_targets->currentData().toString();
+        hide();
+        WindowsUsbDialog(m_udisks, disk, parentWidget(), iso).exec();
+        QDialog::reject();
+    });
+    layout->addWidget(m_toWindows, 0, Qt::AlignLeft);
     layout->addWidget(m_confirm);
     layout->addWidget(m_phase);
     layout->addWidget(m_progress);
@@ -1044,10 +1056,11 @@ void WriteImageDialog::updateState()
     }
     if (m_isIso && m_analysis.windows) {
         // Written as it is, a Windows ISO doesn't start from a USB stick.
-        warning += redText(tr("This is a Windows ISO: written as it is, it won't start a PC from a USB stick. Use Make a "
-                              "Windows USB in the File menu.")) + QStringLiteral("<br>");
+        warning += redText(tr("This is a Windows ISO: written as it is, it won't start a PC from a USB stick. Make a Windows "
+                              "USB does those.")) + QStringLiteral("<br>");
         ok = false;
     }
+    m_toWindows->setVisible(m_isIso && m_analysis.windows);
     if (d) {
         // Compressed and not saying its size: at least the file itself has to fit.
         quint64 needed = m_unpacked ? m_unpacked : quint64(image.size());

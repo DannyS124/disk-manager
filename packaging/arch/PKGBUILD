@@ -19,6 +19,7 @@ optdepends=(
   'bubblewrap: run look-only add-ons in a read-only sandbox'
   'fwupd: look for drive firmware updates in Disk Health'
   'udisks2-lvm2: show LVM volume groups'
+  'wimlib: Make a Windows USB from ISOs with an install.wim over 4 GB'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('fbb5e10ee13fb2701f1943d61794d4434657cef92b9cd0ee373b757e29a089b2')

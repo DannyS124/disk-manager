@@ -22,6 +22,8 @@
 #include "../src/stickcheckdialog.h"
 #include "../src/noticebar.h"
 #include "../src/typedialog.h"
+#include "../src/windowsusbjob.h"
+#include "../src/windowsusbdialog.h"
 #include "slowdisk.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
@@ -54,6 +56,7 @@
 #include <QInputDialog>
 #include <QMouseEvent>
 #include <QListWidget>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QShortcut>
 #include <QMenuBar>
@@ -63,6 +66,7 @@
 #include <QElapsedTimer>
 #include <QMessageBox>
 #include <QProcess>
+#include <QRandomGenerator>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -1669,40 +1673,190 @@ void isoCopy()
         }
         return fat && ext;
     }, 15000);
-    report(fat && fat->label == label && (fat->partFlags & 0x80) && ext && ext->label == QLatin1String("persistence"),
-           QStringLiteral("FAT32 with the ISO's label made fit, bootable, then ext4 called persistence"),
-           fat ? fat->label : QStringLiteral("no FAT"));
-    auto mounted = [&](const Volume *v) -> QString {
-        if (!v)
-            return {};
-        udisks.mount(*v);
+    const bool layout = fat && fat->label == label && (fat->partFlags & 0x80) && ext && ext->label == QLatin1String("persistence");
+    const QString fatLabel = fat ? fat->label : QStringLiteral("no FAT");
+    fat = ext = nullptr; // the next refresh replaces them
+    report(layout, QStringLiteral("FAT32 with the ISO's label made fit, bootable, then ext4 called persistence"), fatLabel);
+    // By object path: a refresh replaces the disk list, so Volume pointers don't last.
+    auto mounted = [&](const QString &fsType) -> QString {
+        udisks.refresh();
+        QString path;
+        for (const Volume &x : udisks.diskByPath(loopPath) ? udisks.diskByPath(loopPath)->volumes : QVector<Volume>()) {
+            if (x.fsType == fsType) {
+                path = x.objectPath;
+                udisks.mount(x);
+                break;
+            }
+        }
         QString root;
         waitUntil([&] {
             udisks.refresh();
             for (const Volume &x : udisks.diskByPath(loopPath) ? udisks.diskByPath(loopPath)->volumes : QVector<Volume>()) {
-                if (x.objectPath == v->objectPath && !x.mountPoints.isEmpty())
+                if (x.objectPath == path && !x.mountPoints.isEmpty())
                     root = x.mountPoints.first();
             }
             return !root.isEmpty();
         }, 15000);
         return root;
     };
-    const QString fatRoot = mounted(fat);
+    const QString fatRoot = mounted(QStringLiteral("vfat"));
     QFile cfg(fatRoot + QStringLiteral("/boot/grub/grub.cfg"));
     const QByteArray menu = cfg.open(QIODevice::ReadOnly) ? cfg.readAll() : QByteArray();
     report((!realIso.isEmpty() || menu.contains("--label MY_LIVE_1_0")) && menu.contains("boot=live persistence"),
            QStringLiteral("the boot menu points at the stick's label and turns persistence on"), QString::fromUtf8(menu).left(160));
     cfg.close();
-    udisks.refresh();
-    for (const Volume &v : udisks.diskByPath(loopPath)->volumes) {
-        if (v.fsType == QLatin1String("ext4"))
-            ext = &v;
-    }
-    const QString extRoot = mounted(ext);
+    const QString extRoot = mounted(QStringLiteral("ext4"));
     QFile conf(extRoot + QStringLiteral("/persistence.conf"));
     report(conf.open(QIODevice::ReadOnly) && conf.readAll() == "/ union\n", QStringLiteral("persistence.conf says to keep everything"));
     conf.close();
 
+    cleanUpLoop(udisks, loopPath);
+}
+
+// Make a Windows USB with a small fake Windows ISO (real WIMs made by wimlib), on a loop device
+// of the user's own: install.wim split into 1 MiB parts and checked, the answer file written,
+// and the ISO's own loop device gone at the end. DISKFORGE_TEST_WINDOWS_ISO uses a real
+// Windows ISO instead (split at the real size), and DISKFORGE_TEST_STICK keeps the stick's
+// image, to start Windows Setup from it in a VM.
+void windowsUsb()
+{
+    const QString realIso = qEnvironmentVariable("DISKFORGE_TEST_WINDOWS_ISO");
+    if (QStandardPaths::findExecutable(QStringLiteral("wimlib-imagex")).isEmpty() || QStandardPaths::findExecutable(QStringLiteral("xorriso")).isEmpty()) {
+        out << "SKIP  Make a Windows USB: wimlib or xorriso isn't installed" << Qt::endl;
+        return;
+    }
+    QTemporaryDir dir;
+    const QString tree = dir.filePath(QStringLiteral("tree"));
+    auto put = [&](const QString &path, const QByteArray &data) {
+        QDir().mkpath(QFileInfo(tree + QLatin1Char('/') + path).path());
+        QFile f(tree + QLatin1Char('/') + path);
+        if (f.open(QIODevice::WriteOnly))
+            f.write(data);
+    };
+    put(QStringLiteral("bootmgr.efi"), QByteArray(4096, 'b'));
+    put(QStringLiteral("efi/boot/bootx64.efi"), QByteArray(4096, 'e'));
+    put(QStringLiteral("setup.exe"), QByteArray(4096, 's'));
+    // Content that doesn't pack, so install.wim really is a few MiB.
+    QByteArray noise(3 * 1024 * 1024, Qt::Uninitialized);
+    QRandomGenerator rng(99);
+    for (qsizetype i = 0; i < noise.size(); i += 4)
+        *reinterpret_cast<quint32 *>(noise.data() + i) = rng.generate();
+    QDir().mkpath(dir.filePath(QStringLiteral("content")));
+    QFile n(dir.filePath(QStringLiteral("content/noise.bin")));
+    if (n.open(QIODevice::WriteOnly))
+        n.write(noise);
+    n.close();
+    QDir().mkpath(tree + QStringLiteral("/sources"));
+    sh(QStringLiteral("wimlib-imagex"), {QStringLiteral("capture"), dir.filePath(QStringLiteral("content")), tree + QStringLiteral("/sources/install.wim"),
+                                         QStringLiteral("Windows 11 Pro"), QStringLiteral("--compress=none")});
+    QString iso = realIso;
+    if (iso.isEmpty()) {
+        iso = dir.filePath(QStringLiteral("Win11_Test.iso"));
+        sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"), QStringLiteral("-joliet-long"),
+                                       QStringLiteral("-R"), QStringLiteral("-V"), QStringLiteral("CCCOMA_X64FRE_EN-US_DV9"), QStringLiteral("-o"), iso, tree});
+    }
+    QString image = qEnvironmentVariable("DISKFORGE_TEST_STICK");
+    if (image.isEmpty())
+        image = dir.filePath(QStringLiteral("stick.img"));
+    QFile::remove(image);
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), realIso.isEmpty() ? QStringLiteral("600M") : QStringLiteral("16G"), image});
+    QFile backing(image);
+    QString loopPath;
+    if (backing.open(QIODevice::ReadWrite)) {
+        QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                                           QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("LoopSetup"));
+        call << QVariant::fromValue(QDBusUnixFileDescriptor(backing.handle())) << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+        loopPath = QDBusConnection::systemBus().call(call, QDBus::Block, 30000).arguments().value(0).value<QDBusObjectPath>().path();
+        backing.close();
+    }
+    report(!loopPath.isEmpty(), QStringLiteral("Make a Windows USB: a loop device stands in for the stick"));
+    if (loopPath.isEmpty())
+        return;
+    UDisks udisks;
+    udisks.setInteractive(false);
+    const Disk *stick = nullptr;
+    waitUntil([&] {
+        udisks.refresh();
+        stick = udisks.diskByPath(loopPath);
+        return stick != nullptr;
+    }, 15000);
+    const QString device = stick ? stick->device : QString();
+
+    WindowsUsbDialog::allowLoopDevicesForTest = true;
+    const quint64 splitFrom = windowsusb::splitFrom;
+    if (realIso.isEmpty()) {
+        windowsusb::splitFrom = 1024 * 1024;
+        WindowsUsbJob::splitMiB = 1;
+    }
+    QStringList boxes;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            boxes << box->text();
+            box->accept();
+            return true;
+        }
+        return false;
+    };
+    {
+        WindowsUsbDialog dialog(&udisks, loopPath, nullptr, iso);
+        dialog.show();
+        auto *info = dialog.findChild<QLabel *>(QStringLiteral("isoInfo"));
+        waitUntil([&] { return info->text().contains(QLatin1String("Windows 11")) || info->text().contains(QLatin1String("isn't")); }, 30000);
+        report(info->text().contains(QLatin1String("Windows 11")) && info->text().contains(QLatin1String("split")),
+               QStringLiteral("the ISO is opened and read: the edition, and that install.wim gets split"), info->text().left(160));
+        dialog.findChild<QCheckBox *>(QStringLiteral("localUser"))->setChecked(true);
+        dialog.findChild<QLineEdit *>(QStringLiteral("userName"))->setText(QStringLiteral("Tester"));
+        // The stick list is filled in once the ISO is open.
+        waitUntil([&] {
+            auto *combo = dialog.findChild<QComboBox *>();
+            return combo && combo->findData(loopPath) >= 0;
+        }, 10000);
+        if (auto *combo = dialog.findChild<QComboBox *>())
+            combo->setCurrentIndex(combo->findData(loopPath));
+        dialog.findChild<QLineEdit *>(QStringLiteral("confirm"))->setText(shortDevice(device));
+        QPushButton *make = findButton(&dialog, QStringLiteral("Make the Windows USB"));
+        report(make && make->isEnabled(), QStringLiteral("typing the device name unlocks the button"));
+        if (make)
+            make->click();
+        waitUntil([&] { return !dialog.isVisible() || !boxes.isEmpty(); }, 3600000);
+        waitUntil([&] { return !dialog.isVisible(); }, 15000);
+        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The Windows USB is ready")), QStringLiteral("it says the stick is ready"),
+               boxes.join(QStringLiteral(" | ")).left(300));
+    }
+    windowsusb::splitFrom = splitFrom;
+    WindowsUsbJob::splitMiB = windowsusb::kSplitMiB;
+    WindowsUsbDialog::allowLoopDevicesForTest = false;
+
+    udisks.refresh();
+    bool isoStillOpen = false;
+    for (const Disk &d : udisks.disks())
+        isoStillOpen = isoStillOpen || d.backingFile == iso;
+    report(!isoStillOpen, QStringLiteral("the ISO is closed again"));
+
+    stick = udisks.diskByPath(loopPath);
+    const bool oneFat = stick && stick->volumes.size() == 1 && stick->volumes.first().fsType == QLatin1String("vfat");
+    QString root;
+    if (oneFat) {
+        udisks.mount(stick->volumes.first());
+        waitUntil([&] {
+            udisks.refresh();
+            const Disk *d = udisks.diskByPath(loopPath);
+            root = d && !d->volumes.isEmpty() ? d->volumes.first().mountPoints.value(0) : QString();
+            return !root.isEmpty();
+        }, 15000);
+    }
+    const QStringList parts = QDir(root + QStringLiteral("/sources")).entryList({QStringLiteral("install*.swm")}, QDir::Files);
+    report(oneFat && QFileInfo::exists(root + QStringLiteral("/bootmgr.efi"))
+               && !QFileInfo::exists(root + QStringLiteral("/sources/install.wim")) && parts.size() >= 2, // a file inside never spans parts
+           QStringLiteral("FAT32 with the ISO's files, install.wim as split parts instead"), parts.join(QLatin1Char(' ')));
+    const int verified = sh(QStringLiteral("wimlib-imagex"), {QStringLiteral("verify"), root + QStringLiteral("/sources/install.swm"),
+                                                              QStringLiteral("--ref=%1/sources/install*.swm").arg(root)});
+    report(verified == 0, QStringLiteral("and the parts check out"));
+    QFile answers(root + QStringLiteral("/autounattend.xml"));
+    const QByteArray xml = answers.open(QIODevice::ReadOnly) ? answers.readAll() : QByteArray();
+    report(xml.contains("BypassTPMCheck") && xml.contains("<Name>Tester</Name>"), QStringLiteral("autounattend.xml has the options"));
+    answers.close();
     cleanUpLoop(udisks, loopPath);
 }
 
@@ -1720,6 +1874,7 @@ int userScenarios()
     rescueUsb();
     stickCheck();
     isoCopy();
+    windowsUsb();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

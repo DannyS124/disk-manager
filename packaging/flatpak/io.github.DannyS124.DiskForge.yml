@@ -27,6 +27,23 @@ finish-args:
   - --filesystem=/run/media
   - --filesystem=/mnt
 modules:
+  # Make a Windows USB splits install.wim with wimlib-imagex, which the KDE runtime doesn't have.
+  # The same source Arch builds from: the v1.14.5 tag, pinned to its commit.
+  - name: wimlib
+    buildsystem: autotools
+    config-opts:
+      - --without-ntfs-3g
+      - --without-fuse
+      - --disable-static
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/man
+    sources:
+      - type: git
+        url: https://github.com/ebiggers/wimlib.git
+        tag: v1.14.5
+        commit: cd5e231c348c255ae5088873b5a66ee0eb96fa07
   - name: diskforge
     buildsystem: cmake-ninja
     config-opts:

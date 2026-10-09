@@ -22,8 +22,10 @@
 #include "health.h"
 #include "inspectdialog.h"
 #include "recoverdialog.h"
+#include "rescuestick.h"
 #include "rescueusbdialog.h"
 #include "stickcheckdialog.h"
+#include "windowsusbdialog.h"
 #include "jobui.h"
 #include "noticebar.h"
 #include "powerbox.h"
@@ -407,6 +409,12 @@ void MainWindow::createActions()
         RescueUsbDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
     });
 
+    m_windowsUsb = new QAction(themeIcon("windows", "media-flash"), tr("Make a W&indows USB…"), this);
+    connect(m_windowsUsb, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        WindowsUsbDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+    });
+
     m_wipe = new QAction(themeIcon("edit-clear-all", "edit-clear"), tr("&Wipe Disk…"), this);
     connect(m_wipe, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
@@ -562,7 +570,7 @@ void MainWindow::createActions()
     });
 
     QMenu *file = menuBar()->addMenu(tr("&File"));
-    file->addActions({m_openImage, m_writeImage, m_rescueUsb});
+    file->addActions({m_openImage, m_writeImage, m_windowsUsb, m_rescueUsb});
     file->addSeparator();
     file->addAction(m_refresh);
     file->addSeparator();
@@ -1100,6 +1108,7 @@ void MainWindow::updateActions()
     m_openImage->setEnabled(!busy);
     m_writeImage->setEnabled(!busy);
     m_rescueUsb->setEnabled(!busy);
+    m_windowsUsb->setEnabled(!busy);
     m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
     m_benchmark->setEnabled(d && !lvm && !busy);
     m_badSectors->setEnabled(d && !lvm && !d->isLoop && !busy);
@@ -1191,7 +1200,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
         add({m_backup, m_restore});
     add({m_clone, m_rescue});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
-        add({m_writeImage, m_rescueUsb, m_checkStick});
+        add({m_writeImage, m_windowsUsb, m_rescueUsb, m_checkStick});
     add({m_newTable, m_wipe, m_secureErase});
 
     const auto addonActions = m_addons.actionsFor(*d, v, sel.kind == DiskMap::Selection::Kind::Free);

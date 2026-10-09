@@ -111,6 +111,7 @@ private:
     QAction *m_detachImage = nullptr;
     QAction *m_writeImage = nullptr;
     QAction *m_rescueUsb = nullptr;
+    QAction *m_windowsUsb = nullptr;
     QAction *m_wipe = nullptr;
     QAction *m_health = nullptr;
     QAction *m_benchmark = nullptr;

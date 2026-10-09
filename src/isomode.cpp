@@ -124,7 +124,9 @@ isomode::Analysis isomode::analyse(const QVector<filecopy::Entry> &entries, cons
         else if (path == QLatin1String(".miso"))
             a.writeAsIs = tr("Manjaro only starts when it's written as it is.");
     }
-    a.windows = installWim && bootmgr;
+    // Microsoft's ISOs keep their files in UDF; the ISO 9660 side only has a README saying so.
+    const bool onlyReadme = entries.size() == 1 && entries.first().path.compare(QLatin1String("README.TXT"), Qt::CaseInsensitive) == 0;
+    a.windows = (installWim && bootmgr) || onlyReadme;
     if (isoLabel.startsWith(QLatin1String("Install-SUSE")) || isoLabel.startsWith(QLatin1String("Install-LEAP"))
         || isoLabel.startsWith(QLatin1String("openSUSE-Tumbleweed")))
         a.writeAsIs = tr("openSUSE only starts when it's written as it is.");

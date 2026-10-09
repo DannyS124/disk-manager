@@ -215,4 +215,5 @@ private:
     bool m_isIso = false;
     isomode::Analysis m_analysis;
     IsoCopy *m_isoCopy = nullptr;
+    QPushButton *m_toWindows = nullptr; // a Windows ISO: over to Make a Windows USB
 };

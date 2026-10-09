@@ -1,0 +1,197 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Make a Windows USB without Windows: the WIM header and its XML (with real WIMs made by
+// wimlib when it's there), the answer file for every mix of options, account names, keyboard
+// layouts, and recognizing a Windows ISO from its files.
+
+#include "testkit.h"
+
+#include "../src/windowsusb.h"
+
+#include <QDir>
+#include <QFile>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QXmlStreamReader>
+
+namespace {
+
+QByteArray utf16(const QString &text)
+{
+    QByteArray out("\xFF\xFE", 2);
+    out.append(reinterpret_cast<const char *>(text.utf16()), text.size() * 2);
+    return out;
+}
+
+const QString kXml = QStringLiteral(
+    "<WIM><TOTALBYTES>7578075168</TOTALBYTES>"
+    "<IMAGE INDEX=\"1\"><NAME>Windows 11 Home</NAME><WINDOWS><ARCH>9</ARCH><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR>"
+    "<BUILD>26200</BUILD><SPBUILD>6584</SPBUILD></VERSION></WINDOWS></IMAGE>"
+    "<IMAGE INDEX=\"2\"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><VERSION><BUILD>1</BUILD></VERSION></WINDOWS></IMAGE>"
+    "</WIM>");
+
+// Elements found in the answer file, as "pass/component/element" (and the text of a few).
+QStringList outline(const QByteArray &xml, bool *wellFormed)
+{
+    QStringList found;
+    QXmlStreamReader r(xml);
+    QString pass, comp;
+    while (!r.atEnd()) {
+        if (r.readNext() != QXmlStreamReader::StartElement)
+            continue;
+        const QString name = r.name().toString();
+        if (name == QLatin1String("settings"))
+            pass = r.attributes().value(QStringLiteral("pass")).toString();
+        else if (name == QLatin1String("component"))
+            comp = r.attributes().value(QStringLiteral("name")).toString();
+        else if (name == QLatin1String("Path") || name == QLatin1String("CommandLine") || name == QLatin1String("TimeZone")
+                 || name == QLatin1String("Name") || name == QLatin1String("InputLocale"))
+            found << pass + QLatin1Char('/') + comp + QLatin1Char('/') + name + QLatin1Char('=') + r.readElementText();
+        else
+            found << pass + QLatin1Char('/') + comp + QLatin1Char('/') + name;
+    }
+    *wellFormed = !r.hasError();
+    return found;
+}
+
+bool has(const QStringList &outline, const QString &part)
+{
+    return std::any_of(outline.cbegin(), outline.cend(), [&](const QString &line) { return line.contains(part); });
+}
+
+void wimHeader(const QString &dir)
+{
+    const windowsusb::WimInfo info = windowsusb::parseWimXml(utf16(kXml));
+    report(info.error.isEmpty() && info.name == QLatin1String("Windows 11 Home") && info.build == 26200 && info.arch == QLatin1String("amd64")
+               && info.images == 2,
+           QStringLiteral("a WIM's XML: the first image's name, build and architecture"), info.name);
+    report(!windowsusb::parseWimXml("<WIM><IMAGE").error.isEmpty() && !windowsusb::parseWimXml(QByteArray()).error.isEmpty(),
+           QStringLiteral("broken XML is turned down"));
+
+    // A header like the real one: the XML's place and size at offset 72.
+    const QByteArray xml = utf16(kXml);
+    QByteArray file(208, '\0');
+    file.replace(0, 8, QByteArray("MSWIM\0\0\0", 8));
+    for (int i = 0; i < 7; ++i)
+        file[72 + i] = char(quint64(xml.size()) >> (8 * i));
+    for (int i = 0; i < 8; ++i)
+        file[80 + i] = char(quint64(208) >> (8 * i));
+    file += xml;
+    QFile f(dir + QStringLiteral("/made.wim"));
+    if (f.open(QIODevice::WriteOnly))
+        f.write(file);
+    f.close();
+    report(windowsusb::readWim(f.fileName()).build == 26200, QStringLiteral("the XML is found from the WIM header"));
+    QFile junk(dir + QStringLiteral("/junk.wim"));
+    if (junk.open(QIODevice::WriteOnly))
+        junk.write(QByteArray(4096, 'j'));
+    junk.close();
+    report(!windowsusb::readWim(junk.fileName()).error.isEmpty(), QStringLiteral("a file that isn't a WIM says so"));
+
+    if (QStandardPaths::findExecutable(QStringLiteral("wimlib-imagex")).isEmpty()) {
+        out << "SKIP  wimlib isn't installed, so there's no real WIM to read" << Qt::endl;
+        return;
+    }
+    QDir().mkpath(dir + QStringLiteral("/content"));
+    QFile c(dir + QStringLiteral("/content/hello.txt"));
+    if (c.open(QIODevice::WriteOnly))
+        c.write("hello");
+    c.close();
+    int code = -1;
+    sh(QStringLiteral("wimlib-imagex"), {QStringLiteral("capture"), dir + QStringLiteral("/content"), dir + QStringLiteral("/real.wim"),
+                                         QStringLiteral("Windows 11 Test")}, &code);
+    const windowsusb::WimInfo real = windowsusb::readWim(dir + QStringLiteral("/real.wim"));
+    report(code == 0 && real.error.isEmpty() && real.name == QLatin1String("Windows 11 Test"), QStringLiteral("a real WIM made by wimlib is read"), real.error);
+}
+
+void answerFile()
+{
+    windowsusb::Options all;
+    all.localUser = QStringLiteral("Danny");
+    all.sameRegion = true;
+    all.userLocale = QStringLiteral("en-US");
+    all.inputLocale = QStringLiteral("0409:00000409");
+    all.timeZone = QStringLiteral("Central Standard Time");
+    all.noBitLocker = true;
+    bool ok = false;
+    const QStringList everything = outline(windowsusb::unattendXml(all, QStringLiteral("amd64")), &ok);
+    report(ok, QStringLiteral("the answer file is well-formed XML"));
+    report(has(everything, QStringLiteral("windowsPE/Microsoft-Windows-Setup/Path=reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassTPMCheck"))
+               && has(everything, QStringLiteral("BypassSecureBootCheck")) && has(everything, QStringLiteral("BypassRAMCheck")),
+           QStringLiteral("no TPM, Secure Boot or RAM check: LabConfig, before Setup checks the PC"));
+    report(has(everything, QStringLiteral("specialize/Microsoft-Windows-Deployment/Path=reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\OOBE /v BypassNRO")),
+           QStringLiteral("no Microsoft account: BypassNRO"));
+    report(has(everything, QStringLiteral("oobeSystem/Microsoft-Windows-Shell-Setup/Name=Danny"))
+               && has(everything, QStringLiteral("CommandLine=net user \"Danny\" /logonpasswordchg:yes"))
+               && has(everything, QStringLiteral("HideOnlineAccountScreens")),
+           QStringLiteral("a local account, asked for a password at the first sign-in"));
+    report(has(everything, QStringLiteral("ProtectYourPC")) && has(everything, QStringLiteral("TimeZone=Central Standard Time"))
+               && has(everything, QStringLiteral("InputLocale=0409:00000409")) && !has(everything, QStringLiteral("UILanguage")),
+           QStringLiteral("privacy, time zone and keyboard, but not the display language (the ISO may not have it)"));
+    report(has(everything, QStringLiteral("PreventDeviceEncryption")) && has(everything, QStringLiteral("TCGSecurityActivationDisabled")),
+           QStringLiteral("no automatic BitLocker"));
+
+    windowsusb::Options none;
+    none.skipChecks = none.noOnlineAccount = none.skipPrivacy = false;
+    report(windowsusb::unattendXml(none, QStringLiteral("amd64")).isEmpty(), QStringLiteral("no options: no answer file at all"));
+    windowsusb::Options onlyChecks = none;
+    onlyChecks.skipChecks = true;
+    const QStringList checks = outline(windowsusb::unattendXml(onlyChecks, QStringLiteral("arm64")), &ok);
+    report(ok && has(checks, QStringLiteral("BypassTPMCheck")) && !has(checks, QStringLiteral("oobeSystem")) && !has(checks, QStringLiteral("specialize")),
+           QStringLiteral("one option on: only what it needs"));
+    windowsusb::Options tricky = none;
+    tricky.localUser = QStringLiteral("A<b>&\"c");
+    report(outline(windowsusb::unattendXml(tricky, QStringLiteral("amd64")), &ok).size() > 0 && ok,
+           QStringLiteral("odd characters in a name can't break the XML"));
+}
+
+void names()
+{
+    QString error;
+    report(windowsusb::userName(QStringLiteral("  Danny S  "), &error) == QLatin1String("Danny S"), QStringLiteral("a plain name stays as it is"));
+    report(windowsusb::userName(QStringLiteral("a/b\\c:d"), &error) == QLatin1String("a_b_c_d"), QStringLiteral("characters Windows refuses become _"));
+    report(windowsusb::userName(QStringLiteral("abcdefghijklmnopqrstuvwxyz"), &error).size() == 20, QStringLiteral("20 characters at most"));
+    error.clear();
+    report(windowsusb::userName(QStringLiteral("Administrator"), &error).isEmpty() && !error.isEmpty()
+               && windowsusb::userName(QStringLiteral("guest"), &error).isEmpty() && windowsusb::userName(QStringLiteral("  "), &error).isEmpty(),
+           QStringLiteral("names Windows keeps for itself, or none, are refused"), error);
+    report(windowsusb::inputLocaleFor(QStringLiteral("us")) == QLatin1String("0409:00000409")
+               && windowsusb::inputLocaleFor(QStringLiteral("de,us")) == QLatin1String("0407:00000407")
+               && windowsusb::inputLocaleFor(QStringLiteral("klingon")).isEmpty(),
+           QStringLiteral("keyboard layouts: the first one counts, unknown ones are left to Windows"));
+}
+
+void recognizing(const QString &dir)
+{
+    // A tree like a mounted Windows ISO, with the capitals it really has.
+    const QString root = dir + QStringLiteral("/winiso");
+    QDir().mkpath(root + QStringLiteral("/Sources"));
+    QDir().mkpath(root + QStringLiteral("/EFI/Boot"));
+    for (const QString &file : {QStringLiteral("bootmgr.efi"), QStringLiteral("EFI/Boot/bootx64.efi"), QStringLiteral("setup.exe")}) {
+        QFile f(root + QLatin1Char('/') + file);
+        if (f.open(QIODevice::WriteOnly))
+            f.write("x");
+    }
+    QFile::copy(dir + QStringLiteral("/made.wim"), root + QStringLiteral("/Sources/Install.wim"));
+    const windowsusb::Info info = windowsusb::inspect(root);
+    report(info.windows && info.install == QLatin1String("Sources/Install.wim") && info.wim.build == 26200 && info.windows11() && !info.needsSplit(),
+           QStringLiteral("a Windows ISO is recognized from its files, whatever their case"), info.install);
+    QFile::remove(root + QStringLiteral("/bootmgr.efi"));
+    report(!windowsusb::inspect(root).windows, QStringLiteral("without its boot files it isn't one"));
+    windowsusb::Info big;
+    big.installSize = 4ULL * 1024 * 1024 * 1024;
+    report(big.needsSplit() && windowsusb::kSplitMiB * 1024ULL * 1024 < 4ULL * 1024 * 1024 * 1024,
+           QStringLiteral("install.wim of 4 GB or more is split, into parts FAT32 can hold"));
+}
+
+} // namespace
+
+void windowsTests()
+{
+    QTemporaryDir dir;
+    wimHeader(dir.path());
+    answerFile();
+    names();
+    recognizing(dir.path());
+}

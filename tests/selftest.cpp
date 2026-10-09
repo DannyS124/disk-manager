@@ -925,6 +925,8 @@ int main(int argc, char *argv[])
         imageTests();
     } else if (args.contains(QStringLiteral("--isomode"))) {
         isoModeTests();
+    } else if (args.contains(QStringLiteral("--windows"))) {
+        windowsTests();
     } else if (args.contains(QStringLiteral("--raid"))) {
         if (needsRoot("--raid"))
             return 2;

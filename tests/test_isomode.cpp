@@ -43,6 +43,8 @@ void analysis()
                                                                QStringLiteral("sources/install.wim")}), QStringLiteral("CCCOMA_X64FRE_EN-US_DV9"));
     report(!windows.canCopy() && windows.windows && windows.whyNot().contains(QLatin1String("Make a Windows USB")),
            QStringLiteral("a Windows ISO is sent to Make a Windows USB"));
+    const isomode::Analysis udf = isomode::analyse(entries({QStringLiteral("README.TXT")}), QStringLiteral("CCCOMA_X64FRE_EN-US_DV9"));
+    report(udf.windows, QStringLiteral("so is one that only shows a README (Microsoft's keep their files in UDF)"));
     const isomode::Analysis bios = isomode::analyse(entries({QStringLiteral("isolinux/isolinux.bin"), QStringLiteral("live/vmlinuz")}), QStringLiteral("OLD"));
     report(!bios.canCopy() && !bios.whyNot().isEmpty(), QStringLiteral("one without UEFI files has to be written as it is"));
     const isomode::Analysis proxmox = isomode::analyse(entries({QStringLiteral("EFI/BOOT/BOOTX64.EFI"), QStringLiteral("proxmox/")}), QStringLiteral("PVE"));
