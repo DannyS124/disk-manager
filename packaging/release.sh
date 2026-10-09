@@ -85,18 +85,19 @@ case "$cmd" in
     for suite in guard addons gpt copy usage backup rescuemap cleanup catalog fuzz; do
         run_tests $suite ./build/diskforge-selftest --$suite
     done
-    # The same again with AddressSanitizer and UBSan, which catch memory errors that don't crash.
-    cmake -S . -B build-asan -DDISKFORGE_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug >/dev/null
-    cmake --build build-asan -j"$(nproc)" --target diskforge-selftest >/dev/null
-    for suite in addons gpt copy usage backup rescuemap catalog fuzz; do
-        run_tests asan-$suite env ASAN_OPTIONS=detect_leaks=0 ./build-asan/diskforge-selftest --$suite
-    done
     # As root: test devices made with losetup and dmsetup.
     run_tests disks sudo ./build/diskforge-selftest
     for suite in badsectors blockmap rescue clone btrfs optimize; do
         run_tests $suite sudo ./build/diskforge-selftest --$suite
     done
     run_tests window sudo env QT_QPA_PLATFORM=offscreen ./build/diskforge-uitest
+    # The file-based suites again with AddressSanitizer and UBSan, which catch memory errors
+    # that don't crash. Last, because building it takes a while and sudo's login runs out.
+    cmake -S . -B build-asan -DDISKFORGE_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug >/dev/null
+    cmake --build build-asan -j"$(nproc)" --target diskforge-selftest >/dev/null
+    for suite in addons gpt copy usage backup rescuemap catalog fuzz; do
+        run_tests asan-$suite env ASAN_OPTIONS=detect_leaks=0 ./build-asan/diskforge-selftest --$suite
+    done
 
     # Local tag only. Restaging after a fix moves it to the new commit.
     git tag -d "v$v" >/dev/null 2>&1 || true

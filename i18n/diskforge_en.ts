@@ -104,7 +104,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/addons.cpp" line="660"/>
+        <location filename="../src/addons.cpp" line="661"/>
         <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
         <translation>
             <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
