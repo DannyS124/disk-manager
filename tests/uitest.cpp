@@ -1460,8 +1460,8 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
 
 // Make a Rescue USB on a loop device of the user's own (UDisks lets you set those up and
 // change them without a password), through the dialog like a user would.
-// DISKFORGE_TEST_RESCUE_ISO uses a real rescue image instead of a small made-up one, and
-// DISKFORGE_TEST_STICK keeps the stick's image file afterwards, to boot it in a VM.
+// DISKFORGE_TEST_RESCUE_ISO uses a real rescue image instead of a small made-up one, and with
+// it DISKFORGE_TEST_STICK keeps the stick's image file afterwards, to boot it in a VM.
 void rescueUsb()
 {
     QTemporaryDir dir;
@@ -1491,7 +1491,8 @@ void rescueUsb()
             return;
         }
     }
-    QString stickImage = qEnvironmentVariable("DISKFORGE_TEST_STICK");
+    // Only with a real image: the other scenarios would make their own sticks over it.
+    QString stickImage = qEnvironmentVariable("DISKFORGE_TEST_RESCUE_ISO").isEmpty() ? QString() : qEnvironmentVariable("DISKFORGE_TEST_STICK");
     if (stickImage.isEmpty())
         stickImage = dir.filePath(QStringLiteral("stick.img"));
     const bool big = QFileInfo(iso).size() > 100 * 1024 * 1024;
@@ -1708,7 +1709,7 @@ void isoCopy()
         }
     }
     const QString label = isomode::fatLabel(filecopy::openIso(iso)->label());
-    QString image = qEnvironmentVariable("DISKFORGE_TEST_STICK");
+    QString image = realIso.isEmpty() ? QString() : qEnvironmentVariable("DISKFORGE_TEST_STICK");
     if (image.isEmpty())
         image = dir.filePath(QStringLiteral("stick.img"));
     QFile::remove(image);
@@ -1864,7 +1865,7 @@ void windowsUsb()
         sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"), QStringLiteral("-joliet-long"),
                                        QStringLiteral("-R"), QStringLiteral("-V"), QStringLiteral("CCCOMA_X64FRE_EN-US_DV9"), QStringLiteral("-o"), iso, tree});
     }
-    QString image = qEnvironmentVariable("DISKFORGE_TEST_STICK");
+    QString image = realIso.isEmpty() ? QString() : qEnvironmentVariable("DISKFORGE_TEST_STICK");
     if (image.isEmpty())
         image = dir.filePath(QStringLiteral("stick.img"));
     QFile::remove(image);
