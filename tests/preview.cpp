@@ -19,6 +19,7 @@
 #include "../src/systemtools.h"
 #include "../src/erasedialog.h"
 #include "../src/dialogs.h"
+#include "../src/diskmap.h"
 #include "../src/theme.h"
 #include "../src/thememaker.h"
 #include "../src/tools.h"
@@ -112,6 +113,37 @@ int main(int argc, char *argv[])
                 save(typeDialog, out.filePath(QStringLiteral("type-flags.png")));
                 break;
             }
+        }
+        {
+            // Locks on encrypted partitions, on a made-up drive: one locked, one unlocked.
+            Disk fake;
+            fake.device = QStringLiteral("/dev/sdx");
+            fake.blockPath = QStringLiteral("/preview/sdx");
+            fake.model = QStringLiteral("Example Drive");
+            fake.size = 100ULL * 1000 * 1000 * 1000;
+            fake.tableType = QStringLiteral("gpt");
+            Volume locked;
+            locked.objectPath = QStringLiteral("/preview/sdx1");
+            locked.device = QStringLiteral("/dev/sdx1");
+            locked.offset = 1024 * 1024;
+            locked.size = 40ULL * 1000 * 1000 * 1000;
+            locked.fsType = QStringLiteral("crypto_LUKS");
+            locked.encrypted = true;
+            Volume open = locked;
+            open.objectPath = QStringLiteral("/preview/sdx2");
+            open.device = QStringLiteral("/dev/sdx2");
+            open.offset = locked.offset + locked.size;
+            open.size = 50ULL * 1000 * 1000 * 1000;
+            open.cleartextPath = QStringLiteral("/preview/dm-0");
+            open.cleartextDevice = QStringLiteral("/dev/dm-0");
+            open.cleartextFsType = QStringLiteral("ext4");
+            open.cleartextHasFilesystem = true;
+            open.label = QStringLiteral("Home");
+            fake.volumes = {locked, open};
+            DiskMap map;
+            map.setDisks({fake});
+            map.resize(900, map.sizeHint().height());
+            save(map, out.filePath(QStringLiteral("map-locks.png")));
         }
         for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);

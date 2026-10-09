@@ -38,6 +38,7 @@ QString diskIconName(const Disk &d)
 DiskMap::DiskMap(QWidget *parent)
     : QWidget(parent)
 {
+    setMouseTracking(true); // the hand over a lock
     connect(&Theme::instance(), &Theme::changed, this, qOverload<>(&QWidget::update));
     setMinimumWidth(kHeaderWidth + 3 * kMinSegment);
     setFocusPolicy(Qt::ClickFocus);
@@ -204,6 +205,47 @@ void DiskMap::mousePressEvent(QMouseEvent *event)
     m_sel = hitTest(event->position().toPoint(), &row, &segment) ? selectionAt(row, segment) : Selection{};
     update();
     emit selectionChanged();
+    // The lock: selected first, so Unlock and Lock work on that partition.
+    if (event->button() == Qt::LeftButton && lockAt(event->position().toPoint(), &row, &segment))
+        emit lockClicked(m_disks[row].volumes[m_rows[row].segments[segment].span.volume].objectPath);
+}
+
+void DiskMap::mouseMoveEvent(QMouseEvent *event)
+{
+    int row, segment;
+    if (lockAt(event->position().toPoint(), &row, &segment))
+        setCursor(Qt::PointingHandCursor);
+    else
+        unsetCursor();
+    QWidget::mouseMoveEvent(event);
+}
+
+QRect DiskMap::lockRectAt(int row, int segment) const
+{
+    const Span &span = m_rows[row].segments[segment].span;
+    if (span.isFree() || !m_disks[row].volumes[span.volume].encrypted)
+        return {};
+    const QRect r = m_rows[row].segments[segment].rect.adjusted(segment ? 2 : 0, 0, 0, 0);
+    if (r.width() < 56)
+        return {};
+    return QRect(r.right() - 23, r.top() + kStrip + 5, 18, 18);
+}
+
+bool DiskMap::lockAt(const QPoint &pos, int *row, int *segment) const
+{
+    return hitTest(pos, row, segment) && *segment >= 0 && lockRectAt(*row, *segment).contains(pos);
+}
+
+QRect DiskMap::lockRect(const QString &objectPath) const
+{
+    for (int r = 0; r < m_rows.size(); ++r) {
+        for (int s = 0; s < m_rows[r].segments.size(); ++s) {
+            const Span &span = m_rows[r].segments[s].span;
+            if (!span.isFree() && m_disks[r].volumes[span.volume].objectPath == objectPath)
+                return lockRectAt(r, s);
+        }
+    }
+    return {};
 }
 
 void DiskMap::mouseDoubleClickEvent(QMouseEvent *event)
@@ -225,7 +267,12 @@ bool DiskMap::event(QEvent *event)
     if (event->type() == QEvent::ToolTip) {
         auto *help = static_cast<QHelpEvent *>(event);
         int row, segment;
-        if (hitTest(help->pos(), &row, &segment))
+        if (lockAt(help->pos(), &row, &segment)) {
+            const Volume &v = m_disks[row].volumes[m_rows[row].segments[segment].span.volume];
+            const QString text = v.cleartextPath.isEmpty() ? tr("Encrypted and locked. Click to unlock.")
+                                                           : tr("Encrypted, unlocked as %1. Click to lock.").arg(shortDevice(v.cleartextDevice));
+            QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(text, Qt::WhiteSpaceNormal), this);
+        } else if (hitTest(help->pos(), &row, &segment))
             QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(toolTipAt(row, segment), Qt::WhiteSpaceNormal), this);
         else
             QToolTip::hideText();
@@ -348,8 +395,11 @@ void DiskMap::paintSegment(QPainter &p, int row, int segment) const
 
     p.fillRect(r, pal.color(QPalette::Base));
     const Theme &theme = Theme::instance();
+    const bool locked = !span.isFree() && d.volumes[span.volume].encrypted && d.volumes[span.volume].cleartextPath.isEmpty();
     p.fillRect(QRect(r.left(), r.top(), r.width(), kStrip),
-               span.isFree() ? theme.color(Theme::Role::Free) : theme.partitionColor(d.volumes[span.volume].effectiveFsType()));
+               span.isFree() ? theme.color(Theme::Role::Free)
+               : locked      ? theme.color(Theme::Role::Encrypted)
+                             : theme.partitionColor(d.volumes[span.volume].effectiveFsType()));
     const QRect body = r.adjusted(0, kStrip, 0, 0);
     if (selected) {
         QColor hatch = pal.color(QPalette::Highlight);
@@ -371,7 +421,8 @@ void DiskMap::paintSegment(QPainter &p, int row, int segment) const
               << volumeStatus(v, true);
     }
 
-    const QRect text = body.adjusted(6, 5, -6, -4);
+    const QRect lock = lockRectAt(row, segment);
+    const QRect text = body.adjusted(6, 5, lock.isNull() ? -6 : -6 - lock.width() - 4, -4);
     p.save();
     p.setClipRect(text);
     p.setPen(pal.color(QPalette::Text));
@@ -387,4 +438,29 @@ void DiskMap::paintSegment(QPainter &p, int row, int segment) const
         y += fm.height();
     }
     p.restore();
+
+    if (!lock.isNull()) {
+        // A theme's lock icon when there is one, otherwise a small drawn padlock.
+        const QString icon = locked ? QStringLiteral("object-locked") : QStringLiteral("object-unlocked");
+        if (QIcon::hasThemeIcon(icon)) {
+            QIcon::fromTheme(icon).paint(&p, lock);
+        } else {
+            p.save();
+            p.setRenderHint(QPainter::Antialiasing);
+            const QColor ink = pal.color(QPalette::Text);
+            const QRectF box(lock.left() + 3, lock.top() + 8, lock.width() - 6, lock.height() - 9);
+            p.setPen(QPen(ink, 1.6));
+            p.setBrush(Qt::NoBrush);
+            const qreal lift = locked ? 0 : 3; // an open shackle sits higher, off the right side
+            const QRectF shackle(box.left() + 2.5, lock.top() + 2 - lift, box.width() - 5, 10);
+            p.drawArc(shackle, 0, 180 * 16);
+            p.drawLine(QPointF(shackle.left(), shackle.center().y()), QPointF(shackle.left(), box.top()));
+            if (locked)
+                p.drawLine(QPointF(shackle.right(), shackle.center().y()), QPointF(shackle.right(), box.top()));
+            p.setPen(Qt::NoPen);
+            p.setBrush(ink);
+            p.drawRoundedRect(box, 2, 2);
+            p.restore();
+        }
+    }
 }

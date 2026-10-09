@@ -12,6 +12,7 @@
 #include "../src/addonoutput.h"
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
+#include "../src/diskmap.h"
 #include "../src/noticebar.h"
 #include "../src/typedialog.h"
 #include "slowdisk.h"
@@ -38,6 +39,8 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QToolBar>
+#include <QInputDialog>
+#include <QMouseEvent>
 #include <QStatusBar>
 #include <QShortcut>
 #include <QMenuBar>
@@ -890,6 +893,95 @@ void typeAndFlags()
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
 }
 
+// The lock on an encrypted partition: clicking it asks for the passphrase and unlocks,
+// clicking it again locks. A LUKS partition on a loop device.
+void lockInMap()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("luks.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("64M"), image});
+    QProcess sfdisk;
+    sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("-q"), image});
+    sfdisk.waitForStarted();
+    sfdisk.write("label: gpt\n,,L\n");
+    sfdisk.closeWriteChannel();
+    sfdisk.waitForFinished();
+    QString loop;
+    sh(QStringLiteral("losetup"), {QStringLiteral("-fP"), QStringLiteral("--show"), image}, &loop);
+    loop = loop.trimmed();
+    const QString part = loop + QStringLiteral("p1");
+    QThread::msleep(500);
+    QProcess luks;
+    luks.start(QStringLiteral("cryptsetup"), {QStringLiteral("luksFormat"), QStringLiteral("--batch-mode"), QStringLiteral("--type"), QStringLiteral("luks2"),
+                                              QStringLiteral("--pbkdf"), QStringLiteral("pbkdf2"), QStringLiteral("--pbkdf-force-iterations"), QStringLiteral("1000"),
+                                              QStringLiteral("--key-file=-"), part});
+    luks.waitForStarted();
+    luks.write("diskforge-test");
+    luks.closeWriteChannel();
+    luks.waitForFinished(60000);
+    report(luks.exitCode() == 0, QStringLiteral("make a LUKS test partition"), QString::fromLocal8Bit(luks.readAllStandardError()).trimmed());
+
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.resize(1200, 800);
+    window.show();
+    auto volume = [&]() -> const Volume * {
+        for (const Disk &d : udisks.disks()) {
+            for (const Volume &v : d.volumes) {
+                if (v.device == part)
+                    return &v;
+            }
+        }
+        return nullptr;
+    };
+    waitUntil([&] {
+        udisks.refresh();
+        return volume() && volume()->encrypted;
+    }, 15000);
+    auto *map = window.findChild<DiskMap *>();
+    const QString path = volume() ? volume()->objectPath : QString();
+    auto clickLock = [map, &path] {
+        const QPoint at = map->lockRect(path).center();
+        QMouseEvent press(QEvent::MouseButtonPress, at, map->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(map, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, at, map->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(map, &release);
+    };
+    report(map && !path.isEmpty() && !map->lockRect(path).isNull(), QStringLiteral("an encrypted partition has a lock on it in the map"));
+    if (!map || path.isEmpty() || map->lockRect(path).isNull()) {
+        sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+        return;
+    }
+    QString asked;
+    Answerer answerer;
+    answerer.answer = [&asked](QWidget *modal) {
+        if (auto *input = qobject_cast<QInputDialog *>(modal)) {
+            asked = input->windowTitle();
+            input->setTextValue(QStringLiteral("diskforge-test"));
+            input->accept();
+            return true;
+        }
+        return false;
+    };
+    clickLock();
+    // UDisks shows the unlocked side a moment before it answers; wait for both.
+    waitUntil([&] {
+        udisks.refresh();
+        return volume() && !volume()->cleartextPath.isEmpty() && !udisks.isBusy();
+    }, 20000);
+    report(asked.startsWith(QLatin1String("Unlock")) && volume() && !volume()->cleartextPath.isEmpty(),
+           QStringLiteral("clicking the lock asks for the passphrase and unlocks it"), asked);
+    clickLock();
+    waitUntil([&] {
+        udisks.refresh();
+        return volume() && volume()->cleartextPath.isEmpty();
+    }, 20000);
+    report(volume() && volume()->cleartextPath.isEmpty() && answerer.boxes.isEmpty(), QStringLiteral("clicking it again locks it"),
+           answerer.boxes.join(QStringLiteral(" / ")));
+    sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+}
+
 // Job bars, with jobs faked through the test hook: a firmware erase says it can't be
 // stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
 // end, the bars go.
@@ -1054,6 +1146,7 @@ int main(int argc, char *argv[])
     backupAndRestore(window, udisks, dir);
     stopWipe();
     typeAndFlags();
+    lockInMap();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

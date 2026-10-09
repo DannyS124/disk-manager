@@ -199,6 +199,20 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     });
     connect(m_map, &DiskMap::contextMenuRequested, this, &MainWindow::showContextMenu);
     connect(m_map, &DiskMap::activated, this, &MainWindow::activate);
+    connect(m_map, &DiskMap::lockClicked, this, [this](const QString &path) {
+        // Queued: Unlock asks for the passphrase, and the click is still being handled.
+        QTimer::singleShot(0, this, [this, path] {
+            const Volume *v = volumeByPath(path);
+            if (!v || !v->encrypted)
+                return;
+            QAction *action = v->cleartextPath.isEmpty() ? m_unlock : m_lock;
+            if (action->isEnabled())
+                action->trigger();
+            else
+                statusBar()->showMessage(action == m_lock ? tr("%1 can't be locked right now.").arg(shortDevice(v->device))
+                                                          : tr("%1 can't be unlocked right now.").arg(shortDevice(v->device)), 8000);
+        });
+    });
 
     rebuild();
     refreshAddons();
@@ -310,8 +324,9 @@ void MainWindow::createActions()
             return;
         const QString path = v->objectPath;
         bool ok = false;
+        // The label comes from the drive: shown as plain text.
         const QString pass = QInputDialog::getText(this, tr("Unlock %1").arg(shortDevice(v->device)),
-                                                   tr("Passphrase for %1:").arg(volumeTitle(*v)), QLineEdit::Password, {}, &ok);
+                                                   Qt::convertFromPlainText(tr("Passphrase for %1:").arg(volumeTitle(*v))), QLineEdit::Password, {}, &ok);
         if (!ok || pass.isEmpty())
             return;
         if (const Volume *fresh = volumeByPath(path))

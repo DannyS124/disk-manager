@@ -32,17 +32,21 @@ public:
 
 
     QSize sizeHint() const override;
+    // Where the lock on an encrypted partition is drawn (empty when there's none or no room).
+    QRect lockRect(const QString &objectPath) const;
 
 signals:
     void selectionChanged();
     void contextMenuRequested(const QPoint &globalPos);
     void activated();
+    void lockClicked(const QString &objectPath); // the lock on an encrypted partition
 
 protected:
     bool event(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
 
@@ -61,6 +65,8 @@ private:
     Selection selectionAt(int row, int segment) const;
     bool isSelected(int row, int segment) const;
     QString toolTipAt(int row, int segment) const;
+    QRect lockRectAt(int row, int segment) const;
+    bool lockAt(const QPoint &pos, int *row, int *segment) const;
     void paintHeader(QPainter &p, int row) const;
     void paintSegment(QPainter &p, int row, int segment) const;
 
