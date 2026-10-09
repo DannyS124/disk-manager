@@ -17,6 +17,7 @@
 #include "../src/partrecover.h"
 #include "../src/recoverdialog.h"
 #include "../src/stickcheckdialog.h"
+#include "../src/windowsusbdialog.h"
 #include "../src/powerbox.h"
 #include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
@@ -42,6 +43,7 @@
 #include <QTextStream>
 #include <QFile>
 #include <QProcess>
+#include <QRadioButton>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QThread>
@@ -431,6 +433,26 @@ void previewTools(UDisks &udisks, const QDir &out)
         if (auto *checksum = write.findChild<QLineEdit *>(QStringLiteral("checksum")))
             checksum->setText(QStringLiteral("sha256:0123abcd"));
         save(write, out.filePath(QStringLiteral("write-image-xz.png")));
+        // A Linux ISO with its files copied and persistence, the way an Ubuntu one would be.
+        const QString tree = packed.filePath(QStringLiteral("ubuntu"));
+        for (const char *file : {"EFI/BOOT/BOOTX64.EFI", "casper/vmlinuz", "casper/filesystem.squashfs", "boot/grub/grub.cfg"}) {
+            QDir().mkpath(QFileInfo(tree + QLatin1Char('/') + QLatin1String(file)).path());
+            QFile f(tree + QLatin1Char('/') + QLatin1String(file));
+            if (f.open(QIODevice::WriteOnly))
+                f.write(QByteArray(64 * 1024, 'u'));
+        }
+        const QString iso = packed.filePath(QStringLiteral("ubuntu-24.04.3-desktop-amd64.iso"));
+        QProcess::execute(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"), QStringLiteral("-R"),
+                                                      QStringLiteral("-V"), QStringLiteral("Ubuntu 24.04.3 LTS amd64"), QStringLiteral("-o"), iso, tree});
+        if (auto *image = write.findChild<QLineEdit *>(QStringLiteral("image")))
+            image->setText(iso);
+        if (auto *checksum = write.findChild<QLineEdit *>(QStringLiteral("checksum")))
+            checksum->clear();
+        if (auto *copy = write.findChild<QRadioButton *>(QStringLiteral("copyMode")))
+            copy->click();
+        if (auto *persist = write.findChild<QCheckBox *>(QStringLiteral("persist")))
+            persist->setChecked(true);
+        save(write, out.filePath(QStringLiteral("write-image-copy.png")));
         StickCheckDialog stickCheck(&udisks, QString());
         save(stickCheck, out.filePath(QStringLiteral("check-stick.png")));
         stickcheck::Result fake;
@@ -448,6 +470,24 @@ void previewTools(UDisks &udisks, const QDir &out)
         break;
     }
     previewCopyTools(udisks, out);
+
+    // Make a Windows USB, with Microsoft's ISO when there's one in Downloads (UDisks mounts it
+    // without a password; it's closed again afterwards).
+    {
+        WindowsUsbDialog windows(&udisks, QString());
+        windows.show();
+        auto *isoInfo = windows.findChild<QLabel *>(QStringLiteral("isoInfo"));
+        QElapsedTimer waited;
+        waited.start();
+        while (!WindowsUsbDialog::findIso().isEmpty() && isoInfo && !isoInfo->text().contains(QLatin1String("build")) && waited.elapsed() < 30000)
+            QApplication::processEvents(QEventLoop::AllEvents, 100);
+        save(windows, out.filePath(QStringLiteral("windows-usb.png")));
+    }
+    // The dialog closes the ISO when it goes; give that a moment before quitting.
+    QElapsedTimer closing;
+    closing.start();
+    while (closing.elapsed() < 3000)
+        QApplication::processEvents(QEventLoop::AllEvents, 100);
 
     // Secure erase: a frozen ATA drive and an NVMe drive (the system one, so Erase stays off).
     for (const Disk &d : udisks.disks()) {

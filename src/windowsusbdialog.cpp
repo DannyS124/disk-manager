@@ -168,7 +168,16 @@ WindowsUsbDialog::WindowsUsbDialog(UDisks *udisks, const QString &preferredDisk,
 WindowsUsbDialog::~WindowsUsbDialog()
 {
     delete m_job;
-    // The ISO stays open if the dialog goes without being closed: the main window can close it.
+    // Gone without being closed (DiskForge quitting with it open, say): the ISO still gets
+    // closed, by its IsoMount on its own, so the loop device doesn't stay behind.
+    if (m_mount) {
+        IsoMount *mount = m_mount;
+        m_mount = nullptr;
+        disconnect(mount, nullptr, this, nullptr);
+        mount->setParent(m_udisks);
+        connect(mount, &IsoMount::closed, mount, &QObject::deleteLater);
+        mount->close();
+    }
 }
 
 void WindowsUsbDialog::fillTargets(const QString &preferred)

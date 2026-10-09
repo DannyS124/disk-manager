@@ -1943,6 +1943,26 @@ void windowsUsb()
         isoStillOpen = isoStillOpen || d.backingFile == iso;
     report(!isoStillOpen, QStringLiteral("the ISO is closed again"));
 
+    // A dialog that goes without being closed (DiskForge quitting with it open) closes it too.
+    auto isoOpen = [&] {
+        udisks.refresh();
+        for (const Disk &d : udisks.disks()) {
+            if (d.backingFile == iso)
+                return true;
+        }
+        return false;
+    };
+    {
+        auto *dialog = new WindowsUsbDialog(&udisks, QString(), nullptr, iso);
+        dialog->show();
+        auto *info = dialog->findChild<QLabel *>(QStringLiteral("isoInfo"));
+        waitUntil([&] { return info->text().contains(QLatin1String("Windows 11")); }, 30000);
+        report(isoOpen(), QStringLiteral("opened again, the ISO is open"));
+        delete dialog;
+    }
+    waitUntil([&] { return !isoOpen(); }, 15000);
+    report(!isoOpen(), QStringLiteral("deleting the dialog without closing it closes the ISO too"));
+
     stick = udisks.diskByPath(loopPath);
     const bool oneFat = stick && stick->volumes.size() == 1 && stick->volumes.first().fsType == QLatin1String("vfat");
     QString root;
