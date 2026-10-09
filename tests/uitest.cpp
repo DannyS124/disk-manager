@@ -12,6 +12,7 @@
 #include "../src/addonoutput.h"
 #include "../src/addonform.h"
 #include "../src/addonmaker.h"
+#include "../src/noticebar.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
 #include "../src/copydialogs.h"
@@ -659,6 +660,88 @@ void maker()
     report(tested == QLatin1String("Try This"), QStringLiteral("Test hands the unsaved action over to be run"), tested);
 }
 
+// The warning banner, with health faked through the test hook: a bar for a failing drive,
+// Details opens the Health window, Dismiss hides it, and it comes back when it gets worse.
+void banner()
+{
+    UDisks udisks;
+    udisks.setInteractive(false);
+    if (udisks.disks().isEmpty()) {
+        report(true, QStringLiteral("the warning banner (skipped: no drives)"));
+        return;
+    }
+    for (const Disk &d : udisks.disks()) {
+        Health healthy;
+        healthy.state = Health::State::Healthy;
+        healthy.summary = QStringLiteral("Healthy");
+        healthy.key = QStringLiteral("test-healthy");
+        udisks.setHealthForTest(d.blockPath, healthy);
+    }
+    udisks.refresh();
+    MainWindow window(&udisks);
+    window.show();
+    auto *notices = window.findChild<QWidget *>(QStringLiteral("notices"));
+    auto bars = [notices] {
+        QList<NoticeBar *> out;
+        for (NoticeBar *b : notices->findChildren<NoticeBar *>()) {
+            if (b->isVisibleTo(notices))
+                out << b;
+        }
+        return out;
+    };
+    report(notices && !notices->isVisible(), QStringLiteral("no banner while every drive is healthy"));
+    if (!notices)
+        return;
+
+    const Disk target = udisks.disks().constFirst();
+    Health failing;
+    failing.state = Health::State::Failing;
+    failing.summary = QStringLiteral("Failing, back up now");
+    failing.key = QStringLiteral("test-failing");
+    failing.reasons = {{HealthReason::Level::Failing, QStringLiteral("drive-failing"), -1, QStringLiteral("The drive itself says it's failing.")}};
+    udisks.setHealthForTest(target.blockPath, failing);
+    udisks.refresh();
+    QList<NoticeBar *> shown = bars();
+    QStringList buttons;
+    for (QPushButton *b : shown.isEmpty() ? QList<QPushButton *>() : shown[0]->findChildren<QPushButton *>())
+        buttons << b->text();
+    const QStringList expected = target.isSystem ? QStringList{QStringLiteral("Details…"), QStringLiteral("Dismiss")}
+                                                 : QStringList{QStringLiteral("Rescue Copy…"), QStringLiteral("Details…"), QStringLiteral("Dismiss")};
+    report(notices->isVisible() && shown.size() == 1 && shown[0]->text().contains(QLatin1String("is failing")) && buttons == expected,
+           QStringLiteral("a failing drive gets a bar on top, with what to do"),
+           (shown.isEmpty() ? QString() : shown[0]->text()) + QStringLiteral(" [") + buttons.join(QStringLiteral(", ")) + QLatin1Char(']'));
+
+    QString opened;
+    Answerer answerer;
+    answerer.answer = [&opened](QWidget *modal) {
+        if (modal->inherits("HealthDialog")) {
+            opened = modal->windowTitle();
+            modal->close();
+            return true;
+        }
+        return false;
+    };
+    auto click = [&shown](const QString &text) {
+        for (QPushButton *b : shown.value(0) ? shown[0]->findChildren<QPushButton *>() : QList<QPushButton *>()) {
+            if (b->text() == text)
+                b->click();
+        }
+    };
+    click(QStringLiteral("Details…"));
+    waitUntil([&opened] { return !opened.isEmpty(); }, 5000);
+    report(!opened.isEmpty(), QStringLiteral("Details… opens the Health window"), opened);
+
+    click(QStringLiteral("Dismiss"));
+    waitUntil([notices] { return !notices->isVisible(); }, 3000);
+    udisks.refresh();
+    report(!notices->isVisible(), QStringLiteral("Dismiss hides it, and it stays hidden"));
+
+    failing.reasons << HealthReason{HealthReason::Level::Warning, QStringLiteral("pending"), 3, QStringLiteral("3 unreadable sectors.")};
+    udisks.setHealthForTest(target.blockPath, failing);
+    udisks.refresh();
+    report(notices->isVisible() && bars().size() == 1, QStringLiteral("it comes back when it gets worse"));
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -668,6 +751,7 @@ int userScenarios()
     addonMenus();
     themes();
     maker();
+    banner();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

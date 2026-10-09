@@ -78,6 +78,7 @@ struct Health {
     QString selftestStatus;
     int selftestPercentRemaining = -1;
     quint64 updated = 0;
+    QString key;                // where DiskForge keeps what it saw and what was dismissed
     QVector<HealthReason> reasons;
     int lifeLeft = -1;          // percent, SSDs that report it
     double warningTempC = -1;   // NVMe: the drive's own limits
@@ -191,6 +192,8 @@ public:
 
     // false: fail instead of prompting (selftest)
     void setInteractive(bool interactive) { m_interactive = interactive; }
+    // For tests: report this health for a drive instead of its own, from the next refresh on.
+    void setHealthForTest(const QString &blockPath, const Health &health) { m_testHealth.insert(blockPath, health); }
 
     void refresh();
 
@@ -288,4 +291,5 @@ private:
         QVariantMap nvme;                   // NVMe SmartGetAttributes
     };
     QMap<QString, HealthCache> m_healthCache;
+    QMap<QString, Health> m_testHealth;
 };

@@ -125,6 +125,23 @@ void healthTests()
     health::acknowledge(key, {attr(199, 9), attr(188, 1)});
     report(health::seen(key).value(199) == 9, QStringLiteral("dismissing a warning takes the current values"));
 
+    // The banner: dismissed until something new or a bigger number.
+    Health shown;
+    shown.reasons = {{HealthReason::Level::Warning, QStringLiteral("reallocated"), 16, QString()},
+                     {HealthReason::Level::Note, QStringLiteral("timeouts"), 4, QString()}};
+    const QStringList dismissed = health::signature(shown);
+    report(dismissed == QStringList{QStringLiteral("reallocated=16")} && !health::worseThan(shown, dismissed),
+           QStringLiteral("a dismissed warning stays dismissed"), dismissed.join(QLatin1Char(' ')));
+    Health more = shown;
+    more.reasons[0].number = 24;
+    Health other = shown;
+    other.reasons << HealthReason{HealthReason::Level::Warning, QStringLiteral("pending"), 2, QString()};
+    Health better = shown;
+    better.reasons[0].number = 8;
+    report(health::worseThan(more, dismissed) && health::worseThan(other, dismissed) && !health::worseThan(better, dismissed)
+               && health::worseThan(shown, {}),
+           QStringLiteral("it comes back when a number goes up or something new appears, not when it gets better"));
+
     int described = 0;
     for (const int id : {1, 3, 4, 5, 7, 9, 10, 12, 177, 184, 187, 188, 190, 194, 196, 197, 198, 199, 231, 241})
         described += health::describe(id).name.isEmpty() ? 0 : 1;

@@ -13,11 +13,13 @@
 #include "../src/blockmapwidget.h"
 #include "../src/copydialogs.h"
 #include "../src/imagebackup.h"
+#include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
 #include "../src/usagedialog.h"
 #include "../src/systemtools.h"
 #include "../src/erasedialog.h"
 #include "../src/dialogs.h"
+#include "../src/theme.h"
 #include "../src/thememaker.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
@@ -79,6 +81,18 @@ int main(int argc, char *argv[])
     save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
     ThemeMaker themeMaker(&addons);
     save(themeMaker, out.filePath(QStringLiteral("theme-maker.png")));
+    {
+        // The main window (with the warning banner when a drive here has one), then in each
+        // built-in theme.
+        MainWindow window(&udisks);
+        window.resize(1200, 760);
+        save(window, out.filePath(QStringLiteral("main.png")));
+        for (const char *id : {"classic", "deadshadow", "high-contrast"}) {
+            Theme::instance().use(QLatin1String(id), addons);
+            save(window, out.filePath(QStringLiteral("main-%1.png").arg(QLatin1String(id))));
+        }
+        Theme::instance().use(QStringLiteral("system"), addons);
+    }
     {
         // The Add-on Maker, editing the backup example (its form fields and all).
         Addon backupExample = Addons::parse(QStringLiteral(SOURCE_DIR "/examples/addons/backup-rsync/addon.json"));

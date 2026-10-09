@@ -44,6 +44,8 @@ private:
     void onTableSelection();
     void updateActions();
     void updateProgress();
+    void updateNotices();
+    void runOnDrive(const QString &device, QAction *action);
     void showContextMenu(const QPoint &globalPos);
     void activate();
     void openInFileManager();
@@ -112,6 +114,8 @@ private:
     QProgressBar *m_progress = nullptr;
     Addons m_addons;
     QToolBar *m_toolbar = nullptr;
+    QWidget *m_notices = nullptr; // the bars above the disk list
+    QStringList m_noticeKey;      // what they show, so they're only rebuilt when it changes
     QList<QAction *> m_pinned; // add-on actions pinned to the toolbar, and their separator
     QList<QShortcut *> m_shortcuts;
     HelpWindow *m_help = nullptr;

@@ -18,6 +18,8 @@
 #include "tools.h"
 #include "diskmap.h"
 #include "format.h"
+#include "health.h"
+#include "noticebar.h"
 #include "theme.h"
 #include "thememaker.h"
 #include "updates.h"
@@ -52,6 +54,8 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QTimer>
+#include <QSettings>
 #include <QVBoxLayout>
 
 namespace {
@@ -117,7 +121,20 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     splitter->setStretchFactor(0, 2);
     splitter->setStretchFactor(1, 3);
     splitter->setSizes({300, 500});
-    setCentralWidget(splitter);
+
+    m_notices = new QWidget;
+    m_notices->setObjectName(QStringLiteral("notices"));
+    auto *noticeLayout = new QVBoxLayout(m_notices);
+    noticeLayout->setContentsMargins(4, 4, 4, 0);
+    noticeLayout->setSpacing(4);
+    m_notices->setVisible(false);
+    auto *central = new QWidget;
+    auto *centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+    centralLayout->addWidget(m_notices);
+    centralLayout->addWidget(splitter, 1);
+    setCentralWidget(central);
 
     m_addons.load();
     Theme::instance().restore(m_addons);
@@ -549,6 +566,95 @@ void MainWindow::rebuild()
     if (!m_udisks->isAvailable())
         statusBar()->showMessage(tr("UDisks2 is not available: %1").arg(m_udisks->lastError()));
     updateProgress();
+    updateNotices();
+}
+
+// Select a drive and run one of the window's actions on it, the same as from the menu (so
+// it's only run when the action is available for it). Queued, so a bar can be rebuilt
+// while its button's dialog is open.
+void MainWindow::runOnDrive(const QString &device, QAction *action)
+{
+    QTimer::singleShot(0, this, [this, device, action] {
+        if (!selectDevice(device))
+            return;
+        if (action->isEnabled())
+            action->trigger();
+        else
+            statusBar()->showMessage(tr("%1 can't be used on %2 right now.").arg(action->text().remove(QLatin1Char('&')), shortDevice(device)), 8000);
+    });
+}
+
+// A bar for each drive whose health is a warning or worse, failing ones first, until it's
+// dismissed. It comes back when it gets worse. At most three, then a count.
+void MainWindow::updateNotices()
+{
+    QSettings settings(QStringLiteral("diskforge"), QStringLiteral("diskforge"));
+    QVector<const Disk *> drives;
+    for (const Disk &d : m_udisks->disks()) {
+        if (d.health.state != Health::State::Warning && d.health.state != Health::State::Failing)
+            continue;
+        if (!health::worseThan(d.health, settings.value(QStringLiteral("dismissed/") + d.health.key).toStringList()))
+            continue;
+        drives << &d;
+    }
+    std::stable_sort(drives.begin(), drives.end(), [](const Disk *a, const Disk *b) { return a->health.state > b->health.state; });
+
+    QStringList key;
+    for (const Disk *d : std::as_const(drives))
+        key << d->blockPath + QLatin1Char(' ') + d->model + QLatin1Char(' ') + d->health.summary + QLatin1Char(' ')
+                + health::signature(d->health).join(QLatin1Char(','));
+    if (key == m_noticeKey)
+        return;
+    m_noticeKey = key;
+
+    for (NoticeBar *old : m_notices->findChildren<NoticeBar *>(Qt::FindDirectChildrenOnly)) {
+        old->hide();
+        old->deleteLater();
+    }
+    const int shown = qMin<int>(drives.size(), 3);
+    for (int i = 0; i < shown; ++i) {
+        const Disk &d = *drives[i];
+        const Health &h = d.health;
+        const bool failing = h.state == Health::State::Failing;
+        const QString name = QStringLiteral("%1 (%2)").arg(d.model.isEmpty() ? tr("A drive") : d.model, shortDevice(d.device));
+        auto *bar = new NoticeBar(failing ? NoticeBar::Level::Danger : NoticeBar::Level::Warning,
+                                  failing ? tr("%1 is failing. Copy what you want to keep to another drive now.").arg(name)
+                                          : tr("%1: %2.").arg(name, h.summary));
+        // Spots it can't read stop a normal backup; Rescue Copy works around them.
+        bool unreadable = failing;
+        for (const HealthReason &r : h.reasons) {
+            unreadable = unreadable || r.code == QLatin1String("pending") || r.code == QLatin1String("offline")
+                || r.code == QLatin1String("uncorrectable") || r.code == QLatin1String("media-errors");
+        }
+        const QString device = d.device;
+        if (!d.isSystem) {
+            QPushButton *copy = bar->addButton(unreadable && !d.isLoop ? tr("Rescue Copy…") : tr("Back Up…"));
+            QAction *action = unreadable && !d.isLoop ? m_rescue : m_backup;
+            copy->setToolTip(action == m_rescue ? tr("Copy the whole drive to another one, working around the spots it can't read.")
+                                                : tr("Save an image of the drive."));
+            connect(copy, &QPushButton::clicked, this, [this, device, action] { runOnDrive(device, action); });
+        }
+        QPushButton *details = bar->addButton(tr("Details…"));
+        connect(details, &QPushButton::clicked, this, [this, device] { runOnDrive(device, m_health); });
+        QPushButton *dismiss = bar->addButton(tr("Dismiss"));
+        dismiss->setToolTip(tr("Hide this until it gets worse."));
+        const QString blockPath = d.blockPath, healthKey = h.key;
+        const QStringList signature = health::signature(h);
+        connect(dismiss, &QPushButton::clicked, this, [this, blockPath, healthKey, signature] {
+            QTimer::singleShot(0, this, [this, blockPath, healthKey, signature] {
+                QSettings(QStringLiteral("diskforge"), QStringLiteral("diskforge")).setValue(QStringLiteral("dismissed/") + healthKey, signature);
+                // Counters that only matter when they grow start again from here.
+                if (const Disk *disk = m_udisks->diskByPath(blockPath))
+                    health::acknowledge(healthKey, m_udisks->smartAttributes(*disk));
+                updateNotices();
+            });
+        });
+        m_notices->layout()->addWidget(bar);
+    }
+    if (drives.size() > shown)
+        m_notices->layout()->addWidget(new NoticeBar(NoticeBar::Level::Info,
+            tr("%n more drive(s) need a look; their health is in the Status column.", nullptr, int(drives.size() - shown))));
+    m_notices->setVisible(!drives.isEmpty());
 }
 
 bool MainWindow::selectDevice(const QString &device)

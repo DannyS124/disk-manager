@@ -112,7 +112,8 @@ Health UDisks::readHealth(const QString &drivePath, const QVariantMap &drive, co
 {
     Health h;
     HealthCache &cache = m_healthCache[drivePath];
-    const QString driveKey = drivePath.section(QLatin1Char('/'), -1);
+    const QString driveKey = health::keyFor(drive.value(QStringLiteral("Id")).toString(), drivePath);
+    h.key = driveKey;
 
     if (!ata.isEmpty() && ata.value(QStringLiteral("SmartSupported")).toBool()) {
         if (!ata.value(QStringLiteral("SmartEnabled")).toBool()) {

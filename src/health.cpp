@@ -197,6 +197,41 @@ health::Verdict health::nvme(const NvmeInput &in)
     return finish(r);
 }
 
+QString health::keyFor(const QString &driveId, const QString &drivePath)
+{
+    QString key = driveId.isEmpty() ? drivePath.section(QLatin1Char('/'), -1) : driveId;
+    for (QChar &c : key) {
+        // QSettings reads / and \ as group separators.
+        if (!(c.isLetterOrNumber() && c.unicode() < 128) && c != QLatin1Char('-') && c != QLatin1Char('_') && c != QLatin1Char('.'))
+            c = QLatin1Char('_');
+    }
+    return key;
+}
+
+QStringList health::signature(const Health &h)
+{
+    QStringList out;
+    for (const HealthReason &r : h.reasons) {
+        if (r.level != HealthReason::Level::Note)
+            out << QStringLiteral("%1=%2").arg(r.code).arg(r.number);
+    }
+    return out;
+}
+
+bool health::worseThan(const Health &h, const QStringList &dismissed)
+{
+    QMap<QString, qint64> before;
+    for (const QString &item : dismissed)
+        before.insert(item.section(QLatin1Char('='), 0, 0), item.section(QLatin1Char('='), 1).toLongLong());
+    for (const HealthReason &r : h.reasons) {
+        if (r.level == HealthReason::Level::Note)
+            continue;
+        if (!before.contains(r.code) || r.number > before.value(r.code))
+            return true;
+    }
+    return false;
+}
+
 QList<int> health::watchedCounters()
 {
     return {184, 188, 199};

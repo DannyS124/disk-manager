@@ -338,6 +338,8 @@ void UDisks::refresh()
                 }
             }
         }
+        if (m_testHealth.contains(d.blockPath))
+            d.health = m_testHealth.value(d.blockPath);
         m_disks.push_back(d);
     }
 
