@@ -12,6 +12,7 @@
 #include <QIcon>
 #include <QMenu>
 #include <QMessageBox>
+#include <QScreen>
 #include <QSysInfo>
 #include <QTextStream>
 #include <QTimer>
@@ -88,7 +89,7 @@ int main(int argc, char *argv[])
                                        QStringLiteral("Write what DiskForge does to <file>. DISKFORGE_LOG=<file> does the same."),
                                        QStringLiteral("file"));
     const QCommandLineOption openOption(QStringLiteral("open"),
-                                        QStringLiteral("Start with a USB tool open: write-image, windows-usb, rescue-usb or check-stick."),
+                                        QStringLiteral("Open just one USB tool: write-image, windows-usb, rescue-usb or check-stick."),
                                         QStringLiteral("tool"));
     parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
@@ -130,17 +131,34 @@ int main(int argc, char *argv[])
 
     MainWindow window(&udisks);
     window.resize(1280, 800);
-    window.show();
+    // On a smaller screen (a small laptop, a VM, DiskForge Rescue) that would put the bottom of
+    // the window under the taskbar, so it takes the room there is instead. Screenshots keep
+    // the size they always have.
+    const QScreen *screen = QGuiApplication::primaryScreen();
+    const QRect room = screen ? screen->availableGeometry() : QRect();
+    const bool small = room.isValid() && (room.width() < 1280 + 40 || room.height() < 800 + 60);
+    if (parser.isSet(openOption)) {
+        // Only the tool shows, see below.
+    } else if (small && !parser.isSet(screenshotOption)) {
+        window.showMaximized();
+    } else {
+        window.show();
+    }
     for (const QString &image : parser.positionalArguments())
         udisks.openImage(image);
     if (parser.isSet(selectOption) && !window.selectDevice(parser.value(selectOption)))
         QTextStream(stderr) << "No partition " << parser.value(selectOption) << "\n";
     if (parser.isSet(openOption)) {
-        // Once the window is up, so the tool opens on top of it.
+        // Just the tool, for launchers like the ones on DiskForge Rescue's desktop: no main
+        // window behind it, and DiskForge closes with it.
         const QString tool = parser.value(openOption);
         QTimer::singleShot(0, &window, [&window, tool] {
-            if (!window.openTool(tool))
+            if (!window.openTool(tool)) {
                 QTextStream(stderr) << "No tool called " << tool << " (write-image, windows-usb, rescue-usb, check-stick)\n";
+                QCoreApplication::exit(2);
+                return;
+            }
+            QCoreApplication::quit();
         });
     }
 

@@ -23,13 +23,15 @@ New:
 - DiskForge Rescue has all of it, with icons on its desktop. There, the few things that only change the running system
   (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a Rescue USB copies the stick it's
   running from
-- `--open <tool>` starts DiskForge with one of the USB tools open
+- `--open <tool>` opens just one of the USB tools, for desktop launchers
 
 Changed:
 - New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
   stick doesn't need it
 - On a live system, the system's own image isn't listed as a drive anymore
 - Staging a release also builds DiskForge Rescue from the same source, and publishing attaches the ISO
+- On a screen smaller than the window (small laptops, VMs) it opens maximized, so the bottom isn't under the taskbar
+- Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker when Browse had the focus before
 
 ## 0.5.0
 Everything new since 0.4.3.
