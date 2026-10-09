@@ -86,8 +86,11 @@ QString makeIso(const QString &dir, const QString &name, const QMap<QString, QBy
     if (!sums.isEmpty())
         writeFile(tree + QStringLiteral("/sha256sum.txt"), sums);
     const QString iso = dir + QLatin1Char('/') + name + QStringLiteral(".iso");
-    QStringList args = {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-iso-level"),
-                        QStringLiteral("3"), QStringLiteral("-R"), QStringLiteral("-V"), QStringLiteral("DFRESCUE")};
+    // The names are UTF-8 whatever the locale says (the .deb is built and tested with LANG=C,
+    // where xorriso would turn them into something else for Joliet).
+    QStringList args = {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-input-charset"),
+                        QStringLiteral("UTF-8"), QStringLiteral("-iso-level"), QStringLiteral("3"), QStringLiteral("-R"),
+                        QStringLiteral("-V"), QStringLiteral("DFRESCUE")};
     if (joliet)
         args << QStringLiteral("-J") << QStringLiteral("-joliet-long");
     args << QStringLiteral("-o") << iso << tree;

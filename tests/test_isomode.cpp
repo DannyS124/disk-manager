@@ -121,7 +121,7 @@ void throughAnIso()
     put(QStringLiteral("EFI/BOOT/grub.cfg"), "search -l 'Fedora-WS-Live-40'\nlinux /images/pxeboot/vmlinuz root=live:CDLABEL=Fedora-WS-Live-40 quiet\n");
     put(QStringLiteral("images/pxeboot/vmlinuz"), QByteArray(100000, 'k'));
     const QString iso = dir.filePath(QStringLiteral("fedora.iso"));
-    sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"),
+    sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-input-charset"), QStringLiteral("UTF-8"), QStringLiteral("-J"),
                                    QStringLiteral("-joliet-long"), QStringLiteral("-R"), QStringLiteral("-V"), QStringLiteral("Fedora-WS-Live-40"),
                                    QStringLiteral("-o"), iso, tree});
     const std::unique_ptr<filecopy::Source> source = filecopy::openIso(iso);
