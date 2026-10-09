@@ -16,6 +16,7 @@
 #include "../src/copydialogs.h"
 #include "../src/format.h"
 #include "../src/mainwindow.h"
+#include "../src/theme.h"
 #include "../src/udisks.h"
 
 #include <QAbstractButton>
@@ -25,6 +26,9 @@
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QStyle>
+#include <QFileInfo>
+#include <QDir>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
@@ -512,6 +516,59 @@ void addonMenus()
            QStringLiteral("an add-on's settings save from the Add-ons window"), Addons::setting(addons.all().value(0), QStringLiteral("dest")));
 }
 
+// Themes: built-ins switch and switch back, broken colors get fixed, and a theme that
+// turned up from outside isn't used.
+void themes()
+{
+    Addons addons;
+    addons.load();
+    Theme &theme = Theme::instance();
+    const QString desktopStyle = QApplication::style()->name();
+    const QColor desktopWindow = QApplication::palette().color(QPalette::Window);
+    theme.select(QStringLiteral("deadshadow"), addons);
+    report(theme.currentId() == QLatin1String("deadshadow") && QApplication::palette().color(QPalette::Window) == QColor(0x0a, 0x0a, 0x0f)
+               && QApplication::style()->name().compare(QLatin1String("fusion"), Qt::CaseInsensitive) == 0
+               && theme.partitionColor(QStringLiteral("ext4")) == QColor(0x00, 0xe6, 0x76),
+           QStringLiteral("a built-in theme sets the window colors and its own map colors"), QApplication::style()->name());
+    theme.select(QStringLiteral("system"), addons);
+    report(QApplication::palette().color(QPalette::Window) == desktopWindow && QApplication::style()->name() == desktopStyle,
+           QStringLiteral("going back to System restores the desktop's look"), QApplication::style()->name());
+
+    AddonTheme sneaky;
+    sneaky.colors.insert(QStringLiteral("danger"), 0x00ff00);  // green "danger"
+    sneaky.colors.insert(QStringLiteral("warning"), 0xfafa00); // yellow on a light window: unreadable
+    sneaky.palette.insert(QStringLiteral("window"), 0x000000);
+    sneaky.palette.insert(QStringLiteral("text"), 0x111111);   // black on black
+    QStringList replaced;
+    const AddonTheme fixed = Theme::checked(sneaky, &replaced);
+    report(replaced.contains(QLatin1String("danger")) && replaced.contains(QLatin1String("palette")) && fixed.palette.isEmpty()
+               && QColor(QRgb(fixed.colors.value(QStringLiteral("danger")))).hsvHue() <= 20,
+           QStringLiteral("a theme can't make danger green or its text unreadable"), replaced.join(QLatin1Char(' ')));
+
+    const QByteArray mine = R"({"id":"my-theme","name":"Mine","theme":{"colors":{"partition":"#123456"}}})";
+    QString error;
+    Addons::install(mine, &error);
+    const QString planted = Addons::userDir() + QStringLiteral("/planted-theme/addon.json");
+    QDir().mkpath(QFileInfo(planted).path());
+    QFile f(planted);
+    if (f.open(QIODevice::WriteOnly))
+        f.write(R"({"id":"planted-theme","name":"Planted","theme":{"colors":{"partition":"#654321"}}})");
+    f.close();
+    addons.load();
+    bool plantedUsable = true, mineListed = false;
+    for (const Theme::Choice &c : Theme::choices(addons)) {
+        if (c.id == QLatin1String("planted-theme"))
+            plantedUsable = c.usable;
+        mineListed = mineListed || (c.id == QLatin1String("my-theme") && c.usable);
+    }
+    theme.use(QStringLiteral("planted-theme"), addons);
+    report(mineListed && !plantedUsable && theme.currentId() == QLatin1String("system"),
+           QStringLiteral("a theme that turned up from outside is listed but not used"), theme.currentId());
+    theme.select(QStringLiteral("my-theme"), addons);
+    report(theme.color(Theme::Role::Partition) == QColor(0x12, 0x34, 0x56), QStringLiteral("an installed theme add-on is used"));
+    theme.select(QStringLiteral("system"), addons);
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -519,6 +576,7 @@ int userScenarios()
     qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral("config"))));
     outputWindow();
     addonMenus();
+    themes();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

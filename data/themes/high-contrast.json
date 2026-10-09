@@ -1,0 +1,36 @@
+{
+  "id": "high-contrast",
+  "name": "High Contrast",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "White on black with bright, clearly different colors.",
+  "theme": {
+    "palette": {
+      "window": "#000000",
+      "base": "#000000",
+      "alternate": "#141414",
+      "button": "#000000",
+      "text": "#ffffff",
+      "highlight": "#ffff00",
+      "highlighted_text": "#000000",
+      "link": "#00ffff",
+      "mid": "#808080"
+    },
+    "colors": {
+      "partition": "#00ffff",
+      "free": "#ffffff",
+      "selection": "#ffff00",
+      "good": "#00ff00",
+      "warning": "#ffff00",
+      "danger": "#ff4040",
+      "map_good": "#00ff00",
+      "map_slow": "#ffff00",
+      "map_retry": "#ff00ff",
+      "map_bad": "#ff0000",
+      "map_unread": "#404040",
+      "usage_small_files": "#808080",
+      "usage_file": "#c0c0c0"
+    },
+    "usage": ["#00ffff", "#ffff00", "#ff00ff", "#00ff00", "#ff8000", "#8080ff"]
+  }
+}

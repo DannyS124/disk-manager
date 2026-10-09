@@ -1,0 +1,14 @@
+{
+  "id": "classic",
+  "name": "Classic",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "Disk Management colors: blue strips on partitions, black on unallocated space. Keeps your desktop's window colors.",
+  "theme": {
+    "colors": {
+      "partition": "#1f3fbf",
+      "free": "#101010",
+      "selection": "#1f3fbf"
+    }
+  }
+}

@@ -8,6 +8,7 @@
 #include "addonoutput.h"
 #include "addonprompt.h"
 #include "addonsdialog.h"
+#include "catalogdialog.h"
 #include "copydialogs.h"
 #include "erasedialog.h"
 #include "snapper.h"
@@ -18,10 +19,12 @@
 #include "diskmap.h"
 #include "format.h"
 #include "theme.h"
+#include "thememaker.h"
 #include "updates.h"
 #include "udisks.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -117,6 +120,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
     setCentralWidget(splitter);
 
     m_addons.load();
+    Theme::instance().restore(m_addons);
     createActions();
 
     m_progress = new QProgressBar;
@@ -438,6 +442,34 @@ void MainWindow::createActions()
     action->addActions({m_backup, m_restore, m_clone, m_rescue});
     action->addSeparator();
     action->addActions({m_copy, m_properties});
+
+    QMenu *view = menuBar()->addMenu(tr("&View"));
+    QMenu *themes = view->addMenu(themeIcon("preferences-desktop-theme", "preferences-desktop-color"), tr("&Theme"));
+    themes->setToolTipsVisible(true);
+    connect(themes, &QMenu::aboutToShow, this, [this, themes] {
+        themes->clear();
+        auto *group = new QActionGroup(themes);
+        for (const Theme::Choice &c : Theme::choices(m_addons)) {
+            QAction *item = themes->addAction(QString(c.name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            item->setCheckable(true);
+            item->setChecked(c.id == Theme::instance().currentId());
+            item->setEnabled(c.usable);
+            item->setToolTip(c.reason);
+            group->addAction(item);
+            const QString id = c.id;
+            connect(item, &QAction::triggered, this, [this, id] { Theme::instance().select(id, m_addons); });
+        }
+        themes->addSeparator();
+        themes->addAction(tr("Make a Theme…"), this, [this] {
+            ThemeMaker(&m_addons, this).exec();
+            refreshAddons();
+        });
+        themes->addAction(tr("Get More…"), this, [this] {
+            CatalogDialog(&m_addons, this).exec();
+            m_addons.load();
+            refreshAddons();
+        });
+    });
 
     QMenu *tools = menuBar()->addMenu(tr("&Tools"));
     tools->setToolTipsVisible(true);
@@ -1170,6 +1202,9 @@ QList<QKeySequence> MainWindow::takenShortcuts() const
 
 void MainWindow::refreshAddons()
 {
+    // A theme add-on may have been removed or changed.
+    if (Theme::instance().currentId() != QLatin1String("system"))
+        Theme::instance().restore(m_addons);
     // Pins and shortcuts refer to add-on actions by id and label; build them again.
     qDeleteAll(m_pinned);
     m_pinned.clear();

@@ -86,6 +86,7 @@ add_library(diskforge-ui STATIC
     src/updates.cpp src/updates.h
     src/translations.cpp src/translations.h
     src/theme.cpp src/theme.h
+    src/thememaker.cpp src/thememaker.h
 )
 target_link_libraries(diskforge-ui PUBLIC diskforge-core Qt6::Widgets Qt6::Network)
 target_compile_options(diskforge-ui PRIVATE -Wall -Wextra)
@@ -93,6 +94,8 @@ target_compile_options(diskforge-ui PRIVATE -Wall -Wextra)
 # Help page, icon and license text, built into each program that shows them.
 function(diskforge_add_data target)
     qt_add_resources(${target} "${target}_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
+    qt_add_resources(${target} "${target}_themes" PREFIX "/themes" BASE data/themes
+        FILES data/themes/classic.json data/themes/deadshadow.json data/themes/high-contrast.json)
 endfunction()
 
 qt_add_executable(diskforge src/main.cpp)

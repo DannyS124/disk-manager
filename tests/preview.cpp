@@ -17,6 +17,7 @@
 #include "../src/systemtools.h"
 #include "../src/erasedialog.h"
 #include "../src/dialogs.h"
+#include "../src/thememaker.h"
 #include "../src/tools.h"
 #include "../src/translations.h"
 #include "../src/udisks.h"
@@ -75,6 +76,8 @@ int main(int argc, char *argv[])
     addons.load();
     AddonsDialog addonsDialog(&addons);
     save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
+    ThemeMaker themeMaker(&addons);
+    save(themeMaker, out.filePath(QStringLiteral("theme-maker.png")));
 
     // The add-on questions open their own dialogs: grab each one while it's open.
     auto grabDialog = [](const QString &path) {

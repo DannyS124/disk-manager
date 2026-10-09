@@ -1,0 +1,45 @@
+{
+  "id": "deadshadow",
+  "name": "Deadshadow",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "Dark, with cyan and neon accents, from the Deadshadow KDE color scheme.",
+  "theme": {
+    "palette": {
+      "window": "#0a0a0f",
+      "base": "#13131c",
+      "alternate": "#181820",
+      "button": "#20202c",
+      "text": "#cbd6e6",
+      "highlight": "#00b4ff",
+      "highlighted_text": "#0a0a0f",
+      "link": "#00b4ff",
+      "mid": "#2a2a38"
+    },
+    "colors": {
+      "partition": "#00b4ff",
+      "free": "#44485a",
+      "selection": "#00b4ff",
+      "good": "#00e676",
+      "warning": "#ffb300",
+      "danger": "#ff2d55",
+      "map_good": "#00c853",
+      "map_slow": "#ffb300",
+      "map_retry": "#ffe066",
+      "map_bad": "#ff2d55",
+      "map_unread": "#2a2a38",
+      "usage_small_files": "#5c6075",
+      "usage_file": "#3d6f8f"
+    },
+    "filesystems": {
+      "btrfs": "#00b4ff",
+      "ext4": "#00e676",
+      "vfat": "#ffb300",
+      "exfat": "#22d3ee",
+      "ntfs": "#b388ff",
+      "swap": "#ff6e40",
+      "crypto_LUKS": "#ff2d55"
+    },
+    "usage": ["#0e7fb8", "#10a35a", "#b8860b", "#7e57c2", "#1597a8", "#c2185b", "#5d7b1f", "#8d6e63"]
+  }
+}
