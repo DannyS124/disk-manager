@@ -39,6 +39,7 @@ struct Volume {
     bool swapActive = false;
     bool encrypted = false;
     QString cleartextPath; // unlocked LUKS mapping
+    QString cleartextDevice; // its /dev/dm-N
     bool cleartextHasFilesystem = false;
     QString cleartextFsType;
     QStringList cleartextMountPoints;

@@ -4,9 +4,12 @@
 #include "udisks.h"
 
 #include "dbusnames.h"
+#include "btrfscheck.h"
 #include "format.h"
+#include "health.h"
 
 #include <QCollator>
+#include <QFileInfo>
 #include <QFile>
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -301,6 +304,7 @@ void UDisks::refresh()
             for (Volume &v : d.volumes) {
                 if (v.objectPath == backing) {
                     v.cleartextPath = it.key().path();
+                    v.cleartextDevice = byteString(it->value(kBlock).value(QStringLiteral("Device")));
                     v.cleartextMountPoints = mounts;
                     v.cleartextHasFilesystem = it->contains(kFilesystem);
                     v.cleartextFsType = it->value(kBlock).value(QStringLiteral("IdType")).toString();
@@ -337,6 +341,18 @@ void UDisks::refresh()
                     v.fsTotal = info.bytesTotal();
                     v.fsFree = info.bytesAvailable();
                 }
+            }
+        }
+        // Btrfs counts the errors it has seen; any at all go into the drive's health.
+        for (const Volume &v : std::as_const(d.volumes)) {
+            if (v.effectiveFsType() != QLatin1String("btrfs") || v.mounts().isEmpty())
+                continue;
+            const QString device = v.encrypted ? v.cleartextDevice : v.device;
+            const btrfscheck::Counts counts = btrfscheck::read(QFileInfo(device).fileName());
+            if (counts.total() > 0) {
+                health::add(d.health, {HealthReason::Level::Warning, QStringLiteral("btrfs-") + QFileInfo(v.device).fileName(), counts.total(),
+                                       tr("Btrfs on %1 has seen errors. %2 A scrub (in Disk Health) checks everything.")
+                                           .arg(QFileInfo(v.device).fileName(), btrfscheck::describe(counts))});
             }
         }
         if (m_testHealth.contains(d.blockPath))

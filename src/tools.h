@@ -7,11 +7,16 @@
 #include "udisks.h"
 
 #include <QDialog>
+#include <QMap>
+#include <QSet>
 
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QLabel;
+class Systemd;
+class QTimer;
+class QGroupBox;
 class QLineEdit;
 class QProgressBar;
 class QPushButton;
@@ -81,6 +86,17 @@ private:
     void checkFirmware();
     firmware::Result m_firmware;
     bool m_firmwareBusy = false;
+
+    // Btrfs: error counts and scrubs, for each Btrfs partition on the drive.
+    void reloadBtrfs();
+    void startScrub(const QString &device, const QString &mountPoint);
+    void stopScrub(const QString &unit);
+    void setMonthlyScrub(const QString &timer, bool on);
+    QGroupBox *m_btrfs;
+    QTimer *m_scrubPoll;
+    Systemd *m_systemd;
+    QMap<QString, qint64> m_errorsBefore; // scrub unit -> error count when it was started here
+    QSet<QString> m_stopped;              // scrub units stopped from here
 };
 
 class BenchmarkDialog : public QDialog

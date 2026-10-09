@@ -12,6 +12,8 @@
 #include "imagewriter.h"
 #include "surfacescan.h"
 #include "health.h"
+#include "systemd.h"
+#include "btrfscheck.h"
 #include "theme.h"
 
 #include <QCheckBox>
@@ -32,6 +34,9 @@
 #include <QThread>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QGroupBox>
+#include <QLocale>
+#include <QDateTime>
 #include <QTextDocument>
 #include <QTimer>
 #include <QTreeWidget>
@@ -271,10 +276,19 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
     buttons->addStretch();
     buttons->addWidget(close);
 
+    m_btrfs = new QGroupBox(tr("Btrfs"));
+    new QVBoxLayout(m_btrfs);
+    m_btrfs->setVisible(false);
+    m_scrubPoll = new QTimer(this);
+    m_scrubPoll->setInterval(2000);
+    connect(m_scrubPoll, &QTimer::timeout, this, &HealthDialog::reloadBtrfs);
+    m_systemd = new Systemd(this);
+
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(m_state);
     layout->addWidget(m_explain);
     layout->addLayout(m_form);
+    layout->addWidget(m_btrfs);
     layout->addWidget(m_attributes, 1);
     layout->addWidget(m_meaning);
     layout->addLayout(buttons);
@@ -286,7 +300,7 @@ HealthDialog::HealthDialog(UDisks *udisks, const QString &blockPath, QWidget *pa
     else if (firmware::running())
         checkFirmware();
     reload();
-    resize(640, 560);
+    resize(680, 660);
 }
 
 void HealthDialog::reload()
@@ -403,6 +417,162 @@ void HealthDialog::reload()
     for (int c = 0; c < m_attributes->columnCount(); ++c)
         m_attributes->resizeColumnToContents(c);
     m_meaning->setText(ata ? tr("Bold ones count toward the verdict. Select one to see what it means.") : QString());
+    reloadBtrfs();
+}
+
+// One block per Btrfs partition on the drive: its error counts, the last scrub and what it
+// found, and buttons to scrub now or every month. Rebuilt every time, from systemd and sysfs,
+// so a scrub that runs while the window is closed shows up when it opens again.
+void HealthDialog::reloadBtrfs()
+{
+    const Disk *disk = m_udisks->diskByPath(m_blockPath);
+    QLayout *layout = m_btrfs->layout();
+    while (QLayoutItem *item = layout->takeAt(0)) {
+        if (QWidget *w = item->widget()) {
+            w->hide();
+            w->deleteLater();
+        }
+        delete item;
+    }
+    bool any = false, scrubbing = false;
+    const bool haveUnits = m_systemd->unitExists(btrfscheck::scrubUnit(QStringLiteral("/")));
+    for (const Volume &v : disk ? disk->volumes : QVector<Volume>()) {
+        if (v.effectiveFsType() != QLatin1String("btrfs"))
+            continue;
+        any = true;
+        const QString name = QFileInfo(v.device).fileName();
+        auto *box = new QWidget;
+        auto *rows = new QVBoxLayout(box);
+        rows->setContentsMargins(0, 0, 0, 0);
+        auto *title = new QLabel(v.label.isEmpty() ? name : tr("%1 (%2)").arg(name, v.label));
+        title->setTextFormat(Qt::PlainText);
+        QFont bold = title->font();
+        bold.setBold(true);
+        title->setFont(bold);
+        rows->addWidget(title);
+
+        if (v.mounts().isEmpty()) {
+            auto *note = new QLabel(tr("Mount it to see its error counts and to scrub it."));
+            note->setWordWrap(true);
+            rows->addWidget(note);
+            layout->addWidget(box);
+            continue;
+        }
+        const btrfscheck::Counts counts = btrfscheck::read(QFileInfo(v.encrypted ? v.cleartextDevice : v.device).fileName());
+        auto *countsText = new QLabel(btrfscheck::describe(counts)
+                                      + (counts.total() > 0 ? QLatin1Char(' ') + tr("They stay until reset with: sudo btrfs device stats -z %1")
+                                                                                     .arg(btrfscheck::scrubMountPoint(v.mounts()))
+                                                            : QString()));
+        countsText->setTextFormat(Qt::PlainText);
+        countsText->setWordWrap(true);
+        countsText->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        if (counts.total() > 0) {
+            QPalette p = countsText->palette();
+            p.setColor(QPalette::WindowText, Theme::instance().color(Theme::Role::Danger));
+            countsText->setPalette(p);
+        }
+        rows->addWidget(countsText);
+
+        if (!haveUnits) {
+            auto *note = new QLabel(tr("Scrubbing from here needs btrfs-progs' btrfs-scrub@ units, which aren't installed."));
+            note->setWordWrap(true);
+            rows->addWidget(note);
+            layout->addWidget(box);
+            continue;
+        }
+        const QString mountPoint = btrfscheck::scrubMountPoint(v.mounts());
+        const QString unit = btrfscheck::scrubUnit(mountPoint), timer = btrfscheck::scrubTimer(mountPoint);
+        const Systemd::ServiceState state = m_systemd->serviceState(unit);
+        QString last;
+        if (state.running()) {
+            scrubbing = true;
+            last = tr("Scrubbing since %1. It reads everything at low priority, so the PC stays usable; it can take hours on a big drive.")
+                       .arg(QLocale().toString(QDateTime::fromMSecsSinceEpoch(qint64(state.started / 1000)).time(), QLocale::ShortFormat));
+        } else if (state.exited > 0) {
+            const QString when = QLocale().toString(QDateTime::fromMSecsSinceEpoch(qint64(state.exited / 1000)), QLocale::ShortFormat);
+            const QString found = m_stopped.contains(unit) ? tr("Stopped.")
+                : btrfscheck::scrubOutcome(state.conditionMet, state.exitStatus, state.result, m_errorsBefore.value(unit, counts.total()), counts.total());
+            last = tr("Last scrub %1: %2").arg(when, found);
+        } else {
+            last = tr("Not scrubbed from here yet. A scrub reads everything back and checks it against its checksums.");
+        }
+        auto *lastText = new QLabel(last);
+        lastText->setTextFormat(Qt::PlainText);
+        lastText->setWordWrap(true);
+        rows->addWidget(lastText);
+
+        auto *actions = new QHBoxLayout;
+        // Queued: these rows are rebuilt while the buttons' dialogs are open.
+        const QString device = v.device;
+        if (state.running()) {
+            auto *stop = new QPushButton(tr("Stop Scrub"));
+            connect(stop, &QPushButton::clicked, this, [this, unit] { QTimer::singleShot(0, this, [this, unit] { stopScrub(unit); }); });
+            actions->addWidget(stop);
+        } else {
+            auto *start = new QPushButton(tr("Scrub Now…"));
+            connect(start, &QPushButton::clicked, this, [this, device, mountPoint] {
+                QTimer::singleShot(0, this, [this, device, mountPoint] { startScrub(device, mountPoint); });
+            });
+            actions->addWidget(start);
+        }
+        auto *monthly = new QCheckBox(tr("Scrub every month"));
+        monthly->setChecked(m_systemd->unitFileState(timer) == QLatin1String("enabled"));
+        connect(monthly, &QCheckBox::toggled, this, [this, timer](bool on) {
+            QTimer::singleShot(0, this, [this, timer, on] { setMonthlyScrub(timer, on); });
+        });
+        actions->addWidget(monthly);
+        actions->addStretch();
+        rows->addLayout(actions);
+        layout->addWidget(box);
+    }
+    m_btrfs->setVisible(any);
+    if (scrubbing && !m_scrubPoll->isActive())
+        m_scrubPoll->start();
+    else if (!scrubbing)
+        m_scrubPoll->stop();
+}
+
+void HealthDialog::startScrub(const QString &device, const QString &mountPoint)
+{
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        this, tr("Scrub %1").arg(QFileInfo(device).fileName()),
+        tr("Scrub the Btrfs file system on %1?\n\nA scrub reads everything on it and checks it against its checksums, "
+           "repairing what it can from a second copy. It runs in the background at low priority, so the PC stays "
+           "usable, but it can take hours on a big drive. It can be stopped any time.")
+            .arg(QFileInfo(device).fileName()),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes)
+        return;
+    const QString unit = btrfscheck::scrubUnit(mountPoint);
+    const Disk *disk = m_udisks->diskByPath(m_blockPath);
+    qint64 before = 0;
+    for (const Volume &v : disk ? disk->volumes : QVector<Volume>()) {
+        if (v.device == device)
+            before = btrfscheck::read(QFileInfo(v.encrypted ? v.cleartextDevice : v.device).fileName()).total();
+    }
+    m_errorsBefore.insert(unit, before);
+    m_stopped.remove(unit);
+    m_systemd->ref(unit); // so its result can still be read when it's done
+    m_systemd->startUnit(unit, [this](bool ok, const QString &message) {
+        if (!ok && message != QLatin1String("canceled"))
+            QMessageBox::warning(this, windowTitle(), tr("The scrub didn't start: %1").arg(message));
+        reloadBtrfs();
+    });
+}
+
+void HealthDialog::stopScrub(const QString &unit)
+{
+    m_stopped.insert(unit);
+    m_systemd->stopUnit(unit, [this](bool, const QString &) { reloadBtrfs(); });
+}
+
+void HealthDialog::setMonthlyScrub(const QString &timer, bool on)
+{
+    m_systemd->setTimerEnabled(timer, on, [this](bool ok, const QString &message) {
+        if (!ok)
+            QMessageBox::warning(this, windowTitle(), message);
+        reloadBtrfs();
+    });
 }
 
 void HealthDialog::checkFirmware()

@@ -6,6 +6,7 @@
 
 #include "testkit.h"
 
+#include "../src/btrfscheck.h"
 #include "../src/cleanup.h"
 #include "../src/snapper.h"
 #include "../src/systemd.h"
@@ -14,6 +15,9 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QElapsedTimer>
+#include <QFileInfo>
+#include <QThread>
 #include <QTemporaryDir>
 
 #include <sys/stat.h>
@@ -139,6 +143,45 @@ void btrfsTests()
             found = s.path == QLatin1String("/@data") && QString::number(s.id) == id;
     }
     report(code == 0 && found, QStringLiteral("a mounted subvolume shows up with its ID"), id);
+
+    // Its error counts (all zero), and a real scrub through systemd's unit when it's installed.
+    const QString source = sh(QStringLiteral("findmnt"), {QStringLiteral("-n"), QStringLiteral("-o"), QStringLiteral("SOURCE"), top}).trimmed();
+    const btrfscheck::Counts counts = btrfscheck::read(QFileInfo(source.section(QLatin1Char('['), 0, 0)).fileName());
+    report(counts.known && counts.total() == 0 && counts.devices == 1, QStringLiteral("its error counts are read from sysfs (all zero)"), source);
+    Systemd systemd;
+    const QString unit = btrfscheck::scrubUnit(top);
+    if (!systemd.unitExists(unit)) {
+        report(true, QStringLiteral("scrub through systemd (skipped: no btrfs-scrub@ units)"));
+    } else {
+        bool started = false;
+        QEventLoop loop;
+        systemd.ref(unit);
+        systemd.startUnit(unit, [&](bool ok, const QString &) {
+            started = ok;
+            loop.quit();
+        });
+        loop.exec();
+        QElapsedTimer waited;
+        waited.start();
+        Systemd::ServiceState state = systemd.serviceState(unit);
+        while ((state.running() || state.exited == 0) && waited.elapsed() < 60000) {
+            QThread::msleep(200);
+            state = systemd.serviceState(unit);
+        }
+        // btrfs-progs keeps a status file per scrubbed file system; this one was only for the test.
+        const QString uuid = sh(QStringLiteral("blkid"), {QStringLiteral("-s"), QStringLiteral("UUID"), QStringLiteral("-o"), QStringLiteral("value"), image}).trimmed();
+        if (!uuid.isEmpty() && !uuid.contains(QLatin1Char('/')))
+            QFile::remove(QStringLiteral("/var/lib/btrfs/scrub.status.") + uuid);
+        report(started && state.exists && !state.running() && state.conditionMet && state.exitStatus == 0 && state.result == QLatin1String("success"),
+               QStringLiteral("a scrub runs through %1 and finds nothing").arg(unit),
+               QStringLiteral("%1 %2 exit %3, started %4, exists %5, condition %6, ran %7 s")
+                   .arg(state.active, state.result)
+                   .arg(state.exitStatus)
+                   .arg(started)
+                   .arg(state.exists)
+                   .arg(state.conditionMet)
+                   .arg(state.exited && state.started ? double(state.exited - state.started) / 1e6 : -1.0));
+    }
     sh(QStringLiteral("umount"), {sub});
     sh(QStringLiteral("umount"), {top});
 }

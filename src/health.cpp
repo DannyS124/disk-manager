@@ -33,7 +33,7 @@ const SmartAttribute *attribute(const QVector<SmartAttribute> &attributes, int i
     return nullptr;
 }
 
-void add(QVector<HealthReason> &reasons, HealthReason::Level level, const char *code, qint64 number, const QString &text)
+void addReason(QVector<HealthReason> &reasons, HealthReason::Level level, const char *code, qint64 number, const QString &text)
 {
     reasons.push_back({level, QLatin1String(code), number, text});
 }
@@ -112,50 +112,50 @@ health::Verdict health::ata(const AtaInput &in)
     QVector<HealthReason> r;
     using L = HealthReason::Level;
     if (in.driveSaysFailing)
-        add(r, L::Failing, "drive-failing", -1, QObject::tr("The drive itself says it's failing. Copy what you want to keep to another drive now."));
+        addReason(r, L::Failing, "drive-failing", -1, QObject::tr("The drive itself says it's failing. Copy what you want to keep to another drive now."));
     if (in.failingNow > 0)
-        add(r, L::Failing, "attribute-failing", in.failingNow,
+        addReason(r, L::Failing, "attribute-failing", in.failingNow,
             QObject::tr("%n of its health numbers is past the limit its maker set. Copy what you want to keep to another drive now.", nullptr,
                in.failingNow));
 
     const qint64 pending = rawOf(in.attributes, 197), offline = rawOf(in.attributes, 198);
     const qint64 reallocated = rawOf(in.attributes, 5), uncorrect = rawOf(in.attributes, 187), spin = rawOf(in.attributes, 10);
     if (pending > 0)
-        add(r, L::Warning, "pending", pending,
+        addReason(r, L::Warning, "pending", pending,
             QObject::tr("%n unreadable sector(s). Scan for Bad Sectors can repair them; what was stored there is already lost.", nullptr, int(pending)));
     if (offline > 0 && offline != pending)
-        add(r, L::Warning, "offline", offline, QObject::tr("%n sector(s) its own scan couldn't read. Keep backups.", nullptr, int(offline)));
+        addReason(r, L::Warning, "offline", offline, QObject::tr("%n sector(s) its own scan couldn't read. Keep backups.", nullptr, int(offline)));
     if (uncorrect > 0)
-        add(r, L::Warning, "uncorrectable", uncorrect,
+        addReason(r, L::Warning, "uncorrectable", uncorrect,
             QObject::tr("%n read error(s) it couldn't fix. Drives that have had these fail far more often: keep backups and think about "
                "replacing it.", nullptr, int(uncorrect)));
     if (reallocated > 0)
-        add(r, L::Warning, "reallocated", reallocated,
+        addReason(r, L::Warning, "reallocated", reallocated,
             QObject::tr("%n sector(s) replaced. That's what drives are built to do, but keep backups and watch whether the number grows.",
                nullptr, int(reallocated)));
     if (spin > 0)
-        add(r, L::Warning, "spin-retries", spin, QObject::tr("%n spin-up retry(s): a mechanical or power problem.", nullptr, int(spin)));
+        addReason(r, L::Warning, "spin-retries", spin, QObject::tr("%n spin-up retry(s): a mechanical or power problem.", nullptr, int(spin)));
 
     // Counters that never go down: a warning only when they've grown since last seen.
     const qint64 endToEnd = rawOf(in.attributes, 184), timeouts = rawOf(in.attributes, 188), crc = rawOf(in.attributes, 199);
     auto grew = [&in](int id, qint64 now) { return in.seen.contains(id) && now > in.seen.value(id); };
     if (endToEnd > 0)
-        add(r, grew(184, endToEnd) ? L::Warning : L::Note, "end-to-end", endToEnd,
+        addReason(r, grew(184, endToEnd) ? L::Warning : L::Note, "end-to-end", endToEnd,
             QObject::tr("%n end-to-end error(s): data damaged inside the drive.", nullptr, int(endToEnd)));
     if (crc > 0)
-        add(r, grew(199, crc) ? L::Warning : L::Note, "crc", crc,
+        addReason(r, grew(199, crc) ? L::Warning : L::Note, "crc", crc,
             grew(199, crc) ? QObject::tr("Connection problems: %n new error(s) between the drive and the PC. Check the cable or try another "
                                 "port; the drive itself may be fine.", nullptr, int(crc - in.seen.value(199)))
                            : QObject::tr("%n connection error(s) in the past (cable or port).", nullptr, int(crc)));
     if (timeouts > 0)
-        add(r, grew(188, timeouts) ? L::Warning : L::Note, "timeouts", timeouts,
+        addReason(r, grew(188, timeouts) ? L::Warning : L::Note, "timeouts", timeouts,
             QObject::tr("%n command timeout(s).", nullptr, int(timeouts)));
     if (in.failedBefore > 0 && in.failingNow == 0)
-        add(r, L::Note, "failed-before", in.failedBefore, QObject::tr("Some health numbers were past their limit before."));
+        addReason(r, L::Note, "failed-before", in.failedBefore, QObject::tr("Some health numbers were past their limit before."));
 
     const double hot = in.ssd ? 70 : 55;
     if (in.temperatureC >= hot)
-        add(r, L::Warning, "hot", qRound(in.temperatureC),
+        addReason(r, L::Warning, "hot", qRound(in.temperatureC),
             QObject::tr("Running hot (%1 °C). Check the airflow around it.").arg(qRound(in.temperatureC)));
 
     Verdict v = finish(r);
@@ -177,24 +177,37 @@ health::Verdict health::nvme(const NvmeInput &in)
                                         QStringLiteral("volatile_mem"), QStringLiteral("pmr_readonly")};
     for (const QString &w : in.criticalWarnings) {
         if (serious.contains(w))
-            add(r, L::Failing, "critical", -1,
+            addReason(r, L::Failing, "critical", -1,
                 QObject::tr("The drive reports a critical problem (%1). Copy what you want to keep to another drive now.").arg(w));
     }
     if (in.availableSpare >= 0 && in.spareThreshold > 0 && in.availableSpare < in.spareThreshold && !in.criticalWarnings.contains(QStringLiteral("spare")))
-        add(r, L::Failing, "spare", in.availableSpare,
+        addReason(r, L::Failing, "spare", in.availableSpare,
             QObject::tr("It's out of spare blocks (%1% left). Copy what you want to keep to another drive now.").arg(in.availableSpare));
     else if (in.availableSpare >= 0 && in.spareThreshold > 0 && in.availableSpare <= in.spareThreshold + 10)
-        add(r, L::Warning, "spare-low", in.availableSpare, QObject::tr("It's running low on spare blocks (%1% left).").arg(in.availableSpare));
+        addReason(r, L::Warning, "spare-low", in.availableSpare, QObject::tr("It's running low on spare blocks (%1% left).").arg(in.availableSpare));
     if (in.criticalWarnings.contains(QStringLiteral("temperature")) || (in.warningTempC > 0 && in.temperatureC >= in.warningTempC))
-        add(r, L::Warning, "hot", qRound(in.temperatureC),
+        addReason(r, L::Warning, "hot", qRound(in.temperatureC),
             QObject::tr("Running too hot (%1 °C). Check the airflow around it.").arg(qRound(in.temperatureC)));
     if (in.mediaErrors > 0)
-        add(r, L::Warning, "media-errors", in.mediaErrors,
+        addReason(r, L::Warning, "media-errors", in.mediaErrors,
             QObject::tr("%n media error(s): data it couldn't read back correctly. Keep backups.", nullptr, int(in.mediaErrors)));
     if (in.percentUsed >= 100)
-        add(r, L::Warning, "worn", in.percentUsed,
+        addReason(r, L::Warning, "worn", in.percentUsed,
             QObject::tr("Past its rated life (%1% used). It may keep working, but keep backups and plan to replace it.").arg(in.percentUsed));
     return finish(r);
+}
+
+void health::add(Health &h, const HealthReason &reason)
+{
+    const auto at = std::find_if(h.reasons.begin(), h.reasons.end(), [&reason](const HealthReason &r) { return r.level < reason.level; });
+    h.reasons.insert(at, reason);
+    const Health::State state = reason.level == HealthReason::Level::Failing ? Health::State::Failing
+        : reason.level == HealthReason::Level::Warning                     ? Health::State::Warning
+                                                                           : Health::State::Healthy;
+    if (state > h.state) {
+        h.state = state;
+        h.summary = state == Health::State::Failing ? QObject::tr("Failing, back up now") : reason.text.section(QLatin1String(". "), 0, 0);
+    }
 }
 
 QString health::keyFor(const QString &driveId, const QString &drivePath)

@@ -6,9 +6,16 @@
 
 #include "testkit.h"
 
+#include "../src/btrfscheck.h"
 #include "../src/firmware.h"
 #include "../src/health.h"
+#include "../src/systemd.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 
 namespace {
@@ -186,6 +193,83 @@ void healthTests()
            QStringLiteral("a newer version is shown, and DiskForge doesn't install it"), firmware::describe(available));
     report(stick.state == FwState::NotUpdatable && broken.state == FwState::Error && broken.error == QLatin1String("oops"),
            QStringLiteral("a drive fwupd can't update, and other errors, say so"));
+
+    // Btrfs error counts, from a made-up /sys/fs/btrfs: one clean file system, and one on two
+    // drives with errors, mounted as a clone (temp_fsid).
+    QTemporaryDir sys;
+    auto put = [&sys](const QString &path, const QByteArray &data) {
+        QDir().mkpath(QFileInfo(sys.filePath(path)).path());
+        QFile f(sys.filePath(path));
+        if (f.open(QIODevice::WriteOnly))
+            f.write(data);
+    };
+    const QByteArray zero = "write_errs 0\nread_errs 0\nflush_errs 0\ncorruption_errs 0\ngeneration_errs 0\n";
+    put(QStringLiteral("3abccb79/devices/nvme0n1p2"), {});
+    put(QStringLiteral("3abccb79/devinfo/1/error_stats"), zero);
+    put(QStringLiteral("3abccb79/temp_fsid"), "0\n");
+    put(QStringLiteral("dbd34a09/devices/sda1"), {});
+    put(QStringLiteral("dbd34a09/devices/sdb1"), {});
+    put(QStringLiteral("dbd34a09/devinfo/1/error_stats"), "write_errs 0\nread_errs 2\nflush_errs 0\ncorruption_errs 1\ngeneration_errs 0\n");
+    put(QStringLiteral("dbd34a09/devinfo/2/error_stats"), "write_errs 0\nread_errs 1\nflush_errs 0\ncorruption_errs 0\ngeneration_errs 0\n");
+    put(QStringLiteral("dbd34a09/temp_fsid"), "1\n");
+    const btrfscheck::Counts cleanFs = btrfscheck::read(QStringLiteral("nvme0n1p2"), sys.path());
+    const btrfscheck::Counts twoDrives = btrfscheck::read(QStringLiteral("sdb1"), sys.path());
+    report(cleanFs.known && cleanFs.total() == 0 && cleanFs.devices == 1 && btrfscheck::describe(cleanFs) == QLatin1String("No errors recorded."),
+           QStringLiteral("a clean Btrfs has no errors recorded"), btrfscheck::describe(cleanFs));
+    report(twoDrives.read == 3 && twoDrives.corruption == 1 && twoDrives.devices == 2 && twoDrives.tempFsid
+               && btrfscheck::describe(twoDrives).contains(QLatin1String("3 read error")) && btrfscheck::describe(twoDrives).contains(QLatin1String("all 2 drives")),
+           QStringLiteral("errors on a Btrfs across two drives are added up, and a clone is noted"), btrfscheck::describe(twoDrives));
+    report(!btrfscheck::read(QStringLiteral("sdc1"), sys.path()).known && !btrfscheck::read(QStringLiteral("../dbd34a09/devices/sda1"), sys.path()).known
+               && !btrfscheck::read(QString(), sys.path()).known,
+           QStringLiteral("an unknown or odd device name finds nothing"));
+    const btrfscheck::Counts damaged = btrfscheck::parse("read_errs -5\nwrite_errs 99999999999999999999\ncorruption_errs 7 8\nflush_errs x\n");
+    const btrfscheck::Counts huge = btrfscheck::parse("read_errs 9223372036854775807\nwrite_errs 9223372036854775807\ngeneration_errs 9223372036854775807\n");
+    report(!damaged.known && damaged.total() == 0 && huge.total() > 0 && huge.total() <= 3000000000000LL,
+           QStringLiteral("damaged or huge counts don't count or overflow"));
+
+    // Scrub units: named like systemd-escape --path names them.
+    const QStringList paths = {QStringLiteral("/"), QStringLiteral("/home"), QStringLiteral("/run/media/d34droot/SATA500"),
+                               QStringLiteral("/mnt/my disk"), QStringLiteral("/mnt/a-b"), QStringLiteral("/.dotdir"),
+                               QStringLiteral("/mnt/.hidden"), QStringLiteral("/mnt/\u00fcber"), QStringLiteral("//mnt//x/"),
+                               QStringLiteral("/mnt/a\\b"), QStringLiteral("/mnt/a:b_c.d"), QStringLiteral("/mnt/100%")};
+    QStringList wrong;
+    const bool haveTool = !QStandardPaths::findExecutable(QStringLiteral("systemd-escape")).isEmpty();
+    for (const QString &path : haveTool ? paths : QStringList()) {
+        QProcess p;
+        p.start(QStringLiteral("systemd-escape"), {QStringLiteral("--path"), path});
+        p.waitForFinished();
+        const QString expected = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+        if (Systemd::escapePath(path) != expected)
+            wrong << QStringLiteral("%1 -> %2 (systemd: %3)").arg(path, Systemd::escapePath(path), expected);
+    }
+    report(wrong.isEmpty(), haveTool ? QStringLiteral("unit names match systemd-escape --path") : QStringLiteral("unit names (skipped: no systemd-escape)"),
+           wrong.join(QStringLiteral(" | ")));
+    report(btrfscheck::scrubUnit(QStringLiteral("/")) == QLatin1String("btrfs-scrub@-.service")
+               && btrfscheck::scrubTimer(QStringLiteral("/run/media/d34droot/SATA500")) == QLatin1String("btrfs-scrub@run-media-d34droot-SATA500.timer")
+               && btrfscheck::scrubMountPoint({QStringLiteral("/home"), QStringLiteral("/"), QStringLiteral("/var/log")}) == QLatin1String("/")
+               && btrfscheck::scrubMountPoint({QStringLiteral("/run/media/x/Data"), QStringLiteral("/mnt/d")}) == QLatin1String("/mnt/d"),
+           QStringLiteral("one scrub per file system, through / when it's there"));
+    report(btrfscheck::scrubOutcome(true, 0, QStringLiteral("success"), 0, 0).contains(QLatin1String("checked out"))
+               && btrfscheck::scrubOutcome(true, 0, QStringLiteral("success"), 1, 4).contains(QLatin1String("repaired"))
+               && btrfscheck::scrubOutcome(true, 3, QStringLiteral("exit-code"), 0, 2).contains(QLatin1String("couldn't fix"))
+               && btrfscheck::scrubOutcome(false, 0, QStringLiteral("success"), 0, 0).contains(QLatin1String("nothing was checked"))
+               && btrfscheck::scrubOutcome(true, 1, QStringLiteral("exit-code"), 0, 0).contains(QLatin1String("didn't finish")),
+           QStringLiteral("a finished scrub says what it found"));
+
+    // Reasons from outside SMART keep the order and the verdict.
+    Health withNote;
+    withNote.state = Health::State::Healthy;
+    withNote.summary = QStringLiteral("Healthy");
+    withNote.reasons = {{HealthReason::Level::Note, QStringLiteral("timeouts"), 4, QStringLiteral("4 command timeouts.")}};
+    health::add(withNote, {HealthReason::Level::Warning, QStringLiteral("btrfs-sda1"), 3, QStringLiteral("Btrfs on sda1 has seen errors. More.")});
+    Health failingAlready;
+    failingAlready.state = Health::State::Failing;
+    failingAlready.summary = QStringLiteral("Failing, back up now");
+    health::add(failingAlready, {HealthReason::Level::Warning, QStringLiteral("btrfs-sda1"), 3, QStringLiteral("x")});
+    report(withNote.state == Health::State::Warning && withNote.reasons[0].code == QLatin1String("btrfs-sda1")
+               && withNote.summary == QLatin1String("Btrfs on sda1 has seen errors") && failingAlready.state == Health::State::Failing
+               && failingAlready.summary.startsWith(QLatin1String("Failing")),
+           QStringLiteral("Btrfs errors raise a healthy drive to a warning, and never lower a failing one"), withNote.summary);
 
     int described = 0;
     for (const int id : {1, 3, 4, 5, 7, 9, 10, 12, 177, 184, 187, 188, 190, 194, 196, 197, 198, 199, 231, 241})

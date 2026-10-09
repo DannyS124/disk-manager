@@ -17,6 +17,7 @@
 #include "../src/clone.h"
 #include "../src/format.h"
 #include "../src/gpt.h"
+#include "../src/btrfscheck.h"
 #include "../src/firmware.h"
 #include "../src/health.h"
 #include "../src/imagebackup.h"
@@ -601,6 +602,20 @@ void firmwareAnswers()
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void btrfsCounts()
+{
+    // Damaged error_stats text: no crash, nothing negative, and a total that can't overflow.
+    const QByteArray seed = "write_errs 0\nread_errs 2\nflush_errs 0\ncorruption_errs 1\ngeneration_errs 0\n";
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        const btrfscheck::Counts c = btrfscheck::parse(mutate(seed));
+        if (c.write < 0 || c.read < 0 || c.flush < 0 || c.corruption < 0 || c.generation < 0 || c.total() < 0 || c.total() > 5000000000000LL)
+            bad << QString::number(i);
+        btrfscheck::describe(c);
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 damaged Btrfs error counts: nothing negative or overflowing").arg(rounds()), bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void driveNames()
 {
     // Names made of the characters that cause trouble, through the backup add-on's command.
@@ -672,5 +687,6 @@ void fuzzTests()
     commandOutput();
     healthVerdicts();
     firmwareAnswers();
+    btrfsCounts();
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

@@ -54,6 +54,10 @@ struct Verdict {
 Verdict ata(const AtaInput &in);
 Verdict nvme(const NvmeInput &in);
 
+// Adds a reason found outside SMART (Btrfs errors), keeping the worst first and the verdict
+// in step with it.
+void add(Health &h, const HealthReason &reason);
+
 // Where a drive's remembered values and dismissals are kept: its UDisks Drive.Id (the same
 // drive keeps it on any port), or its object name when it has none.
 QString keyFor(const QString &driveId, const QString &drivePath);

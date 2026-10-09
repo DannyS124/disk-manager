@@ -15,7 +15,7 @@
 <context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="947"/>
+        <location filename="../src/tools.cpp" line="1117"/>
         <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
         <translation>
             <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
@@ -23,7 +23,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="975"/>
+        <location filename="../src/tools.cpp" line="1145"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -31,7 +31,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1020"/>
+        <location filename="../src/tools.cpp" line="1190"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -110,7 +110,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="87"/>
+        <location filename="../src/tools.cpp" line="92"/>
         <source>%n sector(s)</source>
         <translation>
             <numerusform>%n sector</numerusform>
@@ -227,6 +227,46 @@
         <translation>
             <numerusform>%n media error: data it couldn't read back correctly. Keep backups.</numerusform>
             <numerusform>%n media errors: data it couldn't read back correctly. Keep backups.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/btrfscheck.cpp" line="88"/>
+        <source>%n read error(s)</source>
+        <translation>
+            <numerusform>%n read error</numerusform>
+            <numerusform>%n read errors</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/btrfscheck.cpp" line="90"/>
+        <source>%n write error(s)</source>
+        <translation>
+            <numerusform>%n write error</numerusform>
+            <numerusform>%n write errors</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/btrfscheck.cpp" line="92"/>
+        <source>%n flush error(s)</source>
+        <translation>
+            <numerusform>%n flush error</numerusform>
+            <numerusform>%n flush errors</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/btrfscheck.cpp" line="94"/>
+        <source>%n checksum error(s)</source>
+        <translation>
+            <numerusform>%n checksum error</numerusform>
+            <numerusform>%n checksum errors</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/btrfscheck.cpp" line="96"/>
+        <source>%n out-of-date block(s)</source>
+        <translation>
+            <numerusform>%n out-of-date block</numerusform>
+            <numerusform>%n out-of-date blocks</numerusform>
         </translation>
     </message>
 </context>
