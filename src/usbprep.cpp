@@ -1,0 +1,251 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "usbprep.h"
+
+#include "applog.h"
+#include "udisks.h"
+
+#include <QTimer>
+
+#include <algorithm>
+#include <utility>
+
+namespace {
+
+QString fsName(const QString &fsType)
+{
+    if (fsType == QLatin1String("vfat"))
+        return QStringLiteral("FAT32");
+    if (fsType == QLatin1String("exfat"))
+        return QStringLiteral("exFAT");
+    if (fsType == QLatin1String("ntfs"))
+        return QStringLiteral("NTFS");
+    return fsType;
+}
+
+} // namespace
+
+UsbPrep::UsbPrep(UDisks *udisks, const QString &diskPath, const QString &tableType, const QVector<Partition> &partitions,
+                 QObject *parent)
+    : QObject(parent)
+    , m_udisks(udisks)
+    , m_disk(diskPath)
+    , m_table(tableType)
+    , m_partitions(partitions)
+{
+}
+
+void UsbPrep::start()
+{
+    m_volumes = QStringList(m_partitions.size(), QString());
+    m_mounts = QStringList(m_partitions.size(), QString());
+    listen();
+    makeTable();
+}
+
+void UsbPrep::listen()
+{
+    if (m_running)
+        return;
+    m_running = true;
+    m_opConn = connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
+        if (!m_running || !m_next)
+            return;
+        const std::function<void()> next = std::exchange(m_next, nullptr);
+        if (!ok && !m_failureIsFine)
+            return fail(message, true);
+        next();
+    });
+}
+
+void UsbPrep::fail(const QString &message, bool shownAlready)
+{
+    disconnect(m_opConn);
+    m_next = nullptr;
+    if (m_waiting)
+        *m_waiting = false;
+    m_running = false;
+    qCInfo(lcOps).noquote() << "Setting up" << m_disk << "failed:" << message;
+    emit failed(message, shownAlready);
+}
+
+void UsbPrep::expect(const std::function<void()> &next, bool failureIsFine)
+{
+    m_next = next;
+    m_failureIsFine = failureIsFine;
+}
+
+void UsbPrep::waitFor(const std::function<bool()> &ready, int seconds, const std::function<void()> &then,
+                      const QString &timeoutMessage)
+{
+    if (m_waiting)
+        *m_waiting = false;
+    auto alive = std::make_shared<bool>(true);
+    m_waiting = alive;
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    auto *timer = new QTimer(this);
+    timer->setSingleShot(true);
+    auto check = [alive, ready, then, conn, timer] {
+        if (!*alive || !ready())
+            return;
+        *alive = false;
+        QObject::disconnect(*conn);
+        timer->stop();
+        timer->deleteLater();
+        then();
+    };
+    *conn = connect(m_udisks, &UDisks::changed, this, check);
+    connect(timer, &QTimer::timeout, this, [this, alive, conn, timer, timeoutMessage] {
+        timer->deleteLater();
+        if (!*alive)
+            return;
+        *alive = false;
+        disconnect(*conn);
+        fail(timeoutMessage);
+    });
+    timer->start(seconds * 1000);
+    QTimer::singleShot(0, this, check); // it may be true already
+}
+
+QString UsbPrep::mountPointOf(const QString &volumePath) const
+{
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
+        if (v.objectPath == volumePath)
+            return v.mounts().value(0);
+    }
+    return {};
+}
+
+void UsbPrep::makeTable()
+{
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    if (!d)
+        return fail(tr("The stick isn't there anymore."));
+    emit phase(tr("Making a new partition table…"));
+    expect([this] {
+        waitFor([this] {
+            const Disk *d = m_udisks->diskByPath(m_disk);
+            return d && d->tableType == m_table && d->volumes.isEmpty();
+        }, 30, [this] { makePartition(0); }, tr("The stick's new partition table didn't show up. Unplug it, plug it back in and try again."));
+    });
+    m_udisks->createPartitionTable(*d, m_table);
+}
+
+void UsbPrep::makePartition(int index)
+{
+    if (index >= m_partitions.size())
+        return setFlags(0);
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    if (!d)
+        return fail(tr("The stick isn't there anymore."));
+    // Each one goes right after the ones before it.
+    quint64 offset = 0;
+    QStringList before;
+    for (const Volume &v : d->volumes) {
+        offset = std::max(offset, v.offset + v.size);
+        before << v.objectPath;
+    }
+    const Partition &p = m_partitions[index];
+    emit phase(tr("Making the %1 partition…").arg(fsName(p.fsType)));
+    expect([this, index, before] {
+        waitFor([this, index, before] {
+            const Disk *d = m_udisks->diskByPath(m_disk);
+            for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
+                if (!before.contains(v.objectPath) && v.fsType == m_partitions[index].fsType) {
+                    m_volumes[index] = v.objectPath;
+                    return true;
+                }
+            }
+            return false;
+        }, 30, [this, index] { makePartition(index + 1); },
+                tr("The stick's new partition didn't show up. Unplug it, plug it back in and try again."));
+    });
+    m_udisks->createPartition(*d, offset, p.size ? p.size : d->size, p.fsType, p.label);
+}
+
+void UsbPrep::setFlags(int index)
+{
+    while (index < m_partitions.size() && m_partitions[index].flags == 0)
+        ++index;
+    if (index >= m_partitions.size())
+        return mountNext(0);
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    const Volume *v = nullptr;
+    for (const Volume &candidate : d ? d->volumes : QVector<Volume>()) {
+        if (candidate.objectPath == m_volumes[index])
+            v = &candidate;
+    }
+    if (!v)
+        return fail(tr("The stick isn't there anymore."));
+    // Some PCs only offer a USB stick in their boot menu when a partition is marked bootable.
+    emit phase(tr("Marking it bootable…"));
+    expect([this, index] { setFlags(index + 1); });
+    m_udisks->setPartitionTypeAndFlags(*v, QString(), true, m_partitions[index].flags);
+}
+
+void UsbPrep::mountNext(int index)
+{
+    while (index < m_partitions.size() && !m_partitions[index].mount)
+        ++index;
+    if (index >= m_partitions.size()) {
+        qCInfo(lcOps).noquote() << "Set up" << m_disk << "mounted at" << m_mounts.join(QLatin1Char(' '));
+        emit ready(m_mounts);
+        return;
+    }
+    const QString path = m_volumes[index];
+    // Some desktops mount new USB partitions by themselves.
+    if (!mountPointOf(path).isEmpty()) {
+        m_mounts[index] = mountPointOf(path);
+        return mountNext(index + 1);
+    }
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    const Volume *v = nullptr;
+    for (const Volume &candidate : d ? d->volumes : QVector<Volume>()) {
+        if (candidate.objectPath == path)
+            v = &candidate;
+    }
+    if (!v)
+        return fail(tr("The stick isn't there anymore."));
+    emit phase(tr("Mounting it…"));
+    // If the desktop mounted it first, Mount fails with "already mounted": what counts is
+    // whether it ends up mounted.
+    expect([this, index, path] {
+        waitFor([this, path] { return !mountPointOf(path).isEmpty(); }, 15,
+                [this, index, path] {
+                    m_mounts[index] = mountPointOf(path);
+                    mountNext(index + 1);
+                },
+                tr("The stick didn't mount."));
+    }, true);
+    m_udisks->mount(*v);
+}
+
+void UsbPrep::finish()
+{
+    listen();
+    emit phase(tr("Finishing up…"));
+    unmountNext(0);
+}
+
+void UsbPrep::unmountNext(int index)
+{
+    while (index < m_partitions.size() && (m_volumes[index].isEmpty() || mountPointOf(m_volumes[index]).isEmpty()))
+        ++index;
+    if (index >= m_partitions.size()) {
+        disconnect(m_opConn);
+        m_running = false;
+        emit done(true, QString());
+        return;
+    }
+    const Disk *d = m_udisks->diskByPath(m_disk);
+    for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
+        if (v.objectPath == m_volumes[index]) {
+            expect([this, index] { unmountNext(index + 1); });
+            m_udisks->unmount(v);
+            return;
+        }
+    }
+    unmountNext(index + 1);
+}

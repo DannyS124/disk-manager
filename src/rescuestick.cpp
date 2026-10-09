@@ -5,21 +5,16 @@
 
 #include "applog.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QStorageInfo>
 
-#include <algorithm>
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 
 namespace {
 
-constexpr qsizetype kChunk = 4 * 1024 * 1024;
 constexpr quint64 kMaxSmallFile = 4 * 1024 * 1024; // sha256sum.txt and the info file
 
 const QString kInfoPath = QStringLiteral(".disk/diskforge-rescue");
@@ -40,20 +35,6 @@ QByteArray readEntry(int fd, const isofs::Entry &entry)
         done += n;
     }
     return data;
-}
-
-bool writeAll(int fd, const char *data, qsizetype size)
-{
-    while (size > 0) {
-        const ssize_t n = ::write(fd, data, size_t(size));
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0)
-            return false;
-        data += n;
-        size -= n;
-    }
-    return true;
 }
 
 } // namespace
@@ -145,10 +126,17 @@ int rescue::logFolders(const QString &root)
     return int(QDir(root + QStringLiteral("/logs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot).size());
 }
 
-rescue::StickWriter::StickWriter(const QString &isoPath, const QString &stickRoot)
-    : m_iso(isoPath)
+rescue::StickWriter::StickWriter(const QString &source, const QString &stickRoot)
+    : m_source(source)
     , m_root(stickRoot)
 {
+}
+
+void rescue::StickWriter::cancel()
+{
+    m_cancel = true;
+    if (filecopy::Copier *copier = m_copier)
+        copier->cancel();
 }
 
 void rescue::StickWriter::finish(bool ok, const QString &message)
@@ -157,160 +145,60 @@ void rescue::StickWriter::finish(bool ok, const QString &message)
     emit finished(ok, message);
 }
 
-bool rescue::StickWriter::copy(int iso, const isofs::Entry &entry, const QByteArray &expected, quint64 &done, quint64 total)
-{
-    const QString target = m_root + QLatin1Char('/') + entry.path;
-    const int out = ::open(QFile::encodeName(target).constData(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-    if (out < 0) {
-        m_error = tr("Couldn't write %1 to the stick: %2").arg(entry.path, QString::fromLocal8Bit(strerror(errno)));
-        return false;
-    }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    QByteArray buffer(kChunk, Qt::Uninitialized);
-    quint64 copied = 0;
-    bool ok = true;
-    while (ok && copied < entry.size) {
-        if (m_cancel) {
-            ok = false;
-            break;
-        }
-        const qsizetype want = qsizetype(qMin<quint64>(quint64(kChunk), entry.size - copied));
-        const ssize_t n = ::pread(iso, buffer.data(), size_t(want), off_t(entry.offset + copied));
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            m_error = tr("Couldn't read %1 from the image.").arg(entry.path);
-            ok = false;
-            break;
-        }
-        hash.addData(QByteArrayView(buffer.constData(), n));
-        if (!writeAll(out, buffer.constData(), n)) {
-            m_error = tr("Couldn't write %1 to the stick: %2").arg(entry.path, QString::fromLocal8Bit(strerror(errno)));
-            ok = false;
-            break;
-        }
-        copied += quint64(n);
-        done += quint64(n);
-        emit progress(tr("Copying"), done, total);
-    }
-    // On the stick for real, and out of the page cache, so the check reads the stick itself.
-    if (ok && ::fsync(out) != 0) {
-        m_error = tr("Couldn't write %1 to the stick: %2").arg(entry.path, QString::fromLocal8Bit(strerror(errno)));
-        ok = false;
-    }
-    ::posix_fadvise(out, 0, 0, POSIX_FADV_DONTNEED);
-    ::close(out);
-    if (ok && !expected.isEmpty() && hash.result().toHex() != expected) {
-        m_error = tr("The image is damaged: %1 doesn't match its checksum. Download it again.").arg(entry.path);
-        ok = false;
-    }
-    return ok;
-}
-
-bool rescue::StickWriter::check(const QString &path, const QByteArray &expected, quint64 &done, quint64 total)
-{
-    const int in = ::open(QFile::encodeName(m_root + QLatin1Char('/') + path).constData(), O_RDONLY | O_CLOEXEC);
-    if (in < 0) {
-        m_error = tr("%1 isn't on the stick after writing it. The stick may be failing; try another one.").arg(path);
-        return false;
-    }
-    ::posix_fadvise(in, 0, 0, POSIX_FADV_DONTNEED);
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    QByteArray buffer(kChunk, Qt::Uninitialized);
-    bool ok = true;
-    for (;;) {
-        if (m_cancel) {
-            ok = false;
-            break;
-        }
-        const ssize_t n = ::read(in, buffer.data(), size_t(buffer.size()));
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n < 0) {
-            m_error = tr("Couldn't read %1 back from the stick. It may be failing; try another one.").arg(path);
-            ok = false;
-            break;
-        }
-        if (n == 0)
-            break;
-        hash.addData(QByteArrayView(buffer.constData(), n));
-        done += quint64(n);
-        emit progress(tr("Checking"), done, total);
-    }
-    ::close(in);
-    if (ok && hash.result().toHex() != expected) {
-        m_error = tr("The stick gave back something different from what was written to %1. "
-                     "It may be failing; try another one.").arg(path);
-        ok = false;
-    }
-    return ok;
-}
-
 void rescue::StickWriter::run()
 {
-    const int iso = ::open(QFile::encodeName(m_iso).constData(), O_RDONLY | O_CLOEXEC);
-    if (iso < 0)
-        return finish(false, tr("Couldn't open %1.").arg(QFileInfo(m_iso).fileName()));
-    const isofs::Listing listing = isofs::list(iso);
-    const isofs::Entry *sumsEntry = listing.ok() ? isofs::find(listing, kSumsPath) : nullptr;
-    const QByteArray sumsText = sumsEntry && !sumsEntry->isDir ? readEntry(iso, *sumsEntry) : QByteArray();
-    const QHash<QString, QByteArray> sums = parseSums(sumsText);
-    if (!listing.ok() || sums.isEmpty() || !isofs::find(listing, kInfoPath)) {
-        ::close(iso);
-        return finish(false, listing.ok() ? tr("This isn't a DiskForge Rescue image.") : listing.error);
+    const std::unique_ptr<filecopy::Source> source =
+        QFileInfo(m_source).isDir() ? filecopy::openFolder(m_source) : filecopy::openIso(m_source);
+    if (!source->error().isEmpty())
+        return finish(false, source->error());
+    auto find = [&source](const QString &path) -> const filecopy::Entry * {
+        for (const filecopy::Entry &e : source->entries()) {
+            if (e.path == path && !e.isDir)
+                return &e;
+        }
+        return nullptr;
+    };
+    auto readSmall = [&source](const filecopy::Entry *e) {
+        QByteArray data;
+        if (e && e->size <= kMaxSmallFile) {
+            data.resize(qsizetype(e->size));
+            if (!source->read(*e, 0, data.data(), data.size()))
+                data.clear();
+        }
+        return data;
+    };
+    const QHash<QString, QByteArray> sums = parseSums(readSmall(find(kSumsPath)));
+    if (sums.isEmpty() || !find(kInfoPath))
+        return finish(false, tr("This isn't a DiskForge Rescue image."));
+    for (auto it = sums.cbegin(); it != sums.cend(); ++it) {
+        if (!find(it.key()))
+            return finish(false, tr("The image is damaged: %1 is missing. Download it again.").arg(it.key()));
     }
 
     // What goes onto the stick: everything sha256sum.txt lists, plus that file itself. The
     // boot catalog xorriso adds is only for CDs, so it's left out.
-    QVector<const isofs::Entry *> files;
-    quint64 total = 0;
-    for (auto it = sums.cbegin(); it != sums.cend(); ++it) {
-        const isofs::Entry *e = isofs::find(listing, it.key());
-        if (!e || e->isDir) {
-            ::close(iso);
-            return finish(false, tr("The image is damaged: %1 is missing. Download it again.").arg(it.key()));
-        }
-        files.push_back(e);
-        total += e->size;
-    }
-    files.push_back(sumsEntry);
-    total += sumsEntry->size;
-    std::sort(files.begin(), files.end(), [](const isofs::Entry *a, const isofs::Entry *b) { return a->path < b->path; });
-
-    const QStorageInfo storage(m_root);
-    if (storage.isValid() && quint64(storage.bytesAvailable()) < total + 16 * 1024 * 1024) {
-        ::close(iso);
-        return finish(false, tr("The stick is too small: DiskForge Rescue needs %1 MB.").arg(total / 1000000 + 16));
-    }
-
-    QDir root(m_root);
-    for (const isofs::Entry *e : std::as_const(files)) {
-        const QString folder = QFileInfo(e->path).path();
-        if (folder != QLatin1String(".") && !root.mkpath(folder)) {
-            ::close(iso);
-            return finish(false, tr("Couldn't make the folder %1 on the stick.").arg(folder));
-        }
-    }
-
-    qCInfo(lcOps).noquote() << "Make a Rescue USB: copying" << files.size() << "files," << total << "bytes, from" << m_iso << "to" << m_root;
-    quint64 done = 0;
-    for (const isofs::Entry *e : std::as_const(files)) {
-        if (!copy(iso, *e, e == sumsEntry ? QByteArray() : sums.value(e->path), done, total)) {
-            ::close(iso);
-            return finish(false, m_cancel ? tr("Stopped. The stick is only half done; make it again before using it.") : m_error);
-        }
-    }
-    ::close(iso);
-
-    done = 0;
-    const QByteArray sumsHash = QCryptographicHash::hash(sumsText, QCryptographicHash::Sha256).toHex();
-    for (const isofs::Entry *e : std::as_const(files)) {
-        if (!check(e->path, e == sumsEntry ? sumsHash : sums.value(e->path), done, total))
-            return finish(false, m_cancel ? tr("Stopped. The stick is only half done; make it again before using it.") : m_error);
-    }
+    filecopy::Options options;
+    options.expected = sums;
+    options.skip = [&sums](const QString &path) { return path != kSumsPath && !sums.contains(path); };
+    filecopy::Copier copier(source.get(), m_root, options);
+    connect(&copier, &filecopy::Copier::progress, this, &StickWriter::progress);
+    bool ok = false;
+    QString message;
+    connect(&copier, &filecopy::Copier::finished, this, [&](bool copied, const QString &text) {
+        ok = copied;
+        message = text;
+    });
+    qCInfo(lcOps).noquote() << "Make a Rescue USB: copying from" << m_source << "to" << m_root;
+    m_copier = &copier;
+    if (m_cancel)
+        copier.cancel();
+    copier.run();
+    m_copier = nullptr;
+    if (!ok)
+        return finish(false, message);
 
     // Where the rescue system leaves its notes.
-    root.mkpath(QStringLiteral("logs"));
+    QDir(m_root).mkpath(QStringLiteral("logs"));
     QFile note(m_root + QStringLiteral("/logs/README.txt"));
     if (note.open(QIODevice::WriteOnly | QIODevice::Text)) {
         note.write("DiskForge Rescue keeps its notes here: one folder for each time this stick started a PC,\n"
@@ -322,5 +210,5 @@ void rescue::StickWriter::run()
         ::syncfs(rootFd);
         ::close(rootFd);
     }
-    finish(true, tr("Copied and checked %1 files.").arg(files.size()));
+    finish(true, message);
 }

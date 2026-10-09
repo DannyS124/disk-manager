@@ -170,6 +170,9 @@ public:
     WriteImageDialog(UDisks *udisks, const QString &preferredDisk, QWidget *parent = nullptr);
     ~WriteImageDialog() override;
 
+    // For the tests: offer loop devices as targets too.
+    static bool allowLoopDevicesForTest;
+
 protected:
     void reject() override;
 

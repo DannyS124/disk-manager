@@ -7,6 +7,7 @@
 
 #include "testkit.h"
 
+#include "../src/filecopy.h"
 #include "../src/isofs.h"
 #include "../src/rescuestick.h"
 
@@ -292,6 +293,55 @@ void fuzzListing(const QString &dir)
     report(clean, QStringLiteral("%1 damaged images: no crash, nothing outside the image, no bad paths (%2 still listed)").arg(rounds).arg(listed));
 }
 
+// The copier on its own, from a folder (a mounted ISO, or a running rescue stick).
+void folderTests(const QString &dir)
+{
+    const QString tree = dir + QStringLiteral("/folder-tree");
+    QDir(tree).removeRecursively();
+    writeFile(tree + QStringLiteral("/boot/grub/grub.cfg"), "linux /vmlinuz root=live:CDLABEL=Some-Label quiet\n");
+    writeFile(tree + QStringLiteral("/live/filesystem.squashfs"), randomBytes(5 * 1024 * 1024 + 3, 11));
+    writeFile(tree + QStringLiteral("/skip/me.txt"), "nope\n");
+    writeFile(tree + QStringLiteral("/a/b/c/deep.txt"), "deep\n");
+    QDir().mkpath(tree + QStringLiteral("/empty"));
+    // Debian's ISOs have "debian -> ." at the top: following it would never end.
+    QFile::link(QStringLiteral("."), tree + QStringLiteral("/loop"));
+    QFile::link(QStringLiteral("live/filesystem.squashfs"), tree + QStringLiteral("/link.squashfs"));
+
+    const std::unique_ptr<filecopy::Source> source = filecopy::openFolder(tree);
+    bool noLinks = true;
+    for (const filecopy::Entry &e : source->entries())
+        noLinks = noLinks && !e.path.startsWith(QLatin1String("loop")) && e.path != QLatin1String("link.squashfs");
+    report(source->error().isEmpty() && noLinks, QStringLiteral("a folder is listed without its symbolic links"));
+
+    filecopy::Options options;
+    options.skip = [](const QString &path) { return path.startsWith(QLatin1String("skip")); };
+    options.transform = [](const QString &path, const QByteArray &data) {
+        return path.endsWith(QLatin1String(".cfg")) ? QByteArray(data).replace("Some-Label", "STICK") : QByteArray();
+    };
+    const QString target = dir + QStringLiteral("/folder-stick");
+    QDir(target).removeRecursively();
+    QDir().mkpath(target);
+    filecopy::Copier copier(source.get(), target, options);
+    bool ok = false;
+    QString message;
+    QObject::connect(&copier, &filecopy::Copier::finished, [&](bool done, const QString &text) {
+        ok = done;
+        message = text;
+    });
+    copier.run();
+    QFile cfg(target + QStringLiteral("/boot/grub/grub.cfg"));
+    QFile big(target + QStringLiteral("/live/filesystem.squashfs"));
+    QFile bigSource(tree + QStringLiteral("/live/filesystem.squashfs"));
+    report(ok, QStringLiteral("a folder is copied and checked"), message);
+    report(cfg.open(QIODevice::ReadOnly) && cfg.readAll() == "linux /vmlinuz root=live:CDLABEL=STICK quiet\n",
+           QStringLiteral("a transform changes a file on the way"));
+    report(big.open(QIODevice::ReadOnly) && bigSource.open(QIODevice::ReadOnly) && big.readAll() == bigSource.readAll(),
+           QStringLiteral("big files come over as they are"));
+    report(!QFileInfo::exists(target + QStringLiteral("/skip/me.txt")) && QFileInfo::exists(target + QStringLiteral("/a/b/c/deep.txt"))
+               && QFileInfo(target + QStringLiteral("/empty")).isDir(),
+           QStringLiteral("skipped files stay behind, deep and empty folders come along"));
+}
+
 } // namespace
 
 void rescueUsbTests()
@@ -303,6 +353,7 @@ void rescueUsbTests()
     }
     QTemporaryDir dir;
     isoTests(dir.path());
+    folderTests(dir.path());
     parserTests();
     fuzzListing(dir.path());
 }

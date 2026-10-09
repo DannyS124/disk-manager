@@ -734,6 +734,8 @@ void BenchmarkDialog::start()
 
 // --- Write image --------------------------------------------------------------
 
+bool WriteImageDialog::allowLoopDevicesForTest = false;
+
 WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk, QWidget *parent)
     : QDialog(parent)
     , m_udisks(udisks)
@@ -748,6 +750,10 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     , m_phase(new QLabel)
 {
     setWindowTitle(tr("Write Image to USB"));
+    m_image->setObjectName(QStringLiteral("image"));
+    m_imageInfo->setObjectName(QStringLiteral("imageInfo"));
+    m_sha->setObjectName(QStringLiteral("checksum"));
+    m_confirm->setObjectName(QStringLiteral("confirm"));
     auto *browse = new QPushButton(tr("Browse…"));
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Choose an Image"), QDir::homePath() + QStringLiteral("/Downloads"),
@@ -793,6 +799,13 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     connect(m_image, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
     connect(m_targets, &QComboBox::currentIndexChanged, this, &WriteImageDialog::updateState);
     connect(m_confirm, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
+    // Sticks plugged in while the dialog is open.
+    connect(m_udisks, &UDisks::changed, this, [this] {
+        if (m_running)
+            return;
+        fillTargets(m_targets->currentData().toString());
+        updateState();
+    });
     updateState();
     resize(600, sizeHint().height());
 }
@@ -810,12 +823,15 @@ WriteImageDialog::~WriteImageDialog()
 
 void WriteImageDialog::fillTargets(const QString &preferred)
 {
+    const QSignalBlocker block(m_targets);
     m_targets->clear();
     const QVector<Disk> &disks = m_udisks->disks();
     for (int i = 0; i < disks.size(); ++i) {
         const Disk &d = disks[i];
         // USB and removable drives only: writing an image over an internal disk is almost always a mistake.
-        if (d.isSystem || d.isLoop || !(d.removable || d.bus == QLatin1String("usb")))
+        if (d.isSystem || d.isRaid)
+            continue;
+        if (d.isLoop ? !allowLoopDevicesForTest : !(d.removable || d.bus == QLatin1String("usb")))
             continue;
         m_targets->addItem(tr("Disk %1: %2").arg(i).arg(diskTitle(d)), d.blockPath);
         if (d.blockPath == preferred)
@@ -913,25 +929,13 @@ void WriteImageDialog::start()
         connect(m_thread, &QThread::finished, writer, &QObject::deleteLater);
 
         // Speed and time left are per phase (checking, writing, verifying).
-        struct Clock { QElapsedTimer timer; QString phase; };
-        auto *clock = new Clock;
-        connect(writer, &ImageWriter::progress, this, [this, clock](const QString &phase, quint64 done, quint64 total) {
-            if (phase != clock->phase) {
-                clock->phase = phase;
-                clock->timer.start();
-            }
-            m_progress->setValue(total ? int(done * 1000 / total) : 0);
-            const double seconds = clock->timer.nsecsElapsed() / 1e9;
-            QString text = phase;
-            if (seconds > 2 && done < total) {
-                const double rate = done / seconds;
-                text += tr(", %1/s, %2 left").arg(formatSize(quint64(rate)), durationText((total - done) / std::max(rate, 1.0)));
-            }
-            m_phase->setText(text);
+        auto *meter = new PhaseProgress(m_progress, m_phase);
+        connect(writer, &ImageWriter::progress, this, [meter](const QString &phase, quint64 done, quint64 total) {
+            meter->update(phase, done, total);
         });
-        connect(writer, &ImageWriter::finished, this, [this, clock](bool ok, const QString &message) {
+        connect(writer, &ImageWriter::finished, this, [this, meter](bool ok, const QString &message) {
             qCInfo(lcOps).noquote() << "Write Image" << (ok ? "finished:" : "failed:") << message;
-            delete clock;
+            delete meter;
             m_thread->quit();
             m_thread->wait();
             m_thread = nullptr;

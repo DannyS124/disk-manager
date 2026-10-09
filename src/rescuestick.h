@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "filecopy.h"
 #include "isofs.h"
 
 #include <QHash>
@@ -43,15 +44,17 @@ Image inspect(const QString &isoPath);
 Info stickInfo(const QString &root);
 int logFolders(const QString &root);
 
-// Copies an image's files onto a mounted, empty FAT32 stick. Each file is checked against
-// the image's sha256sum.txt while it's copied, then read back from the stick and checked
-// again. Runs in a worker thread.
+// Copies a rescue image's files onto a mounted, empty FAT32 stick, with filecopy: each file
+// is checked against the image's sha256sum.txt while it's copied, then read back from the
+// stick and checked again. The source is the ISO file, or (from inside DiskForge Rescue) the
+// folder of a running rescue stick. Runs in a worker thread.
 class StickWriter : public QObject
 {
     Q_OBJECT
 public:
-    StickWriter(const QString &isoPath, const QString &stickRoot);
-    void cancel() { m_cancel = true; }
+    // `source`: an ISO file, or a folder holding a rescue stick's files.
+    StickWriter(const QString &source, const QString &stickRoot);
+    void cancel();
 
 public slots:
     void run();
@@ -61,14 +64,12 @@ signals:
     void finished(bool ok, const QString &message);
 
 private:
-    bool copy(int iso, const isofs::Entry &entry, const QByteArray &expected, quint64 &done, quint64 total);
-    bool check(const QString &path, const QByteArray &expected, quint64 &done, quint64 total);
     void finish(bool ok, const QString &message);
 
-    QString m_iso;
+    QString m_source;
     QString m_root;
-    QString m_error;
     std::atomic<bool> m_cancel{false};
+    std::atomic<filecopy::Copier *> m_copier{nullptr};
 };
 
 } // namespace rescue

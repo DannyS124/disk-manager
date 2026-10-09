@@ -6,6 +6,7 @@
 #include "applog.h"
 #include "dialogs.h"
 #include "format.h"
+#include "usbprep.h"
 
 #include <QComboBox>
 #include <QCoreApplication>
@@ -143,9 +144,6 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
 
 RescueUsbDialog::~RescueUsbDialog()
 {
-    disconnect(m_opConn);
-    if (m_waiting)
-        *m_waiting = false;
     if (m_thread) {
         if (m_writer)
             m_writer->cancel();
@@ -320,53 +318,14 @@ void RescueUsbDialog::reject()
     QDialog::reject();
 }
 
-void RescueUsbDialog::expect(const std::function<void()> &next, bool failureIsFine)
-{
-    m_next = next;
-    m_failureIsFine = failureIsFine;
-}
-
-void RescueUsbDialog::waitFor(const std::function<bool()> &ready, int seconds, const std::function<void()> &then,
-                              const QString &timeoutMessage)
-{
-    if (m_waiting)
-        *m_waiting = false;
-    auto alive = std::make_shared<bool>(true);
-    m_waiting = alive;
-    auto conn = std::make_shared<QMetaObject::Connection>();
-    auto *timer = new QTimer(this);
-    timer->setSingleShot(true);
-    auto check = [alive, ready, then, conn, timer] {
-        if (!*alive || !ready())
-            return;
-        *alive = false;
-        QObject::disconnect(*conn);
-        timer->stop();
-        timer->deleteLater();
-        then();
-    };
-    *conn = connect(m_udisks, &UDisks::changed, this, check);
-    connect(timer, &QTimer::timeout, this, [this, alive, conn, timer, timeoutMessage] {
-        timer->deleteLater();
-        if (!*alive)
-            return;
-        *alive = false;
-        disconnect(*conn);
-        finish(false, timeoutMessage);
-    });
-    timer->start(seconds * 1000);
-    QTimer::singleShot(0, this, check); // it may be true already
-}
-
 void RescueUsbDialog::start()
 {
     const Disk *d = target();
     if (!d || !m_inspected.error.isEmpty())
         return;
     m_diskPath = d->blockPath;
-    m_volumePath.clear();
-    m_mountPoint.clear();
     m_copyDone = false;
+    m_failure.clear();
     m_running = true;
     for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_make, m_openLogs})
         w->setEnabled(false);
@@ -375,83 +334,26 @@ void RescueUsbDialog::start()
     qCInfo(lcOps).noquote() << "Make a Rescue USB on" << d->device << d->model << "from" << m_inspectedPath
                             << "version" << m_inspected.info.version << "build" << m_inspected.info.id;
 
-    // Every step below reports through operationFinished; expect() says what comes next.
-    m_opConn = connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
-        if (!m_running || !m_next)
-            return;
-        const std::function<void()> next = std::exchange(m_next, nullptr);
-        if (!ok && !m_failureIsFine)
-            return finish(false, message, true);
-        next();
+    // One FAT32 partition, marked bootable: some PCs only offer a USB stick in their boot menu then.
+    m_prep = new UsbPrep(m_udisks, m_diskPath, QStringLiteral("dos"), {{QStringLiteral("vfat"), kLabel, 0, 0x80, true}}, this);
+    connect(m_prep, &UsbPrep::phase, m_phase, &QLabel::setText);
+    connect(m_prep, &UsbPrep::failed, this, [this](const QString &message, bool shownAlready) {
+        finish(false, message, shownAlready);
     });
-
-    m_phase->setText(tr("Making a new partition table…"));
-    expect([this] {
-        waitFor([this] {
-            const Disk *d = m_udisks->diskByPath(m_diskPath);
-            return d && d->tableType == QLatin1String("dos") && d->volumes.isEmpty();
-        }, 30, [this] { makePartition(); }, tr("The stick's new partition table didn't show up. Unplug it, plug it back in and try again."));
+    connect(m_prep, &UsbPrep::ready, this, [this](const QStringList &mountPoints) { copyFiles(mountPoints.value(0)); });
+    connect(m_prep, &UsbPrep::done, this, [this] {
+        if (!m_copyDone)
+            return finish(false, m_failure.isEmpty() ? tr("The files couldn't be copied.") : m_failure);
+        finish(true, tr("The rescue USB is ready.\n\n"
+                        "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot "
+                        "menu key (usually F12, F11, F9 or Esc), then pick the USB stick. Secure Boot can stay on.\n\n"
+                        "Every start leaves its logs in the logs folder on the stick."));
     });
-    m_udisks->createPartitionTable(*d, QStringLiteral("dos"));
-}
-
-void RescueUsbDialog::makePartition()
-{
-    const Disk *d = m_udisks->diskByPath(m_diskPath);
-    if (!d)
-        return finish(false, tr("The stick isn't there anymore."));
-    m_phase->setText(tr("Making the FAT32 partition…"));
-    expect([this] {
-        waitFor([this] {
-            const Disk *d = m_udisks->diskByPath(m_diskPath);
-            const Volume *v = d ? rescueVolume(*d) : nullptr;
-            if (v)
-                m_volumePath = v->objectPath;
-            return v != nullptr;
-        }, 30, [this] { markBootable(); }, tr("The stick's new partition didn't show up. Unplug it, plug it back in and try again."));
-    });
-    m_udisks->createPartition(*d, 0, d->size, QStringLiteral("vfat"), kLabel);
-}
-
-void RescueUsbDialog::markBootable()
-{
-    const Disk *d = m_udisks->diskByPath(m_diskPath);
-    const Volume *v = d ? rescueVolume(*d) : nullptr;
-    if (!v)
-        return finish(false, tr("The stick isn't there anymore."));
-    // Some PCs only offer a USB stick in their boot menu when a partition is marked bootable.
-    m_phase->setText(tr("Marking it bootable…"));
-    expect([this] { mountIt(); });
-    m_udisks->setPartitionTypeAndFlags(*v, QString(), true, 0x80);
-}
-
-void RescueUsbDialog::mountIt()
-{
-    auto mounted = [this]() -> QString {
-        const Disk *d = m_udisks->diskByPath(m_diskPath);
-        const Volume *v = d ? rescueVolume(*d) : nullptr;
-        return v && !v->mounts().isEmpty() ? v->mounts().first() : QString();
-    };
-    // Some desktops mount new USB partitions by themselves.
-    if (!mounted().isEmpty())
-        return copyFiles(mounted());
-    const Disk *d = m_udisks->diskByPath(m_diskPath);
-    const Volume *v = d ? rescueVolume(*d) : nullptr;
-    if (!v)
-        return finish(false, tr("The stick isn't there anymore."));
-    // If the desktop mounted it first, Mount fails with "already mounted": what counts is
-    // whether it ends up mounted.
-    m_phase->setText(tr("Mounting it…"));
-    expect([this, mounted] {
-        waitFor([mounted] { return !mounted().isEmpty(); }, 15, [this, mounted] { copyFiles(mounted()); },
-                tr("The stick didn't mount."));
-    }, true);
-    m_udisks->mount(*v);
+    m_prep->start();
 }
 
 void RescueUsbDialog::copyFiles(const QString &mountPoint)
 {
-    m_mountPoint = mountPoint;
     m_progress->setRange(0, 1000);
     m_writer = new rescue::StickWriter(m_inspectedPath, mountPoint);
     connect(m_writer, &rescue::StickWriter::progress, this, [this](const QString &phase, quint64 done, quint64 total) {
@@ -465,37 +367,18 @@ void RescueUsbDialog::copyFiles(const QString &mountPoint)
         m_copyDone = ok;
         m_failure = ok ? QString() : message;
         // Unmounted either way, so it isn't left mounted after a failed copy.
-        unmountIt();
+        m_progress->setRange(0, 0);
+        m_prep->finish();
     });
     m_thread = startOnThread(this, m_writer);
 }
 
-void RescueUsbDialog::unmountIt()
-{
-    auto done = [this] {
-        if (!m_copyDone)
-            return finish(false, m_failure.isEmpty() ? tr("The files couldn't be copied.") : m_failure);
-        finish(true, tr("The rescue USB is ready.\n\n"
-                        "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot "
-                        "menu key (usually F12, F11, F9 or Esc), then pick the USB stick. Secure Boot can stay on.\n\n"
-                        "Every start leaves its logs in the logs folder on the stick."));
-    };
-    const Disk *d = m_udisks->diskByPath(m_diskPath);
-    const Volume *v = d ? rescueVolume(*d) : nullptr;
-    if (!v || v->mounts().isEmpty())
-        return done();
-    m_progress->setRange(0, 0);
-    m_phase->setText(tr("Finishing up…"));
-    expect(done);
-    m_udisks->unmount(*v);
-}
-
 void RescueUsbDialog::finish(bool ok, const QString &message, bool alreadyShown)
 {
-    disconnect(m_opConn);
-    m_next = nullptr;
-    if (m_waiting)
-        *m_waiting = false;
+    if (m_prep) {
+        m_prep->deleteLater();
+        m_prep = nullptr;
+    }
     m_running = false;
     if (!ok)
         qCInfo(lcOps).noquote() << "Make a Rescue USB failed:" << message;

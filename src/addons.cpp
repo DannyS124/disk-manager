@@ -4,6 +4,7 @@
 #include "addons.h"
 
 #include "format.h"
+#include "hostprocess.h"
 #include "signature.h"
 
 #include <QCryptographicHash>
@@ -119,32 +120,15 @@ bool conditionHolds(const QString &c, const Disk &disk, const Volume *v)
     return false;
 }
 
-// Wraps the command so it runs in a terminal window the user can watch.
-// In a Flatpak, add-on commands run on the host through flatpak-spawn. That needs the
-// user's OK: flatpak override --user --talk-name=org.freedesktop.Flatpak <app id>
-bool inFlatpak()
-{
-    static const bool yes = QFileInfo::exists(QStringLiteral("/.flatpak-info"));
-    return yes;
-}
-
-bool programExists(const QString &name)
-{
-    if (!inFlatpak())
-        return !QStandardPaths::findExecutable(name).isEmpty() || QFileInfo(name).isExecutable();
-    const QString path = name.startsWith(QLatin1Char('/')) ? name : QStringLiteral("/usr/bin/") + name;
-    return QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("test"), QStringLiteral("-x"), path}) == 0;
-}
-
+using host::inFlatpak;
+using host::programExists;
 // Runs a command on the host and waits, for quick checks.
 int runOnHost(QStringList command)
 {
-    if (inFlatpak())
-        return QProcess::execute(QStringLiteral("flatpak-spawn"), QStringList{QStringLiteral("--host")} + command);
-    const QString program = command.takeFirst();
-    return QProcess::execute(program, command);
+    return host::run(std::move(command));
 }
 
+// Wraps the command so it runs in a terminal window the user can watch.
 QStringList inTerminal(const QStringList &argv)
 {
     const QString preferred = qEnvironmentVariable("TERMINAL");

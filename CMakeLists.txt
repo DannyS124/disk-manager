@@ -68,6 +68,8 @@ add_library(diskforge-core STATIC
     src/partscan.cpp src/partscan.h
     src/applog.cpp src/applog.h
     src/isofs.cpp src/isofs.h
+    src/filecopy.cpp src/filecopy.h
+    src/hostprocess.cpp src/hostprocess.h
     src/rescuestick.cpp src/rescuestick.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID OpenSSL::Crypto)
@@ -82,6 +84,7 @@ add_library(diskforge-ui STATIC
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
     src/rescueusbdialog.cpp src/rescueusbdialog.h
+    src/usbprep.cpp src/usbprep.h
     src/blockmapwidget.cpp src/blockmapwidget.h
     src/jobui.cpp src/jobui.h
     src/copydialogs.cpp src/copydialogs.h
