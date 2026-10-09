@@ -22,6 +22,7 @@
 #include "health.h"
 #include "jobui.h"
 #include "noticebar.h"
+#include "powerbox.h"
 #include "theme.h"
 #include "thememaker.h"
 #include "updates.h"
@@ -1239,8 +1240,12 @@ void MainWindow::showProperties()
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     auto *layout = new QVBoxLayout(&dialog);
     layout->addWidget(tree);
+    // Hard drives: spin-down, power saving and the write cache.
+    const bool power = !v && sel.kind != DiskMap::Selection::Kind::Free && PowerBox::applies(*d);
+    if (power)
+        layout->addWidget(new PowerBox(m_udisks, *d));
     layout->addWidget(buttons);
-    dialog.resize(560, 380);
+    dialog.resize(power ? 620 : 560, power ? 640 : 380);
     dialog.exec();
 }
 

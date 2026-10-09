@@ -7,8 +7,10 @@
 #include "testkit.h"
 
 #include "../src/btrfscheck.h"
+#include "../src/drivepower.h"
 #include "../src/firmware.h"
 #include "../src/health.h"
+#include "../src/powerbox.h"
 #include "../src/systemd.h"
 
 #include <QDir>
@@ -270,6 +272,44 @@ void healthTests()
                && withNote.summary == QLatin1String("Btrfs on sda1 has seen errors") && failingAlready.state == Health::State::Failing
                && failingAlready.summary.startsWith(QLatin1String("Failing")),
            QStringLiteral("Btrfs errors raise a healthy drive to a warning, and never lower a failing one"), withNote.summary);
+
+    // Hard drive power settings.
+    report(drivepower::standbyText(0) == QLatin1String("never") && drivepower::standbyText(60).contains(QLatin1String("5 minute"))
+               && drivepower::standbyText(241).contains(QLatin1String("30 minute")) && drivepower::standbyText(242).contains(QLatin1String("1 hour"))
+               && drivepower::standbyText(244).contains(QLatin1String("2 hour")) && drivepower::standbyText(12).contains(QLatin1String("1 minute")),
+           QStringLiteral("spin-down times read hdparm's way (5-second steps, then half hours)"));
+    bool choicesFit = true;
+    for (const drivepower::Choice &c : drivepower::standbyChoices())
+        choicesFit = choicesFit && c.value >= 0 && c.value <= 251 && !c.label.isEmpty();
+    for (const drivepower::Choice &c : drivepower::apmChoices())
+        choicesFit = choicesFit && c.value >= 1 && c.value <= 254 && !c.label.isEmpty();
+    report(choicesFit, QStringLiteral("every offered spin-down time and power-saving level is a valid value"));
+    using drivepower::kDriveDefault;
+    using drivepower::kKeep;
+    const QVariantMap first = drivepower::configuration({}, 120, kKeep, kKeep);
+    const QVariantMap kept{{QStringLiteral("ata-pm-standby"), 120}, {QStringLiteral("ata-apm-level"), 128}, {QStringLiteral("other-key"), true}};
+    const QVariantMap changed = drivepower::configuration(kept, kDriveDefault, 254, 0);
+    const QVariantMap odd = drivepower::configuration(kept, 300, 0, 7);
+    report(first == QVariantMap{{QStringLiteral("ata-pm-standby"), 120}}
+               && changed == QVariantMap{{QStringLiteral("ata-apm-level"), 254}, {QStringLiteral("ata-write-cache-enabled"), false}, {QStringLiteral("other-key"), true}}
+               && odd == kept,
+           QStringLiteral("power settings change only what was picked, and keep keys DiskForge doesn't know"));
+    report(drivepower::stateText(0x00).startsWith(QLatin1String("Asleep")) && drivepower::stateText(0xff) == QLatin1String("Spinning")
+               && drivepower::stateText(0x80) == QLatin1String("Idle") && drivepower::stateText(7) == QLatin1String("Unknown"),
+           QStringLiteral("power states in plain words"));
+    Disk hdd;
+    hdd.rotationRate = 5400;
+    hdd.ataPm = true;
+    Disk solid = hdd;
+    solid.rotationRate = 0;
+    Disk image = hdd;
+    image.isLoop = true;
+    Disk flash = hdd;
+    flash.nvmeNamespace = true;
+    Disk bare = hdd;
+    bare.ataPm = false;
+    report(PowerBox::applies(hdd) && !PowerBox::applies(solid) && !PowerBox::applies(image) && !PowerBox::applies(flash) && !PowerBox::applies(bare),
+           QStringLiteral("power settings show for hard drives that have them, not for SSDs or images"));
 
     int described = 0;
     for (const int id : {1, 3, 4, 5, 7, 9, 10, 12, 177, 184, 187, 188, 190, 194, 196, 197, 198, 199, 231, 241})

@@ -112,6 +112,12 @@ struct Disk {
     int ataEraseMinutes = 0; // ATA Secure Erase estimates; 0 = not supported
     int ataEnhancedEraseMinutes = 0;
     bool ataFrozen = false; // the firmware refuses security commands until the next sleep/wake
+    // Power settings (ATA): what the drive can do, and what UDisks keeps for it.
+    bool ataPm = false;
+    bool ataApm = false;
+    bool ataWriteCache = false;
+    bool ataWriteCacheEnabled = false;
+    QVariantMap driveConfiguration;
     bool nvmeNamespace = false; // NVMe drive that can do a secure format
     Health health;
     QVector<Volume> volumes;   // sorted by offset
@@ -252,6 +258,11 @@ public:
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
     void smartSelftestAbort(const Disk &disk);
+    // Power settings, kept by UDisks in /etc/udisks2 (polkit asks). Allowed on the system
+    // disk too: nothing here touches what's stored.
+    void setPowerSettings(const Disk &disk, const QVariantMap &configuration);
+    void sleepNow(const Disk &disk);    // refused while anything on it is mounted
+    int powerState(const Disk &disk);   // PmGetState, -1 if it can't tell (doesn't wake it)
     // Asks UDisks to stop a job. The call that started it then fails as "cancelled", which
     // is reported through operationFinished with `stoppedMessage` and wasStopped() true.
     void cancelJob(const QString &jobPath, const QString &stoppedMessage);

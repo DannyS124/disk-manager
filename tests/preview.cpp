@@ -13,6 +13,7 @@
 #include "../src/blockmapwidget.h"
 #include "../src/copydialogs.h"
 #include "../src/imagebackup.h"
+#include "../src/powerbox.h"
 #include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
 #include "../src/usagedialog.h"
@@ -106,6 +107,14 @@ int main(int argc, char *argv[])
             save(window, out.filePath(QStringLiteral("main-stop.png")));
             udisks.setJobsForTest({});
             udisks.refresh();
+        }
+        for (const Disk &d : udisks.disks()) {
+            if (PowerBox::applies(d)) {
+                PowerBox power(&udisks, d);
+                power.resize(600, power.sizeHint().height());
+                save(power, out.filePath(QStringLiteral("power.png")));
+                break;
+            }
         }
         for (const Disk &d : udisks.disks()) {
             if (!d.isSystem && !d.volumes.isEmpty() && d.tableType == QLatin1String("gpt")) {

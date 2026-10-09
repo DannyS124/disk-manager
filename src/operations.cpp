@@ -290,6 +290,36 @@ void UDisks::smartSelftestAbort(const Disk &disk)
          tr("Couldn't stop the self-test on %1").arg(name));
 }
 
+void UDisks::setPowerSettings(const Disk &disk, const QVariantMap &configuration)
+{
+    const QString name = shortDevice(disk.device);
+    call(disk.drivePath, kDrive, QStringLiteral("SetConfiguration"), {configuration, options()},
+         [name](const QDBusMessage &) { return tr("Saved the power settings of %1").arg(name); },
+         tr("Couldn't save the power settings of %1").arg(name));
+}
+
+void UDisks::sleepNow(const Disk &disk)
+{
+    const QString name = shortDevice(disk.device);
+    for (const Volume &v : disk.volumes) {
+        if (!v.mounts().isEmpty() || v.swapActive) {
+            emit operationFinished(false, tr("Couldn't put %1 to sleep: %2 is in use. Unmount it first.").arg(name, shortDevice(v.device)));
+            return;
+        }
+    }
+    call(disk.drivePath, kAta, QStringLiteral("PmStandby"), {options()},
+         [name](const QDBusMessage &) { return tr("%1 is asleep now. It wakes up by itself when it's used.").arg(name); },
+         tr("Couldn't put %1 to sleep").arg(name));
+}
+
+int UDisks::powerState(const Disk &disk)
+{
+    const QDBusMessage reply = blockingCall(disk.drivePath, kAta, QStringLiteral("PmGetState"), {options()});
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty())
+        return -1;
+    return int(reply.arguments().constFirst().value<uchar>());
+}
+
 void UDisks::cancelJob(const QString &jobPath, const QString &stoppedMessage)
 {
     m_stopMessages << stoppedMessage;

@@ -62,6 +62,7 @@ add_library(diskforge-core STATIC
     src/health.cpp src/health.h
     src/firmware.cpp src/firmware.h
     src/btrfscheck.cpp src/btrfscheck.h
+    src/drivepower.cpp src/drivepower.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
@@ -87,6 +88,7 @@ add_library(diskforge-ui STATIC
     src/addonoutput.cpp src/addonoutput.h
     src/noticebar.cpp src/noticebar.h
     src/typedialog.cpp src/typedialog.h
+    src/powerbox.cpp src/powerbox.h
     src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h

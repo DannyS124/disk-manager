@@ -273,6 +273,17 @@ void UDisks::refresh()
         d.ataEraseMinutes = ata.value(QStringLiteral("SecurityEraseUnitMinutes")).toInt();
         d.ataEnhancedEraseMinutes = ata.value(QStringLiteral("SecurityEnhancedEraseUnitMinutes")).toInt();
         d.ataFrozen = ata.value(QStringLiteral("SecurityFrozen")).toBool();
+        d.ataPm = ata.value(QStringLiteral("PmSupported")).toBool();
+        d.ataApm = ata.value(QStringLiteral("ApmSupported")).toBool();
+        d.ataWriteCache = ata.value(QStringLiteral("WriteCacheSupported")).toBool();
+        d.ataWriteCacheEnabled = ata.value(QStringLiteral("WriteCacheEnabled")).toBool();
+        {
+            const QVariant config = drive.value(QStringLiteral("Configuration"));
+            if (config.canConvert<QDBusArgument>())
+                config.value<QDBusArgument>() >> d.driveConfiguration;
+            else
+                d.driveConfiguration = config.toMap();
+        }
         d.nvmeNamespace = ifaces.contains(kNvmeNamespace);
         {
             QFile discard(QStringLiteral("/sys/class/block/%1/queue/discard_max_bytes").arg(shortDevice(d.device)));
