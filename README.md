@@ -25,6 +25,8 @@ a while and wanted something simple for managing drives without going to the ter
 - Disk Cleanup: old packages, logs, caches and the trash
 - Optimize Drives (TRIM), Btrfs snapshot list, Secure Erase for SSDs
 - Write an ISO to a USB stick (Arch install sticks etc.)
+- Make a DiskForge Rescue USB: start any PC from it (Secure Boot is fine) and fix its drives, get files back, test the
+  memory. See [docs/RESCUE.md](docs/RESCUE.md)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
 - Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md)), and there's a list to install them from.
@@ -54,7 +56,8 @@ DiskForge never installs anything by itself. If something's missing, it says whi
 window managers you have to start one yourself (polkit-kde-agent, polkit-gnome or hyprpolkitagent).
 
 ## Other distros
-Each release also has a Flatpak and an AppImage on the Releases page. They're not on Flathub (a disk
+Each release also has a Flatpak and an AppImage on the Releases page. For Debian and Ubuntu,
+`packaging/deb/build.sh` builds a .deb (it needs podman, and does the build in a Debian container). They're not on Flathub (a disk
 manager needs more access than Flathub allows). In the Flatpak, Disk Usage only sees your home folder and
 mounted drives, and add-ons need one extra permission (see Help → Problems).
 
@@ -77,7 +80,9 @@ changes without touching a real drive. There are more test suites (clone, backup
 `packaging/release.sh` lists them all.
 
 ## Bugs / ideas
-Open an issue. If it's about a specific disk, paste the output of `diskforge --dump`.
+Open an issue. If it's about a specific disk, paste the output of `diskforge --dump`. If something went wrong
+while DiskForge was doing it, run it as `diskforge --log ~/diskforge.log`, do it again and attach the log
+(it lists what DiskForge asked UDisks to do and what came back, never passphrases).
 
 ## License
 GPL-3.0-or-later (0.3.0 and 0.4.0 were MIT).

@@ -31,6 +31,11 @@ it. exFAT can't be resized, XFS can only grow. Back up anything important first.
 <p><b>Make a USB stick from an ISO:</b> File → Write Image to USB. Pick the ISO and the stick, type the
 stick's name to confirm. Paste the SHA-256 from the download page if you have it, so a broken download is
 caught before anything is written. Works for Linux ISOs; Windows ISOs need a tool like WoeUSB.</p>
+<p><b>Make a rescue USB:</b> File → Make a Rescue USB. Pick the DiskForge Rescue ISO (from the releases page) and
+the stick, type the stick's name to confirm. The stick can then start any PC, even one whose own system won't
+start, with DiskForge and other repair tools on a small desktop. Secure Boot can stay on, except for the memory
+test. Every start leaves its logs in the logs folder on the stick; when you plug it back in, Make a Rescue USB
+has an Open Logs button for them.</p>
 <p><b>Unplug a USB drive:</b> right-click the disk on the left, Safely Remove. Everything gets unmounted and
 the drive is powered off, so it's safe to pull out.</p>
 <p><b>Check for errors:</b> right-click the partition, Check for Errors. If problems are found, DiskForge

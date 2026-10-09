@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+New:
+- DiskForge Rescue: a USB stick that starts any PC into a small desktop with DiskForge, PhotoRec, TestDisk, a file manager, a
+  web browser and a terminal, plus a memory test in the boot menu. It starts with Secure Boot on (through Debian's signed boot
+  files) and keeps logs of every start on the stick. It's built from `rescue/`, see [docs/RESCUE.md](docs/RESCUE.md)
+- Make a Rescue USB (File menu, or right-click a USB stick): puts the rescue image on a stick as plain files on FAT32 and checks
+  every one of them. For a stick that's been used, Open Logs shows what it saved
+- `--log <file>` (or `DISKFORGE_LOG=<file>`): DiskForge writes down what it does, for bug reports
+- A .deb for Debian and Ubuntu (`packaging/deb/build.sh` builds it in a Debian container)
+
+Changed:
+- New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
+  stick doesn't need it
+- On a live system, the system's own image isn't listed as a drive anymore
+
 ## 0.5.0
 Everything new since 0.4.3.
 
