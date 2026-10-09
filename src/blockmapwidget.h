@@ -7,6 +7,8 @@
 
 #include <QWidget>
 
+#include <optional>
+
 // The grid of small squares that fills in green, orange and red as a scan or rescue
 // goes along, like the surface view in Victoria or HD Tune.
 class BlockMapWidget : public QWidget
@@ -28,6 +30,9 @@ public:
     void setAreas(const QVector<Area> &areas) { m_areas = areas; }
     // Rescue Copy calls its tried-but-not-finished cells "to retry"; a scan has none.
     void setShowPending(bool show) { m_showPending = show; }
+    // Words of its own for the legend and tooltips (Check a USB Stick writes before it reads,
+    // so "pending" is "written, not checked yet"). Shows the pending colour too.
+    void setLabels(const QString &good, const QString &pending, const QString &bad, const QString &unread);
     void addSamples(const QVector<ReadSample> &samples);
     void refresh() { update(); }
 
@@ -53,4 +58,8 @@ private:
     BlockMapData m_data;
     QVector<Area> m_areas;
     bool m_showPending = false;
+    struct Labels {
+        QString good, pending, bad, unread;
+    };
+    std::optional<Labels> m_labels;
 };

@@ -16,6 +16,7 @@
 #include "../src/inspectdialog.h"
 #include "../src/partrecover.h"
 #include "../src/recoverdialog.h"
+#include "../src/stickcheckdialog.h"
 #include "../src/powerbox.h"
 #include "../src/mainwindow.h"
 #include "../src/rescuecopy.h"
@@ -414,6 +415,16 @@ void previewTools(UDisks &udisks, const QDir &out)
         save(wipe, out.filePath(QStringLiteral("wipe.png")));
         WriteImageDialog write(&udisks, QString());
         save(write, out.filePath(QStringLiteral("write-image.png")));
+        StickCheckDialog stickCheck(&udisks, QString());
+        save(stickCheck, out.filePath(QStringLiteral("check-stick.png")));
+        stickcheck::Result fake;
+        fake.completed = true;
+        fake.fake = true;
+        fake.wraps = true;
+        fake.claimed = 64ULL * 1000 * 1000 * 1000;
+        fake.real = 7ULL * 1024 * 1024 * 1024 + 512ULL * 1024 * 1024;
+        stickCheck.showResultForPreview(fake);
+        save(stickCheck, out.filePath(QStringLiteral("check-stick-fake.png")));
         FormatDialog format(d, d.volumes.first(), udisks.filesystems());
         if (auto *box = format.findChild<QCheckBox *>())
             box->setChecked(true);

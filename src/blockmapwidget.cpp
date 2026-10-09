@@ -96,10 +96,16 @@ void BlockMapWidget::paintEvent(QPaintEvent *)
     };
     // A rescue doesn't time its reads, so it has nothing slow to show, but it has parts to retry.
     const int slow = m_data.slowAreas();
-    if (m_showPending)
+    if (m_labels) {
+        legend = {{BlockMapData::State::Good, m_labels->good},
+                  {BlockMapData::State::Pending, m_labels->pending},
+                  {BlockMapData::State::Bad, m_labels->bad},
+                  {BlockMapData::State::Unread, m_labels->unread}};
+    } else if (m_showPending) {
         legend.insert(1, {BlockMapData::State::Pending, tr("To retry")});
-    else
+    } else {
         legend.insert(1, {BlockMapData::State::Slow, slow ? tr("Slow (%n area(s))", nullptr, slow) : tr("Slow")});
+    }
     int x = 0;
     const int y = height() - legendHeight() + 5;
     const int box = fontMetrics().ascent();
@@ -110,6 +116,13 @@ void BlockMapWidget::paintEvent(QPaintEvent *)
         p.drawText(x, y + fontMetrics().ascent(), e.text);
         x += fontMetrics().horizontalAdvance(e.text) + 16;
     }
+}
+
+void BlockMapWidget::setLabels(const QString &good, const QString &pending, const QString &bad, const QString &unread)
+{
+    m_labels = Labels{good, pending, bad, unread};
+    m_showPending = true;
+    update();
 }
 
 int BlockMapWidget::cellAt(const QPoint &pos) const
@@ -137,6 +150,23 @@ bool BlockMapWidget::event(QEvent *event)
     for (const Area &a : m_areas) {
         if (a.start < end && a.end > start)
             lines << a.name;
+    }
+    if (m_labels) {
+        switch (m_data.state(c)) {
+        case BlockMapData::State::Unread:
+            lines << m_labels->unread;
+            break;
+        case BlockMapData::State::Pending:
+            lines << m_labels->pending;
+            break;
+        case BlockMapData::State::Bad:
+            lines << m_labels->bad;
+            break;
+        default:
+            lines << m_labels->good;
+        }
+        QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(lines.join(QLatin1Char('\n')), Qt::WhiteSpaceNormal), this);
+        return true;
     }
     switch (m_data.state(c)) {
     case BlockMapData::State::Unread:

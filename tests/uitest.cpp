@@ -17,6 +17,7 @@
 #include "../src/recoverdialog.h"
 #include "../src/rescuestick.h"
 #include "../src/rescueusbdialog.h"
+#include "../src/stickcheckdialog.h"
 #include "../src/noticebar.h"
 #include "../src/typedialog.h"
 #include "slowdisk.h"
@@ -1458,6 +1459,99 @@ void rescueUsb()
     report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"), removed.errorMessage());
 }
 
+// Check a USB Stick on a loop device, through the dialog. As root: the quick check says a
+// genuine "stick" is fine, then Format It leaves one partition on it. As the user: writing to
+// a drive directly needs the admin password, so without a prompt it's refused, and says so.
+void stickCheck()
+{
+    const bool asRoot = geteuid() == 0;
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("stick.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("128M"), image});
+    QFile backing(image);
+    QString loopPath;
+    if (backing.open(QIODevice::ReadWrite)) {
+        QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                                           QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("LoopSetup"));
+        call << QVariant::fromValue(QDBusUnixFileDescriptor(backing.handle())) << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+        loopPath = QDBusConnection::systemBus().call(call, QDBus::Block, 30000).arguments().value(0).value<QDBusObjectPath>().path();
+        backing.close();
+    }
+    report(!loopPath.isEmpty(), QStringLiteral("Check a USB Stick: a loop device stands in for the stick"));
+    if (loopPath.isEmpty())
+        return;
+    UDisks udisks;
+    udisks.setInteractive(false);
+    const Disk *stick = nullptr;
+    waitUntil([&] {
+        udisks.refresh();
+        stick = udisks.diskByPath(loopPath);
+        return stick != nullptr;
+    }, 15000);
+    const QString device = stick ? stick->device : QString();
+
+    StickCheckDialog::allowLoopDevicesForTest = true;
+    QStringList boxes;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            boxes << box->text();
+            if (QAbstractButton *yes = box->button(QMessageBox::Yes))
+                yes->click();
+            else
+                box->accept();
+            return true;
+        }
+        return false;
+    };
+    {
+        StickCheckDialog dialog(&udisks, loopPath);
+        dialog.show();
+        auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("confirm"));
+        auto *result = dialog.findChild<QLabel *>(QStringLiteral("result"));
+        QPushButton *start = findButton(&dialog, QStringLiteral("Start the Check"));
+        report(start && !start->isEnabled(), QStringLiteral("nothing starts before the device name is typed"));
+        confirm->setText(shortDevice(device));
+        if (start)
+            start->click();
+        waitUntil([&] { return !result->text().isEmpty(); }, 120000);
+        if (!asRoot) {
+            report(result->text().contains(QLatin1String("Couldn't open the stick")),
+                   QStringLiteral("as the user without a password prompt, it can't open the stick and says so"), result->text().left(120));
+        } else {
+            report(result->text().contains(QLatin1String("No problems found")), QStringLiteral("the quick check says a genuine stick is fine"),
+                   result->text().left(200));
+        }
+        QPushButton *format = findButton(&dialog, QStringLiteral("Format It"));
+        // As the user nothing was checked, so nothing is offered. Format It is tried anyway: it
+        // goes through UDisks' own steps, which don't need a password on your own loop device.
+        if (asRoot)
+            report(format && format->isVisible(), QStringLiteral("and offers to format it"));
+        else
+            report(format && !format->isVisible(), QStringLiteral("and offers nothing after that"));
+        if (format)
+            format->click();
+        waitUntil([&] { return std::any_of(boxes.cbegin(), boxes.cend(), [](const QString &b) { return b.startsWith(QLatin1String("Done")); }); }, 60000);
+        report(std::any_of(boxes.cbegin(), boxes.cend(), [](const QString &b) { return b.startsWith(QLatin1String("Done")); }),
+               QStringLiteral("Format It leaves one partition on it"), boxes.join(QStringLiteral(" | ")).left(300));
+    }
+    StickCheckDialog::allowLoopDevicesForTest = false;
+    udisks.refresh();
+    stick = udisks.diskByPath(loopPath);
+    report(stick && stick->tableType == QLatin1String("dos") && stick->volumes.size() == 1 && stick->volumes[0].fsType == QLatin1String("vfat"),
+           QStringLiteral("an MBR with one FAT32 partition"));
+
+    QDBusMessage remove = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), loopPath,
+                                                         QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
+    remove << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+    QDBusConnection::systemBus().call(remove, QDBus::Block, 30000);
+    waitUntil([&] {
+        udisks.refresh();
+        return udisks.diskByPath(loopPath) == nullptr;
+    }, 10000);
+    report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"));
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -1470,6 +1564,7 @@ int userScenarios()
     banner();
     jobBars();
     rescueUsb();
+    stickCheck();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }
@@ -1570,6 +1665,7 @@ int main(int argc, char *argv[])
     recoverThroughWindow();
     scanThroughWindow();
     raidBanner();
+    stickCheck();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

@@ -346,14 +346,13 @@ void folderTests(const QString &dir)
 
 void rescueUsbTests()
 {
-    if (QStandardPaths::findExecutable(QStringLiteral("xorriso")).isEmpty()) {
-        out << "SKIP  xorriso isn't installed, so there's no test image" << Qt::endl;
-        parserTests();
-        return;
-    }
     QTemporaryDir dir;
-    isoTests(dir.path());
     folderTests(dir.path());
     parserTests();
+    if (QStandardPaths::findExecutable(QStringLiteral("xorriso")).isEmpty()) {
+        out << "SKIP  xorriso isn't installed, so there are no test images" << Qt::endl;
+        return;
+    }
+    isoTests(dir.path());
     fuzzListing(dir.path());
 }

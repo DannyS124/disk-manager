@@ -23,6 +23,7 @@
 #include "inspectdialog.h"
 #include "recoverdialog.h"
 #include "rescueusbdialog.h"
+#include "stickcheckdialog.h"
 #include "jobui.h"
 #include "noticebar.h"
 #include "powerbox.h"
@@ -450,6 +451,12 @@ void MainWindow::createActions()
             BadSectorsDialog(m_udisks, *d, this).exec();
     });
 
+    m_checkStick = new QAction(themeIcon("drive-removable-media-usb", "drive-removable-media"), tr("Check a USB Stic&k…"), this);
+    connect(m_checkStick, &QAction::triggered, this, [this] {
+        const Disk *d = selectedDisk();
+        StickCheckDialog(m_udisks, d ? d->blockPath : QString(), this).exec();
+    });
+
     m_benchmark = new QAction(themeIcon("speedometer", "chronometer"), tr("&Benchmark…"), this);
     connect(m_benchmark, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
@@ -572,7 +579,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newTable, m_inspect, m_recover, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
-    action->addActions({m_health, m_badSectors, m_benchmark, m_raidCheck});
+    action->addActions({m_health, m_badSectors, m_checkStick, m_benchmark, m_raidCheck});
     action->addSeparator();
     action->addActions({m_backup, m_restore, m_clone, m_rescue});
     action->addSeparator();
@@ -1096,6 +1103,7 @@ void MainWindow::updateActions()
     m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
     m_benchmark->setEnabled(d && !lvm && !busy);
     m_badSectors->setEnabled(d && !lvm && !d->isLoop && !busy);
+    m_checkStick->setEnabled(!busy);
     m_copy->setEnabled(d && kind != DiskMap::Selection::Kind::Free);
     // Clone and Rescue read the whole drive and refuse the running system; Back Up works on
     // anything that can be unmounted (or isn't mounted); Restore writes, so not the system disk.
@@ -1183,7 +1191,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
         add({m_backup, m_restore});
     add({m_clone, m_rescue});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
-        add({m_writeImage, m_rescueUsb});
+        add({m_writeImage, m_rescueUsb, m_checkStick});
     add({m_newTable, m_wipe, m_secureErase});
 
     const auto addonActions = m_addons.actionsFor(*d, v, sel.kind == DiskMap::Selection::Kind::Free);

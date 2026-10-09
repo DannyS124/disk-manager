@@ -919,6 +919,8 @@ int main(int argc, char *argv[])
         recoverTests();
     } else if (args.contains(QStringLiteral("--rescueusb"))) {
         rescueUsbTests();
+    } else if (args.contains(QStringLiteral("--stickcheck"))) {
+        stickCheckTests();
     } else if (args.contains(QStringLiteral("--raid"))) {
         if (needsRoot("--raid"))
             return 2;
