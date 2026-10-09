@@ -67,6 +67,8 @@ add_library(diskforge-core STATIC
     src/partrecover.cpp src/partrecover.h
     src/partscan.cpp src/partscan.h
     src/applog.cpp src/applog.h
+    src/isofs.cpp src/isofs.h
+    src/rescuestick.cpp src/rescuestick.h
 )
 target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
@@ -79,6 +81,7 @@ add_library(diskforge-ui STATIC
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h
+    src/rescueusbdialog.cpp src/rescueusbdialog.h
     src/blockmapwidget.cpp src/blockmapwidget.h
     src/jobui.cpp src/jobui.h
     src/copydialogs.cpp src/copydialogs.h
@@ -125,7 +128,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_raid.cpp tests/test_lvm.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_raid.cpp tests/test_lvm.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

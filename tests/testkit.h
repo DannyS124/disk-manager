@@ -52,6 +52,7 @@ void fuzzTests();
 void healthTests();
 void jobsTests();
 void recoverTests();
+void rescueUsbTests();
 void raidTests();
 void lvmTests();
 void stopTests();

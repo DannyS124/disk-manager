@@ -1,0 +1,520 @@
+// SPDX-FileCopyrightText: 2026 Danny S
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "rescueusbdialog.h"
+
+#include "applog.h"
+#include "dialogs.h"
+#include "format.h"
+
+#include <QComboBox>
+#include <QCoreApplication>
+#include <QDesktopServices>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QStandardPaths>
+#include <QThread>
+#include <QTimer>
+#include <QUrl>
+#include <QVBoxLayout>
+
+#include <utility>
+
+namespace {
+
+const QString kLabel = QStringLiteral("DFRESCUE");
+constexpr quint64 kRoomForLogs = 64 * 1024 * 1024;
+
+} // namespace
+
+bool RescueUsbDialog::allowLoopDevicesForTest = false;
+
+QString RescueUsbDialog::findImage()
+{
+    // Downloads first; the build folder's rescue/out too, for running DiskForge from the source tree.
+    QStringList folders = {QStandardPaths::writableLocation(QStandardPaths::DownloadLocation), QDir::homePath(),
+                           QCoreApplication::applicationDirPath() + QStringLiteral("/../rescue/out")};
+    QFileInfo newest;
+    for (const QString &folder : folders) {
+        const QFileInfoList found = QDir(folder).entryInfoList({QStringLiteral("diskforge-rescue-*.iso")}, QDir::Files, QDir::Time);
+        if (!found.isEmpty() && (!newest.exists() || found.first().lastModified() > newest.lastModified()))
+            newest = found.first();
+    }
+    return newest.exists() ? newest.canonicalFilePath() : QString();
+}
+
+RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, QWidget *parent)
+    : QDialog(parent)
+    , m_udisks(udisks)
+    , m_image(new QLineEdit)
+    , m_imageInfo(new QLabel)
+    , m_targets(new QComboBox)
+    , m_stickInfo(new QLabel)
+    , m_openLogs(new QPushButton(tr("Open Logs")))
+    , m_warning(new QLabel)
+    , m_confirm(new QLineEdit)
+    , m_progress(new QProgressBar)
+    , m_phase(new QLabel)
+    , m_meter(m_progress, m_phase)
+{
+    setWindowTitle(tr("Make a Rescue USB"));
+    m_image->setObjectName(QStringLiteral("image"));
+    m_imageInfo->setObjectName(QStringLiteral("imageInfo"));
+    m_stickInfo->setObjectName(QStringLiteral("stickInfo"));
+    m_confirm->setObjectName(QStringLiteral("confirm"));
+    auto *browse = new QPushButton(tr("Browse…"));
+    connect(browse, &QPushButton::clicked, this, [this] {
+        const QString start = m_image->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
+                                                        : QFileInfo(m_image->text()).path();
+        const QString file = QFileDialog::getOpenFileName(this, tr("Choose the Rescue Image"), start,
+                                                          tr("DiskForge Rescue (diskforge-rescue-*.iso);;ISO images (*.iso)"));
+        if (!file.isEmpty())
+            m_image->setText(file);
+    });
+    auto *imageRow = new QHBoxLayout;
+    imageRow->addWidget(m_image, 1);
+    imageRow->addWidget(browse);
+    m_image->setPlaceholderText(QStringLiteral("diskforge-rescue-%1.iso").arg(QStringLiteral(APP_VERSION)));
+    m_imageInfo->setWordWrap(true);
+    m_imageInfo->setTextFormat(Qt::RichText);
+    auto *stickRow = new QHBoxLayout;
+    stickRow->addWidget(m_stickInfo, 1);
+    stickRow->addWidget(m_openLogs);
+    m_stickInfo->setWordWrap(true);
+    m_stickInfo->setTextFormat(Qt::PlainText);
+    m_warning->setWordWrap(true);
+    m_warning->setTextFormat(Qt::RichText);
+    m_phase->setWordWrap(true);
+    m_progress->setRange(0, 1000);
+    m_progress->setVisible(false);
+
+    auto *form = new QFormLayout;
+    form->addRow(tr("Rescue image:"), imageRow);
+    form->addRow(QString(), m_imageInfo);
+    form->addRow(tr("USB stick:"), m_targets);
+    form->addRow(QString(), stickRow);
+
+    auto *layout = new QVBoxLayout(this);
+    layout->addWidget(wrappingLabel(tr("DiskForge Rescue starts any PC from a USB stick, with DiskForge and other repair tools, "
+                                       "even when the PC's own system won't start. The stick stays readable on any PC, and "
+                                       "the rescue system keeps its logs on it.")));
+    layout->addLayout(form);
+    layout->addWidget(m_warning);
+    layout->addWidget(m_confirm);
+    layout->addWidget(m_phase);
+    layout->addWidget(m_progress);
+    auto *box = new QDialogButtonBox(QDialogButtonBox::Close);
+    m_make = box->addButton(tr("Make the Rescue USB"), QDialogButtonBox::ActionRole);
+    m_make->setAutoDefault(false);
+    box->button(QDialogButtonBox::Close)->setDefault(true);
+    connect(m_make, &QPushButton::clicked, this, &RescueUsbDialog::start);
+    connect(box, &QDialogButtonBox::rejected, this, &RescueUsbDialog::reject);
+    connect(m_openLogs, &QPushButton::clicked, this, &RescueUsbDialog::openLogs);
+    layout->addWidget(box);
+
+    fillTargets(preferredDisk);
+    m_image->setText(findImage());
+    inspectImage();
+    connect(m_image, &QLineEdit::textChanged, this, [this] {
+        inspectImage();
+        updateState();
+    });
+    connect(m_targets, &QComboBox::currentIndexChanged, this, &RescueUsbDialog::updateState);
+    connect(m_confirm, &QLineEdit::textChanged, this, &RescueUsbDialog::updateState);
+    // Sticks plugged in (or mounted) while the dialog is open.
+    connect(m_udisks, &UDisks::changed, this, [this] {
+        if (m_running)
+            return;
+        fillTargets(m_targets->currentData().toString());
+        updateState();
+    });
+    updateState();
+    resize(640, sizeHint().height());
+}
+
+RescueUsbDialog::~RescueUsbDialog()
+{
+    disconnect(m_opConn);
+    if (m_waiting)
+        *m_waiting = false;
+    if (m_thread) {
+        if (m_writer)
+            m_writer->cancel();
+        m_thread->quit();
+        m_thread->wait();
+    }
+}
+
+void RescueUsbDialog::fillTargets(const QString &preferred)
+{
+    const QSignalBlocker block(m_targets);
+    m_targets->clear();
+    const QVector<Disk> &disks = m_udisks->disks();
+    for (int i = 0; i < disks.size(); ++i) {
+        const Disk &d = disks[i];
+        // USB and removable drives only, like Write Image to USB.
+        if (d.isSystem || d.isRaid)
+            continue;
+        if (d.isLoop ? !allowLoopDevicesForTest : !(d.removable || d.bus == QLatin1String("usb")))
+            continue;
+        m_targets->addItem(tr("Disk %1: %2").arg(i).arg(diskTitle(d)), d.blockPath);
+        if (d.blockPath == preferred)
+            m_targets->setCurrentIndex(m_targets->count() - 1);
+    }
+    if (m_targets->count() == 0)
+        m_targets->addItem(tr("No USB stick (plug one in)"));
+}
+
+const Disk *RescueUsbDialog::target() const
+{
+    return m_udisks->diskByPath(m_targets->currentData().toString());
+}
+
+const Volume *RescueUsbDialog::rescueVolume(const Disk &disk) const
+{
+    for (const Volume &v : disk.volumes) {
+        if (v.fsType == QLatin1String("vfat") && v.label == kLabel)
+            return &v;
+    }
+    return nullptr;
+}
+
+void RescueUsbDialog::inspectImage()
+{
+    const QString path = m_image->text().trimmed();
+    if (path == m_inspectedPath)
+        return;
+    m_inspectedPath = path;
+    m_inspected = rescue::Image();
+    if (path.isEmpty()) {
+        m_inspected.error = tr("Choose the DiskForge Rescue ISO. It's on the DiskForge releases page on GitHub.");
+        m_imageInfo->setText(m_inspected.error.toHtmlEscaped());
+        return;
+    }
+    if (!QFileInfo(path).isFile()) {
+        m_inspected.error = tr("File not found");
+        m_imageInfo->setText(redText(m_inspected.error));
+        return;
+    }
+    m_inspected = rescue::inspect(path);
+    if (!m_inspected.error.isEmpty()) {
+        m_imageInfo->setText(redText(m_inspected.error));
+        return;
+    }
+    m_imageInfo->setText(tr("DiskForge Rescue %1, built %2 (%3)")
+                             .arg(m_inspected.info.version, m_inspected.info.built, formatSize(m_inspected.bytes))
+                             .toHtmlEscaped());
+}
+
+void RescueUsbDialog::updateState()
+{
+    if (m_running)
+        return;
+    const Disk *d = target();
+    const Volume *existing = d ? rescueVolume(*d) : nullptr;
+    m_openLogs->setVisible(existing != nullptr);
+    if (existing && !existing->mounts().isEmpty()) {
+        const QString root = existing->mounts().first();
+        const rescue::Info info = rescue::stickInfo(root);
+        const int boots = rescue::logFolders(root);
+        QString text = tr("This stick looks like a DiskForge Rescue stick.");
+        if (info.valid() && boots == 0)
+            text = tr("This stick has DiskForge Rescue %1 on it, with no logs yet.").arg(info.version);
+        else if (info.valid() && boots == 1)
+            text = tr("This stick has DiskForge Rescue %1 on it, with logs from one start.").arg(info.version);
+        else if (info.valid())
+            text = tr("This stick has DiskForge Rescue %1 on it, with logs from %2 starts.").arg(info.version).arg(boots);
+        m_stickInfo->setText(text);
+    } else {
+        m_stickInfo->setText(existing ? tr("This stick has DiskForge Rescue on it. Open Logs shows what it saved.") : QString());
+    }
+    m_stickInfo->setVisible(existing != nullptr);
+
+    bool ok = d && m_inspected.error.isEmpty();
+    QString warning;
+    if (d && m_inspected.error.isEmpty()) {
+        const quint64 needed = m_inspected.bytes + kRoomForLogs;
+        if (d->size < needed) {
+            warning = redText(tr("This stick is too small: DiskForge Rescue needs at least %1.").arg(formatSize(needed)));
+            ok = false;
+        } else {
+            warning = redText(tr("Everything on %1 will be erased.").arg(diskTitle(*d)));
+            if (existing)
+                warning += QStringLiteral(" ") + redText(tr("That includes its logs: open them first if you need them."));
+            if (!diskWarning(*d).isEmpty())
+                warning += QStringLiteral("<br>") + redText(diskWarning(*d));
+            const QString name = shortDevice(d->device);
+            warning += QStringLiteral("<br>") + tr("Type <b>%1</b> to confirm:").arg(name.toHtmlEscaped());
+            m_confirm->setPlaceholderText(name);
+            ok = ok && m_confirm->text().trimmed() == name;
+        }
+    }
+    m_warning->setText(warning);
+    m_confirm->setVisible(d && m_inspected.error.isEmpty());
+    m_make->setEnabled(ok);
+}
+
+void RescueUsbDialog::openLogs()
+{
+    const Disk *d = target();
+    const Volume *v = d ? rescueVolume(*d) : nullptr;
+    if (!v)
+        return;
+    auto open = [](const QString &root) {
+        const QString logs = root + QStringLiteral("/logs");
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo::exists(logs) ? logs : root));
+    };
+    if (!v->mounts().isEmpty())
+        return open(v->mounts().first());
+
+    // Mount it first; the mount point shows up with the next refresh.
+    const QString disk = d->blockPath;
+    const QString volume = v->objectPath;
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    *conn = connect(m_udisks, &UDisks::operationFinished, this, [this, conn, disk, volume, open](bool ok, const QString &) {
+        disconnect(*conn);
+        if (!ok)
+            return; // the main window says why
+        auto *poll = new QTimer(this);
+        auto tries = std::make_shared<int>(0);
+        connect(poll, &QTimer::timeout, this, [this, poll, tries, disk, volume, open] {
+            const Disk *d = m_udisks->diskByPath(disk);
+            for (const Volume &v : d ? d->volumes : QVector<Volume>()) {
+                if (v.objectPath == volume && !v.mounts().isEmpty()) {
+                    poll->deleteLater();
+                    updateState();
+                    return open(v.mounts().first());
+                }
+            }
+            if (++*tries > 20)
+                poll->deleteLater();
+        });
+        poll->start(250);
+    });
+    m_udisks->mount(*v);
+}
+
+void RescueUsbDialog::reject()
+{
+    if (m_running) {
+        if (!m_writer) {
+            QMessageBox::information(this, windowTitle(), tr("One moment: DiskForge is in the middle of setting up the stick."));
+            return;
+        }
+        const auto answer = QMessageBox::warning(this, windowTitle(),
+                                                 tr("Stop making the rescue USB? The stick won't start anything until it's made again."),
+                                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes && m_writer)
+            m_writer->cancel(); // finish() runs when the copy stops
+        return;
+    }
+    QDialog::reject();
+}
+
+void RescueUsbDialog::expect(const std::function<void()> &next, bool failureIsFine)
+{
+    m_next = next;
+    m_failureIsFine = failureIsFine;
+}
+
+void RescueUsbDialog::waitFor(const std::function<bool()> &ready, int seconds, const std::function<void()> &then,
+                              const QString &timeoutMessage)
+{
+    if (m_waiting)
+        *m_waiting = false;
+    auto alive = std::make_shared<bool>(true);
+    m_waiting = alive;
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    auto *timer = new QTimer(this);
+    timer->setSingleShot(true);
+    auto check = [alive, ready, then, conn, timer] {
+        if (!*alive || !ready())
+            return;
+        *alive = false;
+        QObject::disconnect(*conn);
+        timer->stop();
+        timer->deleteLater();
+        then();
+    };
+    *conn = connect(m_udisks, &UDisks::changed, this, check);
+    connect(timer, &QTimer::timeout, this, [this, alive, conn, timer, timeoutMessage] {
+        timer->deleteLater();
+        if (!*alive)
+            return;
+        *alive = false;
+        disconnect(*conn);
+        finish(false, timeoutMessage);
+    });
+    timer->start(seconds * 1000);
+    QTimer::singleShot(0, this, check); // it may be true already
+}
+
+void RescueUsbDialog::start()
+{
+    const Disk *d = target();
+    if (!d || !m_inspected.error.isEmpty())
+        return;
+    m_diskPath = d->blockPath;
+    m_volumePath.clear();
+    m_mountPoint.clear();
+    m_copyDone = false;
+    m_running = true;
+    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_make, m_openLogs})
+        w->setEnabled(false);
+    m_progress->setRange(0, 0);
+    m_progress->setVisible(true);
+    qCInfo(lcOps).noquote() << "Make a Rescue USB on" << d->device << d->model << "from" << m_inspectedPath
+                            << "version" << m_inspected.info.version << "build" << m_inspected.info.id;
+
+    // Every step below reports through operationFinished; expect() says what comes next.
+    m_opConn = connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
+        if (!m_running || !m_next)
+            return;
+        const std::function<void()> next = std::exchange(m_next, nullptr);
+        if (!ok && !m_failureIsFine)
+            return finish(false, message, true);
+        next();
+    });
+
+    m_phase->setText(tr("Making a new partition table…"));
+    expect([this] {
+        waitFor([this] {
+            const Disk *d = m_udisks->diskByPath(m_diskPath);
+            return d && d->tableType == QLatin1String("dos") && d->volumes.isEmpty();
+        }, 30, [this] { makePartition(); }, tr("The stick's new partition table didn't show up. Unplug it, plug it back in and try again."));
+    });
+    m_udisks->createPartitionTable(*d, QStringLiteral("dos"));
+}
+
+void RescueUsbDialog::makePartition()
+{
+    const Disk *d = m_udisks->diskByPath(m_diskPath);
+    if (!d)
+        return finish(false, tr("The stick isn't there anymore."));
+    m_phase->setText(tr("Making the FAT32 partition…"));
+    expect([this] {
+        waitFor([this] {
+            const Disk *d = m_udisks->diskByPath(m_diskPath);
+            const Volume *v = d ? rescueVolume(*d) : nullptr;
+            if (v)
+                m_volumePath = v->objectPath;
+            return v != nullptr;
+        }, 30, [this] { markBootable(); }, tr("The stick's new partition didn't show up. Unplug it, plug it back in and try again."));
+    });
+    m_udisks->createPartition(*d, 0, d->size, QStringLiteral("vfat"), kLabel);
+}
+
+void RescueUsbDialog::markBootable()
+{
+    const Disk *d = m_udisks->diskByPath(m_diskPath);
+    const Volume *v = d ? rescueVolume(*d) : nullptr;
+    if (!v)
+        return finish(false, tr("The stick isn't there anymore."));
+    // Some PCs only offer a USB stick in their boot menu when a partition is marked bootable.
+    m_phase->setText(tr("Marking it bootable…"));
+    expect([this] { mountIt(); });
+    m_udisks->setPartitionTypeAndFlags(*v, QString(), true, 0x80);
+}
+
+void RescueUsbDialog::mountIt()
+{
+    auto mounted = [this]() -> QString {
+        const Disk *d = m_udisks->diskByPath(m_diskPath);
+        const Volume *v = d ? rescueVolume(*d) : nullptr;
+        return v && !v->mounts().isEmpty() ? v->mounts().first() : QString();
+    };
+    // Some desktops mount new USB partitions by themselves.
+    if (!mounted().isEmpty())
+        return copyFiles(mounted());
+    const Disk *d = m_udisks->diskByPath(m_diskPath);
+    const Volume *v = d ? rescueVolume(*d) : nullptr;
+    if (!v)
+        return finish(false, tr("The stick isn't there anymore."));
+    // If the desktop mounted it first, Mount fails with "already mounted": what counts is
+    // whether it ends up mounted.
+    m_phase->setText(tr("Mounting it…"));
+    expect([this, mounted] {
+        waitFor([mounted] { return !mounted().isEmpty(); }, 15, [this, mounted] { copyFiles(mounted()); },
+                tr("The stick didn't mount."));
+    }, true);
+    m_udisks->mount(*v);
+}
+
+void RescueUsbDialog::copyFiles(const QString &mountPoint)
+{
+    m_mountPoint = mountPoint;
+    m_progress->setRange(0, 1000);
+    m_writer = new rescue::StickWriter(m_inspectedPath, mountPoint);
+    connect(m_writer, &rescue::StickWriter::progress, this, [this](const QString &phase, quint64 done, quint64 total) {
+        m_meter.update(phase, done, total);
+    });
+    connect(m_writer, &rescue::StickWriter::finished, this, [this](bool ok, const QString &message) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+        m_writer = nullptr;
+        m_copyDone = ok;
+        m_failure = ok ? QString() : message;
+        // Unmounted either way, so it isn't left mounted after a failed copy.
+        unmountIt();
+    });
+    m_thread = startOnThread(this, m_writer);
+}
+
+void RescueUsbDialog::unmountIt()
+{
+    auto done = [this] {
+        if (!m_copyDone)
+            return finish(false, m_failure.isEmpty() ? tr("The files couldn't be copied.") : m_failure);
+        finish(true, tr("The rescue USB is ready.\n\n"
+                        "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot "
+                        "menu key (usually F12, F11, F9 or Esc), then pick the USB stick. Secure Boot can stay on.\n\n"
+                        "Every start leaves its logs in the logs folder on the stick."));
+    };
+    const Disk *d = m_udisks->diskByPath(m_diskPath);
+    const Volume *v = d ? rescueVolume(*d) : nullptr;
+    if (!v || v->mounts().isEmpty())
+        return done();
+    m_progress->setRange(0, 0);
+    m_phase->setText(tr("Finishing up…"));
+    expect(done);
+    m_udisks->unmount(*v);
+}
+
+void RescueUsbDialog::finish(bool ok, const QString &message, bool alreadyShown)
+{
+    disconnect(m_opConn);
+    m_next = nullptr;
+    if (m_waiting)
+        *m_waiting = false;
+    m_running = false;
+    if (!ok)
+        qCInfo(lcOps).noquote() << "Make a Rescue USB failed:" << message;
+    m_progress->setVisible(false);
+    m_udisks->refresh();
+    if (ok) {
+        m_phase->clear();
+        QMessageBox::information(this, windowTitle(), message);
+        QDialog::accept();
+        return;
+    }
+    // A failed UDisks step was already shown by the main window.
+    if (!alreadyShown)
+        QMessageBox::warning(this, windowTitle(), message);
+    m_phase->setText(redText(message));
+    m_phase->setTextFormat(Qt::RichText);
+    m_confirm->clear();
+    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_openLogs})
+        w->setEnabled(true);
+    fillTargets(m_diskPath);
+    updateState();
+}
