@@ -57,6 +57,7 @@ void stickCheckTests();
 void imageTests();
 void isoModeTests();
 void windowsTests();
+void lostFilesTests();
 void raidTests();
 void lvmTests();
 void stopTests();

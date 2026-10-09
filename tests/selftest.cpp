@@ -927,6 +927,8 @@ int main(int argc, char *argv[])
         isoModeTests();
     } else if (args.contains(QStringLiteral("--windows"))) {
         windowsTests();
+    } else if (args.contains(QStringLiteral("--lostfiles"))) {
+        lostFilesTests();
     } else if (args.contains(QStringLiteral("--raid"))) {
         if (needsRoot("--raid"))
             return 2;
