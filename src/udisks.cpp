@@ -824,8 +824,16 @@ void UDisks::createPartitionTable(const Disk &disk, const QString &tableType)
     if (refuseSystem(&disk, failure))
         return;
     const QString path = disk.blockPath;
-    unmountThen(disk.volumes, failure, [this, path, tableType, name, failure] {
-        call(path, kBlock, QStringLiteral("Format"), {tableType, options({{QStringLiteral("tear-down"), true}})},
+    // "tear-down" also takes the drive's lines out of /etc/fstab and /etc/crypttab, which
+    // polkit always wants the admin password for. Only ask for it when there's something there.
+    bool tearDown = false;
+    for (const Volume &v : disk.volumes)
+        tearDown = tearDown || !v.fstab.isEmpty() || v.encrypted;
+    QVariantMap extra;
+    if (tearDown)
+        extra.insert(QStringLiteral("tear-down"), true);
+    unmountThen(disk.volumes, failure, [this, path, tableType, name, failure, extra] {
+        call(path, kBlock, QStringLiteral("Format"), {tableType, options(extra)},
              [name, tableType](const QDBusMessage &) {
                  return tr("%1 now has an empty %2 partition table").arg(name, tableType == QLatin1String("gpt") ? QStringLiteral("GPT") : QStringLiteral("MBR"));
              },
