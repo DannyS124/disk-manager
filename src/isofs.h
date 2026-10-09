@@ -22,7 +22,7 @@ struct Entry {
 };
 
 struct Listing {
-    QString volumeId;
+    QString volumeId; // the label, as blkid reads it
     QVector<Entry> entries; // a folder comes before what's in it
     QString error;          // empty when it worked
     bool ok() const { return error.isEmpty(); }

@@ -14,6 +14,8 @@
 #include "../src/addonmaker.h"
 #include "../src/diskmap.h"
 #include "../src/inspectdialog.h"
+#include "../src/isomode.h"
+#include "../src/filecopy.h"
 #include "../src/recoverdialog.h"
 #include "../src/rescuestick.h"
 #include "../src/rescueusbdialog.h"
@@ -27,6 +29,7 @@
 #include "../src/format.h"
 #include "../src/mainwindow.h"
 #include "../src/theme.h"
+#include "../src/tools.h"
 #include "../src/udisks.h"
 
 #include <QAbstractButton>
@@ -55,6 +58,8 @@
 #include <QShortcut>
 #include <QMenuBar>
 #include <QPushButton>
+#include <QSpinBox>
+#include <QRadioButton>
 #include <QElapsedTimer>
 #include <QMessageBox>
 #include <QProcess>
@@ -1283,6 +1288,41 @@ void jobBars()
     report(jobBars().isEmpty() && stop && !stop->isEnabled(), QStringLiteral("when the jobs end, the bars and Stop go"));
 }
 
+// Unmounts everything on a test loop device and lets go of it. The desktop's file indexer can
+// hold a freshly mounted stick for a moment, so unmounting is tried a few times. Reports a
+// failure if the loop device stays behind.
+void cleanUpLoop(UDisks &udisks, const QString &loopPath)
+{
+    const QVariantMap quiet{{QStringLiteral("auth.no_user_interaction"), true}};
+    waitUntil([&] {
+        udisks.refresh();
+        bool mounted = false;
+        if (const Disk *d = udisks.diskByPath(loopPath)) {
+            for (const Volume &v : d->volumes) {
+                if (v.mountPoints.isEmpty())
+                    continue;
+                mounted = true;
+                QDBusMessage unmount = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), v.objectPath,
+                                                                      QStringLiteral("org.freedesktop.UDisks2.Filesystem"), QStringLiteral("Unmount"));
+                unmount << quiet;
+                QDBusConnection::systemBus().call(unmount, QDBus::Block, 30000);
+            }
+        }
+        if (mounted)
+            QThread::msleep(500);
+        return !mounted;
+    }, 20000);
+    QDBusMessage remove = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), loopPath,
+                                                         QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
+    remove << quiet;
+    const QDBusMessage removed = QDBusConnection::systemBus().call(remove, QDBus::Block, 30000);
+    waitUntil([&] {
+        udisks.refresh();
+        return udisks.diskByPath(loopPath) == nullptr;
+    }, 10000);
+    report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"), removed.errorMessage());
+}
+
 // Make a Rescue USB on a loop device of the user's own (UDisks lets you set those up and
 // change them without a password), through the dialog like a user would.
 // DISKFORGE_TEST_RESCUE_ISO uses a real rescue image instead of a small made-up one, and
@@ -1436,27 +1476,7 @@ void rescueUsb()
     }
     RescueUsbDialog::allowLoopDevicesForTest = false;
 
-    // Clean up: unmount whatever is mounted (straight through D-Bus, so it's done before the
-    // next line), then let go of the loop device, and say so if it stays behind.
-    const QVariantMap quiet{{QStringLiteral("auth.no_user_interaction"), true}};
-    udisks.refresh();
-    if (const Disk *d = udisks.diskByPath(loopPath)) {
-        for (const Volume &v : d->volumes) {
-            QDBusMessage unmount = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), v.objectPath,
-                                                                  QStringLiteral("org.freedesktop.UDisks2.Filesystem"), QStringLiteral("Unmount"));
-            unmount << quiet;
-            QDBusConnection::systemBus().call(unmount, QDBus::Block, 30000); // fails harmlessly when it isn't mounted
-        }
-    }
-    QDBusMessage remove = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), loopPath,
-                                                         QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
-    remove << quiet;
-    const QDBusMessage removed = QDBusConnection::systemBus().call(remove, QDBus::Block, 30000);
-    waitUntil([&] {
-        udisks.refresh();
-        return udisks.diskByPath(loopPath) == nullptr;
-    }, 10000);
-    report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"), removed.errorMessage());
+    cleanUpLoop(udisks, loopPath);
 }
 
 // Check a USB Stick on a loop device, through the dialog. As root: the quick check says a
@@ -1541,15 +1561,149 @@ void stickCheck()
     report(stick && stick->tableType == QLatin1String("dos") && stick->volumes.size() == 1 && stick->volumes[0].fsType == QLatin1String("vfat"),
            QStringLiteral("an MBR with one FAT32 partition"));
 
-    QDBusMessage remove = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), loopPath,
-                                                         QStringLiteral("org.freedesktop.UDisks2.Loop"), QStringLiteral("Delete"));
-    remove << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
-    QDBusConnection::systemBus().call(remove, QDBus::Block, 30000);
+    cleanUpLoop(udisks, loopPath);
+}
+
+// Write Image to USB's "copy the files" way, with persistence, on a loop device of the user's
+// own (no raw access needed, so no password): a Debian-live-like ISO with a long label.
+// DISKFORGE_TEST_COPY_ISO uses a real ISO instead (one with live-boot persistence, like
+// DiskForge Rescue), and DISKFORGE_TEST_STICK keeps the stick's image to boot it in a VM.
+void isoCopy()
+{
+    QTemporaryDir dir;
+    const QString realIso = qEnvironmentVariable("DISKFORGE_TEST_COPY_ISO");
+    const QString tree = dir.filePath(QStringLiteral("tree"));
+    auto put = [&](const QString &path, const QByteArray &data) {
+        QDir().mkpath(QFileInfo(tree + QLatin1Char('/') + path).path());
+        QFile f(tree + QLatin1Char('/') + path);
+        if (f.open(QIODevice::WriteOnly))
+            f.write(data);
+    };
+    put(QStringLiteral("EFI/BOOT/BOOTX64.EFI"), QByteArray(8192, 'e'));
+    put(QStringLiteral("live/vmlinuz"), QByteArray(300000, 'k'));
+    put(QStringLiteral("live/filesystem.squashfs"), QByteArray(2 * 1024 * 1024, 's'));
+    put(QStringLiteral("boot/grub/grub.cfg"), "search --set=root --label My\\x20Live\\x201.0\nmenuentry \"Live\" {\n"
+                                              "    linux /live/vmlinuz boot=live quiet\n    initrd /live/initrd.img\n}\n");
+    QString iso = realIso;
+    if (iso.isEmpty()) {
+        iso = dir.filePath(QStringLiteral("live.iso"));
+        if (sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"),
+                                           QStringLiteral("-joliet-long"), QStringLiteral("-R"), QStringLiteral("-V"), QStringLiteral("My Live 1.0"),
+                                           QStringLiteral("-o"), iso, tree}) != 0) {
+            out << "SKIP  copy mode: xorriso isn't installed" << Qt::endl;
+            return;
+        }
+    }
+    const QString label = isomode::fatLabel(filecopy::openIso(iso)->label());
+    QString image = qEnvironmentVariable("DISKFORGE_TEST_STICK");
+    if (image.isEmpty())
+        image = dir.filePath(QStringLiteral("stick.img"));
+    QFile::remove(image);
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), realIso.isEmpty() ? QStringLiteral("3G") : QStringLiteral("4G"), image});
+    QFile backing(image);
+    QString loopPath;
+    if (backing.open(QIODevice::ReadWrite)) {
+        QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                                           QStringLiteral("org.freedesktop.UDisks2.Manager"), QStringLiteral("LoopSetup"));
+        call << QVariant::fromValue(QDBusUnixFileDescriptor(backing.handle())) << QVariantMap{{QStringLiteral("auth.no_user_interaction"), true}};
+        loopPath = QDBusConnection::systemBus().call(call, QDBus::Block, 30000).arguments().value(0).value<QDBusObjectPath>().path();
+        backing.close();
+    }
+    report(!loopPath.isEmpty(), QStringLiteral("copy mode: a loop device stands in for the stick"));
+    if (loopPath.isEmpty())
+        return;
+    UDisks udisks;
+    udisks.setInteractive(false);
+    const Disk *stick = nullptr;
     waitUntil([&] {
         udisks.refresh();
-        return udisks.diskByPath(loopPath) == nullptr;
-    }, 10000);
-    report(udisks.diskByPath(loopPath) == nullptr, QStringLiteral("the test stick is cleaned up afterwards"));
+        stick = udisks.diskByPath(loopPath);
+        return stick != nullptr;
+    }, 15000);
+    const QString device = stick ? stick->device : QString();
+
+    WriteImageDialog::allowLoopDevicesForTest = true;
+    QStringList boxes;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            boxes << box->text();
+            box->accept();
+            return true;
+        }
+        return false;
+    };
+    {
+        WriteImageDialog dialog(&udisks, loopPath);
+        dialog.show();
+        dialog.findChild<QLineEdit *>(QStringLiteral("image"))->setText(iso);
+        auto *copyMode = dialog.findChild<QRadioButton *>(QStringLiteral("copyMode"));
+        auto *persist = dialog.findChild<QCheckBox *>(QStringLiteral("persist"));
+        report(copyMode && copyMode->isVisibleTo(&dialog) && copyMode->isEnabled(), QStringLiteral("an ISO gets the choice to copy its files"));
+        copyMode->setChecked(true);
+        report(persist && persist->isEnabled(), QStringLiteral("and, for a Debian-style live system, to keep changes"));
+        persist->setChecked(true);
+        dialog.findChild<QSpinBox *>(QStringLiteral("persistSize"))->setValue(1);
+        dialog.findChild<QLineEdit *>(QStringLiteral("confirm"))->setText(shortDevice(device));
+        QPushButton *write = findButton(&dialog, QStringLiteral("Write"));
+        report(write && write->isEnabled(), QStringLiteral("typing the device name unlocks Write"));
+        if (write)
+            write->click();
+        waitUntil([&] { return !dialog.isVisible() || !boxes.isEmpty(); }, 900000);
+        waitUntil([&] { return !dialog.isVisible(); }, 5000);
+        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The USB stick is ready")), QStringLiteral("it says the stick is ready"),
+               boxes.join(QStringLiteral(" | ")).left(300));
+    }
+    WriteImageDialog::allowLoopDevicesForTest = false;
+
+    const Volume *fat = nullptr, *ext = nullptr;
+    waitUntil([&] {
+        udisks.refresh();
+        stick = udisks.diskByPath(loopPath);
+        fat = ext = nullptr;
+        for (const Volume &v : stick ? stick->volumes : QVector<Volume>()) {
+            if (v.fsType == QLatin1String("vfat"))
+                fat = &v;
+            else if (v.fsType == QLatin1String("ext4"))
+                ext = &v;
+        }
+        return fat && ext;
+    }, 15000);
+    report(fat && fat->label == label && (fat->partFlags & 0x80) && ext && ext->label == QLatin1String("persistence"),
+           QStringLiteral("FAT32 with the ISO's label made fit, bootable, then ext4 called persistence"),
+           fat ? fat->label : QStringLiteral("no FAT"));
+    auto mounted = [&](const Volume *v) -> QString {
+        if (!v)
+            return {};
+        udisks.mount(*v);
+        QString root;
+        waitUntil([&] {
+            udisks.refresh();
+            for (const Volume &x : udisks.diskByPath(loopPath) ? udisks.diskByPath(loopPath)->volumes : QVector<Volume>()) {
+                if (x.objectPath == v->objectPath && !x.mountPoints.isEmpty())
+                    root = x.mountPoints.first();
+            }
+            return !root.isEmpty();
+        }, 15000);
+        return root;
+    };
+    const QString fatRoot = mounted(fat);
+    QFile cfg(fatRoot + QStringLiteral("/boot/grub/grub.cfg"));
+    const QByteArray menu = cfg.open(QIODevice::ReadOnly) ? cfg.readAll() : QByteArray();
+    report((!realIso.isEmpty() || menu.contains("--label MY_LIVE_1_0")) && menu.contains("boot=live persistence"),
+           QStringLiteral("the boot menu points at the stick's label and turns persistence on"), QString::fromUtf8(menu).left(160));
+    cfg.close();
+    udisks.refresh();
+    for (const Volume &v : udisks.diskByPath(loopPath)->volumes) {
+        if (v.fsType == QLatin1String("ext4"))
+            ext = &v;
+    }
+    const QString extRoot = mounted(ext);
+    QFile conf(extRoot + QStringLiteral("/persistence.conf"));
+    report(conf.open(QIODevice::ReadOnly) && conf.readAll() == "/ union\n", QStringLiteral("persistence.conf says to keep everything"));
+    conf.close();
+
+    cleanUpLoop(udisks, loopPath);
 }
 
 int userScenarios()
@@ -1565,6 +1719,7 @@ int userScenarios()
     jobBars();
     rescueUsb();
     stickCheck();
+    isoCopy();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

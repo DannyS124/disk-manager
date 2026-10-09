@@ -157,8 +157,11 @@ isofs::Listing isofs::list(int fd)
     }
     const quint64 imageSize = quint64(end);
 
-    // The volume descriptors start at sector 16. The Joliet one has the names as they were.
+    // The volume descriptors start at sector 16. The Joliet one has the names as they were; the
+    // primary one has the full label (Joliet's only has room for 16 characters), which is the
+    // one blkid and so the boot menus go by.
     QByteArray joliet;
+    QString primaryLabel;
     QByteArray sector(qsizetype(kSector), '\0');
     for (quint64 i = 16; i < 16 + 64; ++i) {
         if ((i + 1) * kSector > imageSize || !readAt(fd, i * kSector, sector) || sector.mid(1, 5) != "CD001") {
@@ -168,6 +171,8 @@ isofs::Listing isofs::list(int fd)
         const uchar type = uchar(sector[0]);
         if (type == 255)
             break;
+        if (type == 1)
+            primaryLabel = QString::fromLatin1(sector.mid(40, 32)).trimmed();
         const QByteArray escape = sector.mid(88, 3);
         if (type == 2 && (escape == "%/@" || escape == "%/C" || escape == "%/E")) {
             joliet = sector;
@@ -180,7 +185,7 @@ isofs::Listing isofs::list(int fd)
     }
 
     const auto *descriptor = reinterpret_cast<const uchar *>(joliet.constData());
-    out.volumeId = jolietName(descriptor + 40, 32).trimmed();
+    out.volumeId = primaryLabel.isEmpty() ? jolietName(descriptor + 40, 32).trimmed() : primaryLabel;
     const uchar *root = descriptor + 156;
     Walker walker{fd, imageSize, out, {}};
     if (!walker.walk(le32(root + 2), le32(root + 10), QString(), 0))

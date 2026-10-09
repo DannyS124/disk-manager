@@ -55,6 +55,7 @@ void recoverTests();
 void rescueUsbTests();
 void stickCheckTests();
 void imageTests();
+void isoModeTests();
 void raidTests();
 void lvmTests();
 void stopTests();

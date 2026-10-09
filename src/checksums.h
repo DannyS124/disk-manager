@@ -29,12 +29,15 @@ Expected parse(const QString &text);
 // The line for `fileName` in a checksum file (or its only line).
 Expected fromFile(const QByteArray &contents, const QString &fileName);
 
-// MD5, SHA-1, SHA-256 and SHA-512 of a file, in one pass. Runs in a worker thread.
+QList<QCryptographicHash::Algorithm> algorithms(); // MD5, SHA-1, SHA-256, SHA-512
+
+// Checksums of a file, all in one pass: all four, or just the ones asked for. Runs in a worker
+// thread.
 class Hasher : public QObject
 {
     Q_OBJECT
 public:
-    explicit Hasher(const QString &path);
+    explicit Hasher(const QString &path, const QList<QCryptographicHash::Algorithm> &which = algorithms());
     void cancel() { m_cancel = true; }
 
 public slots:
@@ -42,14 +45,13 @@ public slots:
 
 signals:
     void progress(quint64 done, quint64 total);
-    // In the order of algorithms(): MD5, SHA-1, SHA-256, SHA-512.
+    // In the order they were asked for.
     void finished(bool ok, const QStringList &hex, const QString &error);
 
 private:
     QString m_path;
+    QList<QCryptographicHash::Algorithm> m_which;
     std::atomic<bool> m_cancel{false};
 };
-
-QList<QCryptographicHash::Algorithm> algorithms();
 
 } // namespace checksums

@@ -10,8 +10,10 @@
 #include "benchmark.h"
 #include "dialogs.h"
 #include "checksums.h"
+#include "filecopy.h"
 #include "format.h"
 #include "imagesource.h"
+#include "isocopy.h"
 #include "imagewriter.h"
 #include "surfacescan.h"
 #include "health.h"
@@ -19,6 +21,7 @@
 #include "btrfscheck.h"
 #include "theme.h"
 
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
@@ -36,8 +39,10 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QThread>
 #include <QProcess>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QGroupBox>
 #include <QLocale>
@@ -802,8 +807,18 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     , m_confirm(new QLineEdit)
     , m_progress(new QProgressBar)
     , m_phase(new QLabel)
+    , m_modeBox(new QWidget)
+    , m_asIs(new QRadioButton(tr("Write it as it is: works on old BIOS PCs too")))
+    , m_copyMode(new QRadioButton(tr("Copy the files: the stick stays usable for other files (UEFI PCs only)")))
+    , m_persist(new QCheckBox(tr("Keep changes between starts (persistence):")))
+    , m_persistGb(new QSpinBox)
+    , m_modeNote(new QLabel)
 {
     setWindowTitle(tr("Write Image to USB"));
+    m_asIs->setObjectName(QStringLiteral("asIs"));
+    m_copyMode->setObjectName(QStringLiteral("copyMode"));
+    m_persist->setObjectName(QStringLiteral("persist"));
+    m_persistGb->setObjectName(QStringLiteral("persistSize"));
     m_image->setObjectName(QStringLiteral("image"));
     m_imageInfo->setObjectName(QStringLiteral("imageInfo"));
     m_sha->setObjectName(QStringLiteral("checksum"));
@@ -862,11 +877,32 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     form->addRow(tr("Drive:"), m_targets);
     form->addRow(tr("Checksum:"), shaRow);
     form->addRow(QString(), m_verify);
+    // For ISOs: as they are, or their files copied (Rufus's "ISO mode").
+    m_asIs->setChecked(true);
+    m_persistGb->setSuffix(tr(" GB"));
+    m_persistGb->setRange(1, 1);
+    m_modeNote->setWordWrap(true);
+    auto *modes = new QButtonGroup(this);
+    modes->addButton(m_asIs);
+    modes->addButton(m_copyMode);
+    auto *persistRow = new QHBoxLayout;
+    persistRow->setContentsMargins(24, 0, 0, 0);
+    persistRow->addWidget(m_persist);
+    persistRow->addWidget(m_persistGb);
+    persistRow->addStretch();
+    auto *modeLayout = new QVBoxLayout(m_modeBox);
+    modeLayout->setContentsMargins(0, 0, 0, 0);
+    modeLayout->addWidget(m_asIs);
+    modeLayout->addWidget(m_copyMode);
+    modeLayout->addLayout(persistRow);
+    modeLayout->addWidget(m_modeNote);
+    form->addRow(tr("How:"), m_modeBox);
+    m_form = form;
 
     auto *layout = new QVBoxLayout(this);
     layout->addLayout(form);
-    layout->addWidget(wrappingLabel(tr("<small>Works for Linux ISOs (Arch, Ubuntu, Fedora...) and other bootable images. "
-                                       "Windows ISOs need a different tool, like WoeUSB.</small>")));
+    layout->addWidget(wrappingLabel(tr("<small>Works for Linux ISOs (Arch, Ubuntu, Fedora...), disk and SD card images, "
+                                       "compressed or not. For Windows ISOs there's Make a Windows USB in the File menu.</small>")));
     layout->addWidget(m_warning);
     layout->addWidget(m_confirm);
     layout->addWidget(m_phase);
@@ -884,6 +920,8 @@ WriteImageDialog::WriteImageDialog(UDisks *udisks, const QString &preferredDisk,
     connect(m_targets, &QComboBox::currentIndexChanged, this, &WriteImageDialog::updateState);
     connect(m_confirm, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
     connect(m_sha, &QLineEdit::textChanged, this, &WriteImageDialog::updateState);
+    connect(modes, &QButtonGroup::buttonToggled, this, &WriteImageDialog::updateState);
+    connect(m_persist, &QCheckBox::toggled, this, &WriteImageDialog::updateState);
     // Sticks plugged in while the dialog is open.
     connect(m_udisks, &UDisks::changed, this, [this] {
         if (m_running)
@@ -944,6 +982,8 @@ void WriteImageDialog::updateState()
     if (path != m_described) {
         m_described = path;
         m_unpacked = 0;
+        m_isIso = false;
+        m_analysis = {};
         QString info;
         if (image.isFile()) {
             QString error;
@@ -953,6 +993,11 @@ void WriteImageDialog::updateState()
             } else if (source->compression().isEmpty()) {
                 m_unpacked = quint64(image.size());
                 info = formatSize(m_unpacked).toHtmlEscaped();
+                // An ISO can also have its files copied: see what this one allows.
+                const std::unique_ptr<filecopy::Source> iso = filecopy::openIso(path);
+                m_isIso = iso->error().isEmpty();
+                if (m_isIso)
+                    m_analysis = isomode::analyse(iso->entries(), iso->label());
             } else {
                 m_unpacked = source->size();
                 const QString inside = source->innerName().isEmpty() ? QString() : tr(" (%1 inside)").arg(source->innerName());
@@ -971,15 +1016,43 @@ void WriteImageDialog::updateState()
         m_imageInfo->setText(info);
     }
 
+    // As it is, or the files copied.
+    m_form->setRowVisible(m_modeBox, m_isIso);
+    m_copyMode->setEnabled(m_analysis.canCopy());
+    if (!m_analysis.canCopy() && m_copyMode->isChecked())
+        m_asIs->setChecked(true);
+    const bool copy = m_isIso && m_copyMode->isChecked();
+    m_verify->setEnabled(!copy); // copying always checks every file
+    const quint64 room = d && d->size > m_analysis.bytes * 21 / 20 + 256 * 1024 * 1024 ? d->size - m_analysis.bytes * 21 / 20 - 256 * 1024 * 1024 : 0;
+    const bool canPersist = copy && m_analysis.persistence != isomode::Persistence::None && room >= 1000000000ULL;
+    m_persist->setEnabled(canPersist);
+    m_persistGb->setMaximum(std::max<int>(1, int(room / 1000000000ULL)));
+    m_persistGb->setEnabled(canPersist && m_persist->isChecked());
+    QString note = m_isIso && !m_analysis.canCopy() && !m_analysis.windows ? m_analysis.whyNot() : QString();
+    if (copy && m_analysis.persistence == isomode::Persistence::None)
+        note = tr("This one doesn't keep changes between starts.");
+    else if (copy && !canPersist)
+        note = tr("There's no room on this stick to keep changes between starts.");
+    m_modeNote->setText(note);
+    m_modeNote->setVisible(!note.isEmpty());
+
     const checksums::Expected checksum = checksums::parse(m_sha->text());
     QString warning;
     if (!checksum.error.isEmpty()) {
         warning = redText(checksum.error) + QStringLiteral("<br>");
         ok = false;
     }
+    if (m_isIso && m_analysis.windows) {
+        // Written as it is, a Windows ISO doesn't start from a USB stick.
+        warning += redText(tr("This is a Windows ISO: written as it is, it won't start a PC from a USB stick. Use Make a "
+                              "Windows USB in the File menu.")) + QStringLiteral("<br>");
+        ok = false;
+    }
     if (d) {
         // Compressed and not saying its size: at least the file itself has to fit.
-        const quint64 needed = m_unpacked ? m_unpacked : quint64(image.size());
+        quint64 needed = m_unpacked ? m_unpacked : quint64(image.size());
+        if (copy)
+            needed = m_analysis.bytes + 64 * 1024 * 1024 + (m_persist->isChecked() && canPersist ? quint64(m_persistGb->value()) * 1000000000ULL : 0);
         if (image.isFile() && needed > d->size) {
             warning += redText(tr("The image (%1) is bigger than this drive.").arg(formatSize(needed)));
             ok = false;
@@ -1000,6 +1073,17 @@ void WriteImageDialog::updateState()
 
 void WriteImageDialog::reject()
 {
+    if (m_isoCopy) {
+        if (!m_isoCopy->canCancel()) {
+            QMessageBox::information(this, windowTitle(), tr("One moment: DiskForge is in the middle of setting up the stick."));
+            return;
+        }
+        const auto answer = QMessageBox::warning(this, windowTitle(), tr("Stop? The stick won't be usable until it's done again."),
+                                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes && m_isoCopy)
+            m_isoCopy->cancel(); // finished() says when it has stopped
+        return;
+    }
     if (m_running) {
         const auto answer = QMessageBox::warning(this, windowTitle(),
                                                  tr("Stop writing? The drive won't be usable until you format it again."),
@@ -1014,11 +1098,60 @@ void WriteImageDialog::reject()
     QDialog::reject();
 }
 
+void WriteImageDialog::startCopy()
+{
+    const Disk *d = target();
+    if (!d)
+        return;
+    // Read before the widgets are disabled (a disabled box disables what's in it).
+    const quint64 persistence = m_persist->isEnabled() && m_persist->isChecked() ? quint64(m_persistGb->value()) * 1000000000ULL : 0;
+    m_running = true;
+    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_sha, m_verify, m_confirm, m_write, m_modeBox})
+        w->setEnabled(false);
+    m_isoCopy = new IsoCopy(m_udisks, d->blockPath, m_image->text().trimmed(), m_analysis, persistence, checksums::parse(m_sha->text()), this);
+    auto *meter = new PhaseProgress(m_progress, m_phase);
+    connect(m_isoCopy, &IsoCopy::phase, this, [this](const QString &text) {
+        m_progress->setRange(0, 0);
+        m_phase->setText(text);
+    });
+    connect(m_isoCopy, &IsoCopy::progress, this, [this, meter](const QString &phase, quint64 done, quint64 total) {
+        if (m_progress->maximum() == 0)
+            m_progress->setRange(0, 1000);
+        meter->update(phase, done, total);
+    });
+    connect(m_isoCopy, &IsoCopy::finished, this, [this, meter](bool ok, const QString &message, bool shownAlready) {
+        delete meter;
+        m_isoCopy->deleteLater();
+        m_isoCopy = nullptr;
+        m_running = false;
+        m_udisks->refresh();
+        if (ok) {
+            QMessageBox::information(this, windowTitle(), message);
+            QDialog::accept();
+            return;
+        }
+        if (!shownAlready)
+            QMessageBox::warning(this, windowTitle(), message);
+        m_progress->setVisible(false);
+        m_phase->setText(redText(message));
+        m_phase->setTextFormat(Qt::RichText);
+        m_confirm->clear();
+        for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_sha, m_verify, m_confirm, m_modeBox})
+            w->setEnabled(true);
+        updateState();
+    });
+    m_progress->setRange(0, 0);
+    m_progress->setVisible(true);
+    m_isoCopy->start();
+}
+
 void WriteImageDialog::start()
 {
     const Disk *d = target();
     if (!d)
         return;
+    if (m_isIso && m_copyMode->isChecked())
+        return startCopy();
     const Disk disk = *d;
     const QString image = m_image->text().trimmed();
     const checksums::Expected sha = checksums::parse(m_sha->text());

@@ -923,6 +923,8 @@ int main(int argc, char *argv[])
         stickCheckTests();
     } else if (args.contains(QStringLiteral("--images"))) {
         imageTests();
+    } else if (args.contains(QStringLiteral("--isomode"))) {
+        isoModeTests();
     } else if (args.contains(QStringLiteral("--raid"))) {
         if (needsRoot("--raid"))
             return 2;

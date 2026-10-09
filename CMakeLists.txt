@@ -72,6 +72,7 @@ add_library(diskforge-core STATIC
     src/applog.cpp src/applog.h
     src/isofs.cpp src/isofs.h
     src/filecopy.cpp src/filecopy.h
+    src/isomode.cpp src/isomode.h
     src/hostprocess.cpp src/hostprocess.h
     src/rescuestick.cpp src/rescuestick.h
     src/stickcheck.cpp src/stickcheck.h
@@ -89,6 +90,7 @@ add_library(diskforge-ui STATIC
     src/tools.cpp src/tools.h
     src/rescueusbdialog.cpp src/rescueusbdialog.h
     src/usbprep.cpp src/usbprep.h
+    src/isocopy.cpp src/isocopy.h
     src/stickcheckdialog.cpp src/stickcheckdialog.h
     src/blockmapwidget.cpp src/blockmapwidget.h
     src/jobui.cpp src/jobui.h
@@ -136,7 +138,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_images.cpp tests/test_raid.cpp tests/test_lvm.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_rescueusb.cpp tests/test_stickcheck.cpp tests/test_images.cpp tests/test_isomode.cpp tests/test_raid.cpp tests/test_lvm.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

@@ -4,12 +4,14 @@
 #pragma once
 
 #include "firmware.h"
+#include "isomode.h"
 #include "udisks.h"
 
 #include <QDialog>
 #include <QMap>
 #include <QSet>
 
+class IsoCopy;
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
@@ -20,6 +22,8 @@ class QGroupBox;
 class QLineEdit;
 class QProgressBar;
 class QPushButton;
+class QRadioButton;
+class QSpinBox;
 class BlockMapWidget;
 class QThread;
 class QTreeWidget;
@@ -180,6 +184,7 @@ private:
     void fillTargets(const QString &preferred);
     void updateState();
     void start();
+    void startCopy(); // the "copy the files" way, for ISOs
     const Disk *target() const;
 
     UDisks *m_udisks;
@@ -199,4 +204,15 @@ private:
     bool m_running = false;
     QString m_described; // the image the info line is about
     quint64 m_unpacked = 0; // its size once unpacked, 0 if it doesn't say
+    // ISOs can be written as they are or have their files copied.
+    QFormLayout *m_form = nullptr;
+    QWidget *m_modeBox;
+    QRadioButton *m_asIs;
+    QRadioButton *m_copyMode;
+    QCheckBox *m_persist;
+    QSpinBox *m_persistGb;
+    QLabel *m_modeNote;
+    bool m_isIso = false;
+    isomode::Analysis m_analysis;
+    IsoCopy *m_isoCopy = nullptr;
 };

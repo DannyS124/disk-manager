@@ -111,8 +111,9 @@ checksums::Expected checksums::fromFile(const QByteArray &contents, const QStrin
     return e;
 }
 
-checksums::Hasher::Hasher(const QString &path)
+checksums::Hasher::Hasher(const QString &path, const QList<QCryptographicHash::Algorithm> &which)
     : m_path(path)
+    , m_which(which)
 {
 }
 
@@ -124,7 +125,7 @@ void checksums::Hasher::run()
         return;
     }
     QList<QCryptographicHash *> hashes;
-    for (QCryptographicHash::Algorithm a : algorithms())
+    for (QCryptographicHash::Algorithm a : std::as_const(m_which))
         hashes.append(new QCryptographicHash(a));
     const quint64 total = quint64(file.size());
     quint64 done = 0;
