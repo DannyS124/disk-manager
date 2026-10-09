@@ -21,6 +21,7 @@
 #include "../src/firmware.h"
 #include "../src/health.h"
 #include "../src/partrecover.h"
+#include "../src/partscan.h"
 #include "../src/imagebackup.h"
 #include "../src/outputfilter.h"
 #include "../src/rescuecopy.h"
@@ -717,6 +718,37 @@ void savedLayouts(const QString &tmp)
            bad.mid(0, 5).join(QLatin1Char(' ')));
 }
 
+void scanResults()
+{
+    // Random finds (any order, overlapping, past the end, sizes or not): what tidy() keeps is
+    // in order, never overlaps, stays clear of both ends and is never empty.
+    const QStringList types = {QStringLiteral("ext4"), QStringLiteral("vfat"), QStringLiteral("swap"), QStringLiteral("crypto_LUKS")};
+    QStringList bad;
+    for (int i = 0; i < rounds(); ++i) {
+        const quint64 disk = (1 + rng.bounded(4096)) * quint64(1024 * 1024) + rng.bounded(512) * 512;
+        QVector<partscan::Found> found;
+        for (int n = int(rng.bounded(12)); n > 0; --n) {
+            partscan::Found f;
+            f.offset = rng.bounded(3) ? rng.bounded(quint32(disk / 512 + 100)) * quint64(512) : quint64(rng.generate64());
+            f.size = rng.bounded(3) ? rng.bounded(quint32(disk / 512)) * quint64(512) : (rng.bounded(2) ? 0 : quint64(rng.generate64()));
+            f.type = types[rng.bounded(quint32(types.size()))];
+            found << f;
+        }
+        const QVector<partscan::Found> kept = partscan::tidy(found, disk, rng.bounded(2) ? 512 : 4096);
+        quint64 end = 0;
+        for (const partscan::Found &f : kept) {
+            if (f.size == 0 || f.offset < end || f.offset < 34 * 512 || f.offset + f.size > disk || f.offset + f.size < f.offset)
+                bad << QString::number(i);
+            end = f.offset + f.size;
+        }
+        if (!partscan::toLayout(kept, QStringLiteral("gpt"), disk).parts.isEmpty()
+            && !recover::problem(partscan::toLayout(kept, QStringLiteral("gpt"), disk), disk, 512).isEmpty() && kept.size() <= 128)
+            bad << QStringLiteral("layout %1").arg(i);
+    }
+    report(bad.isEmpty(), QStringLiteral("%1 random scan results: what's kept is in order, apart, and fits the drive").arg(rounds()),
+           bad.mid(0, 5).join(QLatin1Char(' ')));
+}
+
 void btrfsCounts()
 {
     // Damaged error_stats text: no crash, nothing negative, and a total that can't overflow.
@@ -806,5 +838,6 @@ void fuzzTests()
     btrfsCounts();
     tableInspector(tmp.path());
     savedLayouts(tmp.path());
+    scanResults();
     out << "took " << timer.elapsed() / 1000.0 << " s" << Qt::endl;
 }

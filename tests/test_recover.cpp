@@ -9,6 +9,7 @@
 
 #include "../src/gpt.h"
 #include "../src/partrecover.h"
+#include "../src/partscan.h"
 
 #include <QDir>
 #include <QFile>
@@ -244,6 +245,83 @@ void refusals()
     report(!r.ok && r.error.contains(QLatin1String("overlap")) && after == "0", QStringLiteral("the GPT writer refuses overlaps and writes nothing"), r.error);
 }
 
+// Finding file systems where the table is gone: ext4 and FAT made in place, Btrfs, swap
+// and LUKS made apart and copied in, at known places on a drive with no table at all.
+void scanning()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("lost.img"));
+    QFile f(image);
+    if (!f.open(QIODevice::WriteOnly) || !f.resize(512 * MiB))
+        return report(false, QStringLiteral("make an image to scan"));
+    f.close();
+    auto run = [](const QString &command) {
+        int code = -1;
+        sh(QStringLiteral("sh"), {QStringLiteral("-c"), command}, &code);
+        return code == 0;
+    };
+    auto copyIn = [&](const QString &part, qint64 atMiB) {
+        return run(QStringLiteral("dd if='%1' of='%2' bs=1M seek=%3 conv=notrunc status=none").arg(part, image).arg(atMiB));
+    };
+    const QString btrfs = dir.filePath(QStringLiteral("btrfs.part")), swap = dir.filePath(QStringLiteral("swap.part")),
+                  luks = dir.filePath(QStringLiteral("luks.part"));
+    bool made = run(QStringLiteral("mke2fs -q -t ext4 -L root -E offset=%1 '%2' 100M").arg(1 * MiB).arg(image))
+        && run(QStringLiteral("mkfs.fat -F 16 --offset %1 -n DATA '%2' 65536 >/dev/null").arg(102 * MiB / 512).arg(image))
+        && run(QStringLiteral("truncate -s 200M '%1' && mkfs.btrfs -q -L store '%1'").arg(btrfs)) && copyIn(btrfs, 170)
+        && run(QStringLiteral("truncate -s 32M '%1' && mkswap -q '%1'").arg(swap)) && copyIn(swap, 380)
+        && run(QStringLiteral("truncate -s 32M '%1' && printf test | cryptsetup luksFormat --batch-mode --type luks2 --pbkdf pbkdf2 "
+                              "--pbkdf-force-iterations 1000 --key-file=- '%1'").arg(luks))
+        && copyIn(luks, 420);
+    report(made, QStringLiteral("make a drive with five file systems and no partition table"));
+    if (!made)
+        return;
+
+    const int fd = ::open(QFile::encodeName(image).constData(), O_RDWR | O_CLOEXEC);
+    quint64 lastDone = 0;
+    int calls = 0;
+    const QVector<partscan::Found> found = partscan::scan(fd, quint64(512 * MiB), [&](quint64 done, quint64) {
+        lastDone = done;
+        ++calls;
+        return true;
+    });
+    auto at = [&found](qint64 offset) -> partscan::Found {
+        for (const partscan::Found &x : found) {
+            if (x.offset == quint64(offset))
+                return x;
+        }
+        return {};
+    };
+    report(at(1 * MiB).type == QLatin1String("ext4") && at(1 * MiB).label == QLatin1String("root") && at(102 * MiB).type == QLatin1String("vfat")
+               && at(170 * MiB).type == QLatin1String("btrfs") && at(380 * MiB).type == QLatin1String("swap")
+               && at(420 * MiB).type == QLatin1String("crypto_LUKS") && lastDone == quint64(512 * MiB) && calls > 1,
+           QStringLiteral("the scan finds all five where they start, and reports its progress"),
+           QStringLiteral("%1 found (ext4 with 1 KiB blocks keeps backup superblocks where a file system 8, 24, 40 MiB later would start)").arg(found.size()));
+
+    const QVector<partscan::Found> parts = partscan::tidy(found, quint64(512 * MiB));
+    const bool sizes = parts.size() == 5 && parts[0].size == quint64(100 * MiB) && parts[1].size == quint64(64 * MiB)
+        && parts[2].size == quint64(200 * MiB) && parts[3].size == quint64(32 * MiB) && parts[4].sizeGuessed
+        && parts[4].offset + parts[4].size <= quint64(512 * MiB) - 34 * 512;
+    report(sizes, QStringLiteral("only the five are kept (not ext4's backup superblocks); sizes come from the file systems, and LUKS (which doesn't say) runs up to the end"));
+    const recover::Layout layout = partscan::toLayout(parts, QStringLiteral("gpt"), quint64(512 * MiB));
+    const gpt::Result r = recover::write(fd, layout, 512);
+    ::close(fd);
+    const QString table = dump(image, 512);
+    report(r.ok && table.contains(QLatin1String("start=        2048, size=      204800, type=0FC63DAF")) && table.contains(QLatin1String("type=EBD0A0A2"))
+               && table.contains(QLatin1String("type=0657FD6D")) && table.contains(QLatin1String("type=CA7D7CCB")) && table.contains(QLatin1String("name=\"root\"")),
+           QStringLiteral("a table is written from what was found, with fitting types"), r.ok ? table : r.error);
+
+    // Stop: the scan ends when asked, with what it found so far.
+    const int again = ::open(QFile::encodeName(image).constData(), O_RDONLY | O_CLOEXEC);
+    // It looks at Stop every 64 places (64 MiB here): asked at 300 MiB, it ends before the swap at 380.
+    const QVector<partscan::Found> early = partscan::scan(again, quint64(512 * MiB), [](quint64 done, quint64) { return done < quint64(300 * MiB); });
+    ::close(again);
+    bool beforeStop = !early.isEmpty();
+    for (const partscan::Found &x : early)
+        beforeStop = beforeStop && x.offset < quint64(380 * MiB);
+    report(beforeStop && partscan::tidy(early, quint64(512 * MiB)).size() == 3, QStringLiteral("Stop ends the scan, keeping what it had found"),
+           QString::number(early.size()));
+}
+
 } // namespace
 
 void recoverTests()
@@ -253,4 +331,5 @@ void recoverTests()
     mbrRecovery();
     remembering();
     refusals();
+    scanning();
 }

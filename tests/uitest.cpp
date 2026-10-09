@@ -1073,7 +1073,7 @@ void recoverThroughWindow()
             return false;
         if (!written && dialog->sourceCount() > 0) {
             written = true;
-            offered = dialog->findChild<QListWidget *>()->item(0)->text();
+            offered = dialog->findChild<QListWidget *>(QStringLiteral("sources"))->item(0)->text();
             QObject::connect(dialog, &RecoverDialog::done, dialog, [&, dialog](bool ok, const QString &message) {
                 success = ok;
                 result = message;
@@ -1097,6 +1097,84 @@ void recoverThroughWindow()
     }
     report(offered.contains(QLatin1String("backup copy")) && success && header == "EFI PART",
            QStringLiteral("the main header is put back from the backup copy, through the window"), offered + QStringLiteral(" | ") + result);
+    sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+}
+
+// The scan, through the window: a loop device with ext4 and FAT where partitions used to
+// be and no table at all. Scan, keep both, write, and they're partitions again.
+void scanThroughWindow()
+{
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("lost.img"));
+    sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("256M"), image});
+    sh(QStringLiteral("mke2fs"), {QStringLiteral("-q"), QStringLiteral("-t"), QStringLiteral("ext4"), QStringLiteral("-L"), QStringLiteral("root"),
+                                  QStringLiteral("-E"), QStringLiteral("offset=1048576"), image, QStringLiteral("100M")});
+    sh(QStringLiteral("mkfs.fat"), {QStringLiteral("-F"), QStringLiteral("16"), QStringLiteral("--offset"), QString::number(102 * 2048),
+                                    QStringLiteral("-n"), QStringLiteral("DATA"), image, QStringLiteral("65536")});
+    QString loop;
+    // -P: the kernel only makes partitions on a loop device that scans for them.
+    sh(QStringLiteral("losetup"), {QStringLiteral("-fP"), QStringLiteral("--show"), image}, &loop);
+    loop = loop.trimmed();
+
+    UDisks udisks;
+    udisks.setInteractive(false);
+    MainWindow window(&udisks);
+    window.show();
+    waitUntil([&] {
+        udisks.refresh();
+        return window.selectDevice(loop);
+    }, 15000);
+    QAction *recoverAction = findAction(window, QStringLiteral("Recover Partitions"));
+    enum class Step { Start, Scanning, Writing, Done } step = Step::Start;
+    QString result;
+    bool success = false;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            if (!box->text().startsWith(QLatin1String("The scan reads")))
+                return false;
+            if (QPushButton *scan = findButton(box, QStringLiteral("Scan")))
+                scan->click();
+            step = Step::Scanning;
+            return true;
+        }
+        auto *dialog = qobject_cast<RecoverDialog *>(modal);
+        if (!dialog)
+            return false;
+        QPushButton *scan = findButton(dialog, QStringLiteral("Scan the Drive for File Systems…"));
+        if (step == Step::Start && scan && scan->isEnabled()) {
+            QObject::connect(dialog, &RecoverDialog::done, dialog, [&, dialog](bool ok, const QString &message) {
+                success = ok;
+                result = message;
+                step = Step::Done;
+                dialog->close();
+            });
+            // Queued: Scan asks first, and that question needs this timer to answer it.
+            QTimer::singleShot(0, scan, &QPushButton::click);
+            step = Step::Scanning;
+        } else if (step == Step::Scanning) {
+            auto *list = dialog->findChild<QListWidget *>(QStringLiteral("sources"));
+            if (list && list->count() > 0 && list->item(list->count() - 1)->text().startsWith(QLatin1String("Found by scanning"))) {
+                for (QLineEdit *edit : dialog->findChildren<QLineEdit *>())
+                    edit->setText(QFileInfo(loop).fileName());
+                if (QPushButton *write = findButton(dialog, QStringLiteral("Write Partition Table")); write && write->isEnabled()) {
+                    step = Step::Writing;
+                    write->click();
+                }
+            }
+        }
+        return true;
+    };
+    if (recoverAction)
+        recoverAction->trigger();
+    QString table;
+    sh(QStringLiteral("sfdisk"), {QStringLiteral("--dump"), loop}, &table);
+    QString types;
+    sh(QStringLiteral("lsblk"), {QStringLiteral("-rno"), QStringLiteral("FSTYPE,LABEL"), loop}, &types);
+    report(success && table.contains(QLatin1String("start=        2048, size=      204800")) && types.contains(QLatin1String("ext4 root"))
+               && types.contains(QLatin1String("vfat DATA")),
+           QStringLiteral("a scan through the window finds both file systems and makes them partitions again"),
+           result + QStringLiteral(" | ") + types.simplified());
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
 }
 
@@ -1267,6 +1345,7 @@ int main(int argc, char *argv[])
     lockInMap();
     inspector();
     recoverThroughWindow();
+    scanThroughWindow();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

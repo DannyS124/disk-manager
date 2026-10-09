@@ -134,7 +134,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/addons.cpp" line="1061"/>
+        <location filename="../src/addons.cpp" line="1063"/>
         <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
         <translation>
             <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
@@ -299,7 +299,7 @@
 <context>
     <name>RecoverDialog</name>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="147"/>
+        <location filename="../src/recoverdialog.cpp" line="192"/>
         <source>The backup copy at the end of the drive: %n partition(s)</source>
         <translation>
             <numerusform>The backup copy at the end of the drive: %n partition</numerusform>
@@ -307,7 +307,23 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="245"/>
+        <location filename="../src/recoverdialog.cpp" line="332"/>
+        <source>Stopped: %n file system(s) found before that.</source>
+        <translation>
+            <numerusform>Stopped: %n file system found before that.</numerusform>
+            <numerusform>Stopped: %n file systems found before that.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/recoverdialog.cpp" line="333"/>
+        <source>Found %n file system(s).</source>
+        <translation>
+            <numerusform>Found %n file system.</numerusform>
+            <numerusform>Found %n file systems.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/recoverdialog.cpp" line="433"/>
         <source>The partition table of %1 is back: %n partition(s).</source>
         <translation>
             <numerusform>The partition table of %1 is back: %n partition.</numerusform>

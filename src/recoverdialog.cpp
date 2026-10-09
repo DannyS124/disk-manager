@@ -16,6 +16,13 @@
 #include <QLocale>
 #include <QPushButton>
 #include <QTimer>
+#include <QHBoxLayout>
+#include <QMessageBox>
+#include <QPointer>
+#include <QProgressBar>
+#include <QSignalBlocker>
+#include <QThread>
+#include <QApplication>
 #include <QVBoxLayout>
 
 #include <memory>
@@ -92,6 +99,16 @@ RecoverDialog::RecoverDialog(UDisks *udisks, const Disk &disk, QWidget *parent)
     refresh();
 }
 
+RecoverDialog::~RecoverDialog()
+{
+    if (m_scanThread) {
+        m_stopFlag->store(true); // it looks every few dozen places, so this is quick
+        m_scanThread->wait();
+    }
+    if (m_scanFd >= 0)
+        ::close(m_scanFd);
+}
+
 void RecoverDialog::build()
 {
     setWindowTitle(tr("Recover Partitions on %1").arg(diskTitle(m_disk)));
@@ -101,6 +118,7 @@ void RecoverDialog::build()
                         "touched. The table there now is remembered first, so this can be undone the same way."));
     m_problem->setWordWrap(true);
     m_problem->setTextFormat(Qt::RichText);
+    m_list->setObjectName(QStringLiteral("sources"));
     m_before->setDisks({m_disk});
     for (DiskMap *map : {m_before, m_after}) {
         map->setAttribute(Qt::WA_TransparentForMouseEvents); // pictures, not something to click
@@ -112,6 +130,33 @@ void RecoverDialog::build()
     layout->addWidget(m_intro);
     layout->addWidget(new QLabel(tr("Put back:")));
     layout->addWidget(m_list, 1);
+    m_scan = new QPushButton(tr("Scan the Drive for File Systems…"));
+    m_scan->setToolTip(tr("When there's no table and nothing saved: looks through the drive for file systems where partitions started."));
+    m_progress = new QProgressBar;
+    m_progress->setRange(0, 1000);
+    m_scanStatus = new QLabel;
+    m_stopScan = new QPushButton(tr("Stop Scan"));
+    auto *scanRow = new QHBoxLayout;
+    scanRow->addWidget(m_scan);
+    scanRow->addWidget(m_progress, 1);
+    scanRow->addWidget(m_scanStatus);
+    scanRow->addWidget(m_stopScan);
+    scanRow->addStretch();
+    layout->addLayout(scanRow);
+    for (QWidget *w : std::initializer_list<QWidget *>{m_progress, m_scanStatus, m_stopScan})
+        w->hide();
+    m_found = new QListWidget;
+    m_found->setObjectName(QStringLiteral("found"));
+    m_found->setMaximumHeight(130);
+    m_found->hide();
+    layout->addWidget(m_found);
+    connect(m_scan, &QPushButton::clicked, this, &RecoverDialog::startScan);
+    connect(m_stopScan, &QPushButton::clicked, this, [this] {
+        if (m_stopFlag)
+            m_stopFlag->store(true);
+        m_stopScan->setEnabled(false);
+    });
+    connect(m_found, &QListWidget::itemChanged, this, &RecoverDialog::ticked);
     layout->addWidget(new QLabel(tr("Now:")));
     layout->addWidget(m_before);
     layout->addWidget(new QLabel(tr("After:")));
@@ -173,6 +218,7 @@ void RecoverDialog::choose(int row)
 {
     if (row < 0 || row >= m_sources.size())
         return;
+    m_found->setVisible(m_sources[row].scan);
     m_after->setDisks({recover::preview(*disk(), m_sources[row].layout)});
     refresh();
 }
@@ -189,6 +235,148 @@ void RecoverDialog::refresh()
         m_problem->setText(why.isEmpty() ? QString() : redText(why));
     }
     m_write->setEnabled(!m_busy && row >= 0 && why.isEmpty() && refusal(*d).isEmpty() && m_confirm->text().trimmed() == m_device);
+    if (m_scan)
+        m_scan->setEnabled(!m_busy && refusal(*d).isEmpty());
+}
+
+void RecoverDialog::startScan()
+{
+    const Disk *d = disk();
+    if (!refusal(*d).isEmpty() || m_busy)
+        return;
+    // A rough idea of how long: a look at every MiB, quick on an SSD, a seek each on a hard drive.
+    const double seconds = double(d->size / (1024 * 1024)) * (d->rotationRate == 0 ? 0.0003 : 0.008);
+    QMessageBox ask(QMessageBox::Question, tr("Scan %1").arg(m_device),
+                    tr("The scan reads a little at every megabyte of %1 (%2) and looks for file systems where partitions "
+                       "started. That can take a while: %3. It only reads, and it can be stopped any time.")
+                        .arg(m_device, formatSize(d->size), durationText(seconds)),
+                    QMessageBox::NoButton, this);
+    ask.setTextFormat(Qt::PlainText);
+    QPushButton *go = ask.addButton(tr("Scan"), QMessageBox::AcceptRole);
+    ask.addButton(QMessageBox::Cancel);
+    ask.exec();
+    if (ask.clickedButton() != go)
+        return;
+    m_busy = true;
+    refresh();
+    m_scanStatus->setText(tr("Opening the drive…"));
+    m_scanStatus->show();
+    // Plain reads (libblkid reads where it likes, which a benchmark open doesn't allow);
+    // nothing's mounted, so nothing gets unmounted for it.
+    openBlockThen(m_udisks, this, m_blockPath, UDisks::OpenMode::Read, [this](int fd) {
+        if (fd < 0) {
+            m_busy = false;
+            m_scanStatus->setText(tr("Couldn't open the drive."));
+            refresh();
+            return;
+        }
+        m_scanFd = fd;
+        m_scanSize = blockio::deviceSize(fd);
+        m_stopFlag = std::make_shared<std::atomic<bool>>(false);
+        m_progress->setValue(0);
+        m_progress->show();
+        m_stopScan->setEnabled(true);
+        m_stopScan->show();
+        m_scanTimer.start();
+        QPointer<RecoverDialog> self(this);
+        const auto stop = m_stopFlag;
+        const quint64 size = m_scanSize;
+        m_scanThread = QThread::create([self, fd, size, stop] {
+            const QVector<partscan::Found> found = partscan::scan(fd, size, [self, stop](quint64 done, quint64 total) {
+                QMetaObject::invokeMethod(qApp, [self, done, total] {
+                    if (self)
+                        self->scanProgress(done, total);
+                }, Qt::QueuedConnection);
+                return !stop->load();
+            });
+            QMetaObject::invokeMethod(qApp, [self, found] {
+                if (self)
+                    self->scanFinished(found);
+            }, Qt::QueuedConnection);
+        });
+        m_scanThread->setParent(this);
+        m_scanThread->start();
+    });
+}
+
+void RecoverDialog::scanProgress(quint64 done, quint64 total)
+{
+    if (!total)
+        return;
+    m_progress->setValue(int(done * 1000 / total));
+    const double elapsed = double(m_scanTimer.elapsed()) / 1000;
+    const double left = done > 0 && elapsed > 3 ? elapsed * double(total - done) / double(done) : -1;
+    m_scanStatus->setText(left >= 0 ? tr("%1 left").arg(durationText(left)) : tr("Scanning…"));
+}
+
+void RecoverDialog::scanFinished(const QVector<partscan::Found> &found)
+{
+    if (m_scanThread) {
+        m_scanThread->wait();
+        delete m_scanThread;
+        m_scanThread = nullptr;
+    }
+    const bool stopped = m_stopFlag && m_stopFlag->load();
+    if (m_scanFd >= 0)
+        ::close(m_scanFd);
+    m_scanFd = -1;
+    m_busy = false;
+    m_progress->hide();
+    m_stopScan->hide();
+    m_foundList = partscan::tidy(found, m_scanSize);
+    if (m_foundList.isEmpty()) {
+        m_scanStatus->setText(stopped ? tr("Stopped; nothing found before that.") : tr("No file systems found."));
+        refresh();
+        return;
+    }
+    m_scanStatus->setText(stopped ? tr("Stopped: %n file system(s) found before that.", nullptr, int(m_foundList.size()))
+                                  : tr("Found %n file system(s).", nullptr, int(m_foundList.size())));
+    {
+        const QSignalBlocker quiet(m_found);
+        m_found->clear();
+        for (const partscan::Found &f : std::as_const(m_foundList)) {
+            QString text = tr("%1 at %2, %3").arg(f.type, formatSize(f.offset), formatSize(f.size));
+            if (!f.label.isEmpty())
+                text += QStringLiteral(" \"%1\"").arg(f.label);
+            if (f.sizeGuessed)
+                text += tr(" (its size is a guess: up to the next one)");
+            auto *item = new QListWidgetItem(text, m_found); // plain text: labels come from the drive
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Checked);
+        }
+    }
+    Source s;
+    s.scan = true;
+    s.title = tr("Found by scanning the drive (tick the ones to keep below)");
+    m_sources.erase(std::remove_if(m_sources.begin(), m_sources.end(), [](const Source &x) { return x.scan; }), m_sources.end());
+    m_sources.push_back(s);
+    const QSignalBlocker quiet(m_list);
+    m_list->clear();
+    for (const Source &x : std::as_const(m_sources))
+        m_list->addItem(x.title);
+    m_problem->clear();
+    ticked();
+    m_list->setCurrentRow(int(m_sources.size()) - 1);
+    choose(int(m_sources.size()) - 1);
+}
+
+void RecoverDialog::ticked()
+{
+    QVector<partscan::Found> keep;
+    for (int i = 0; i < m_found->count() && i < m_foundList.size(); ++i) {
+        if (m_found->item(i)->checkState() == Qt::Checked)
+            keep << m_foundList[i];
+    }
+    // The table it had, if it said; GPT otherwise.
+    const QString table = disk()->tableType == QLatin1String("dos") ? QStringLiteral("dos") : QStringLiteral("gpt");
+    for (Source &s : m_sources) {
+        if (s.scan)
+            s.layout = partscan::toLayout(keep, table, m_scanSize);
+    }
+    const int row = m_list->currentRow();
+    if (row >= 0 && row < m_sources.size() && m_sources[row].scan)
+        choose(row);
+    refresh();
 }
 
 void RecoverDialog::write()

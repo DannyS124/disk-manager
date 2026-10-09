@@ -20,6 +20,7 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets DBus Network LinguistTools)
 qt_standard_project_setup(I18N_SOURCE_LANGUAGE en)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
+pkg_check_modules(BLKID REQUIRED IMPORTED_TARGET blkid) # util-linux, finds file systems for Recover Partitions
 # Ed25519, for the signature on the online add-on list
 find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS Crypto)
 
@@ -64,8 +65,9 @@ add_library(diskforge-core STATIC
     src/btrfscheck.cpp src/btrfscheck.h
     src/drivepower.cpp src/drivepower.h
     src/partrecover.cpp src/partrecover.h
+    src/partscan.cpp src/partscan.h
 )
-target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
+target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD PkgConfig::BLKID OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
 target_compile_definitions(diskforge-core PUBLIC ${APP_DEFINITIONS})
 target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
