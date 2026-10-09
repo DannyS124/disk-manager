@@ -162,10 +162,13 @@ void StickCheckDialog::updateState()
     if (m_running)
         return;
     const Disk *d = target();
-    const quint64 size = d ? d->size : 0;
-    m_quick->setText(tr("Quick: a stamp every few MB, %1. Finds most fake sticks").arg(durationText(stickcheck::estimate(stickcheck::Mode::Quick, size))));
-    m_full->setText(tr("Full: every byte, %1. Finds everything").arg(durationText(stickcheck::estimate(stickcheck::Mode::Full, size))));
-    m_twice->setText(tr("Full, twice: every bit both ways, %1").arg(durationText(stickcheck::estimate(stickcheck::Mode::FullTwice, size))));
+    // How long each takes, once there's a stick to work it out for.
+    const auto time = [d](stickcheck::Mode mode) {
+        return d ? QStringLiteral(", ") + durationText(stickcheck::estimate(mode, d->size)) : QString();
+    };
+    m_quick->setText(tr("Quick: a stamp every few MB%1. Finds most fake sticks").arg(time(stickcheck::Mode::Quick)));
+    m_full->setText(tr("Full: every byte%1. Finds everything").arg(time(stickcheck::Mode::Full)));
+    m_twice->setText(tr("Full, twice: every bit both ways%1").arg(time(stickcheck::Mode::FullTwice)));
 
     bool ok = d != nullptr;
     QString warning;
