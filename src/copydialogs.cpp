@@ -222,7 +222,7 @@ void CloneDialog::updateState()
     } else {
         const diskclone::Plan plan = diskclone::plan(*source, *target);
         if (!plan.error.isEmpty()) {
-            m_plan->setText(redText(plan.error.toHtmlEscaped()));
+            m_plan->setText(redText(plan.error));
         } else {
             int partitions = 0;
             for (const Volume &v : source->volumes)
@@ -569,7 +569,7 @@ void BackupDialog::updateState()
         }
     }
     m_info->setText(info);
-    m_problem->setText(problem.isEmpty() ? QString() : redText(problem.toHtmlEscaped()));
+    m_problem->setText(problem.isEmpty() ? QString() : redText(problem));
     m_problem->setVisible(!problem.isEmpty());
     m_start->setEnabled(problem.isEmpty() && !m_running);
     fitHeight(this);
@@ -603,7 +603,7 @@ void BackupDialog::start()
         && QMessageBox::question(this, windowTitle(), tr("%1 already exists. Replace it?").arg(QFileInfo(file).fileName())) != QMessageBox::Yes)
         return;
     if (!QDir().mkpath(QFileInfo(file).absolutePath())) {
-        m_problem->setText(redText(tr("Couldn't create the folder %1.").arg(QFileInfo(file).absolutePath()).toHtmlEscaped()));
+        m_problem->setText(redText(tr("Couldn't create the folder %1.").arg(QFileInfo(file).absolutePath())));
         m_problem->setVisible(true);
         return;
     }
@@ -765,7 +765,7 @@ void RestoreDialog::updateState()
             }
         }
     }
-    m_info->setText(problem.isEmpty() ? info : (info.isEmpty() ? QString() : info + QStringLiteral("<br>")) + redText(problem.toHtmlEscaped()));
+    m_info->setText(problem.isEmpty() ? info : (info.isEmpty() ? QString() : info + QStringLiteral("<br>")) + redText(problem));
     m_checkFirst->setEnabled(!m_backup.sha256.isEmpty() || m_backup.compressed);
     m_start->setEnabled(ok);
     fitHeight(this);
@@ -1070,7 +1070,7 @@ void RescueDialog::updateState()
             }
         }
     }
-    m_info->setText(problem.isEmpty() ? info : redText(problem.toHtmlEscaped()));
+    m_info->setText(problem.isEmpty() ? info : redText(problem));
     showSavedMap();
     m_start->setEnabled(ok && problem.isEmpty());
     fitHeight(this);

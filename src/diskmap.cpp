@@ -11,6 +11,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QToolTip>
+#include <QTextDocument>
 
 #include <algorithm>
 
@@ -233,7 +234,7 @@ bool DiskMap::event(QEvent *event)
         auto *help = static_cast<QHelpEvent *>(event);
         int row, segment;
         if (hitTest(help->pos(), &row, &segment))
-            QToolTip::showText(help->globalPos(), toolTipAt(row, segment), this);
+            QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(toolTipAt(row, segment), Qt::WhiteSpaceNormal), this);
         else
             QToolTip::hideText();
         return true;

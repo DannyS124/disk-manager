@@ -28,6 +28,7 @@
 #include <QThread>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QTextDocument>
 
 namespace {
 
@@ -157,7 +158,7 @@ void OptimizeDialog::refresh()
             else
                 status = weekly ? tr("Trimmed every week") : tr("Can be optimized");
             auto *item = new QTreeWidgetItem(m_list, {QStringLiteral("%1 %2").arg(volumeTitle(v), mounts.first()), diskKind(d), status});
-            item->setToolTip(0, d.model);
+            item->setToolTip(0, Qt::convertFromPlainText(d.model, Qt::WhiteSpaceNormal));
         }
     }
     for (int c = 0; c < 3; ++c)
@@ -495,7 +496,7 @@ SnapshotsDialog::SnapshotsDialog(QWidget *parent)
         for (const SnapperConfig &c : snapper::configs(&error))
             m_configs->addItem(QStringLiteral("%1 (%2)").arg(c.subvolume, c.name), c.name);
         if (!error.isEmpty())
-            m_snapperNote->setText(redText(error.toHtmlEscaped()));
+            m_snapperNote->setText(redText(error));
         else if (m_configs->count() == 0)
             m_snapperNote->setText(tr("Snapper is installed but has nothing set up yet."));
         connect(m_configs, &QComboBox::currentIndexChanged, this, &SnapshotsDialog::showSnapshots);
@@ -527,7 +528,7 @@ void SnapshotsDialog::showSnapshots()
         m_snapshots->resizeColumnToContents(c);
     m_snapshots->scrollToBottom();
     if (!error.isEmpty()) {
-        m_snapperNote->setText(redText(error.toHtmlEscaped()));
+        m_snapperNote->setText(redText(error));
         return;
     }
     m_snapperNote->setText(tr("<small>%n snapshot(s). Sizes aren't shown: Btrfs only knows them with quotas switched on, which "

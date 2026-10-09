@@ -136,6 +136,11 @@ bool RescueMap::load(const QString &path, quint64 expectedSize, QString *error)
         *error = f.errorString();
         return false;
     }
+    // A map of a badly damaged drive runs to a few megabytes; far bigger isn't a map.
+    if (f.size() > 256 * 1024 * 1024) {
+        *error = QObject::tr("The map file is too big to be a map");
+        return false;
+    }
     QVector<Block> blocks;
     bool sawCurrent = false;
     for (const QByteArray &raw : f.readAll().split('\n')) {
@@ -161,10 +166,11 @@ bool RescueMap::load(const QString &path, quint64 expectedSize, QString *error)
         }
         blocks.append(b);
     }
-    // Blocks must cover the drive from 0 without gaps.
+    // Blocks must cover the drive from 0 without gaps (and no block may run past its end,
+    // or huge sizes could wrap around and still add up).
     quint64 pos = 0;
     for (const Block &b : blocks) {
-        if (b.pos != pos) {
+        if (b.pos != pos || b.size > expectedSize - pos) {
             *error = QObject::tr("The map file has gaps or overlaps");
             return false;
         }
@@ -174,6 +180,8 @@ bool RescueMap::load(const QString &path, quint64 expectedSize, QString *error)
         *error = QObject::tr("The map file is for a drive of a different size (%1, this one is %2)").arg(formatSize(pos), formatSize(expectedSize));
         return false;
     }
+    if (currentPos > expectedSize)
+        currentPos = 0;
     m_size = expectedSize;
     m_blocks.clear();
     for (const Block &b : blocks) {

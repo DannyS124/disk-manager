@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSlider>
@@ -62,6 +63,21 @@ QString describeVolume(const Volume &v)
     if (!v.fsType.isEmpty())
         text += QLatin1Char(' ') + v.fsType;
     return text;
+}
+
+bool askPlain(QWidget *parent, const QString &title, const QString &text)
+{
+    QMessageBox box(QMessageBox::Question, title, text, QMessageBox::Yes | QMessageBox::No, parent);
+    box.setTextFormat(Qt::PlainText);
+    box.setDefaultButton(QMessageBox::Yes);
+    return box.exec() == QMessageBox::Yes;
+}
+
+void warnPlain(QWidget *parent, const QString &title, const QString &text)
+{
+    QMessageBox box(QMessageBox::Warning, title, text, QMessageBox::Ok, parent);
+    box.setTextFormat(Qt::PlainText);
+    box.exec();
 }
 
 QString diskWarning(const Disk &d)

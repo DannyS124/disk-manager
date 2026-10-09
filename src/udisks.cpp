@@ -79,10 +79,11 @@ Volume makeVolume(const QString &path, const InterfaceMap &ifaces)
     if (v.device.isEmpty())
         v.device = byteString(block.value(QStringLiteral("Device")));
     v.size = block.value(QStringLiteral("Size")).toULongLong();
-    v.label = block.value(QStringLiteral("IdLabel")).toString();
+    // Names and IDs come from the drive itself; cleanName() drops hidden characters.
+    v.label = cleanName(block.value(QStringLiteral("IdLabel")).toString());
     v.fsType = block.value(QStringLiteral("IdType")).toString();
     v.fsUsage = block.value(QStringLiteral("IdUsage")).toString();
-    v.uuid = block.value(QStringLiteral("IdUUID")).toString();
+    v.uuid = cleanName(block.value(QStringLiteral("IdUUID")).toString());
 
     if (ifaces.contains(kPartition)) {
         const QVariantMap part = ifaces.value(kPartition);
@@ -90,7 +91,7 @@ Volume makeVolume(const QString &path, const InterfaceMap &ifaces)
         v.offset = part.value(QStringLiteral("Offset")).toULongLong();
         v.size = part.value(QStringLiteral("Size")).toULongLong();
         v.partType = part.value(QStringLiteral("Type")).toString();
-        v.partName = part.value(QStringLiteral("Name")).toString();
+        v.partName = cleanName(part.value(QStringLiteral("Name")).toString());
         v.isContainer = part.value(QStringLiteral("IsContainer")).toBool();
         v.isContained = part.value(QStringLiteral("IsContained")).toBool();
     }
@@ -250,7 +251,8 @@ void UDisks::refresh()
             d.model = vendor + QLatin1Char(' ') + d.model;
         if (d.isLoop)
             d.model = d.backingFile.section(QLatin1Char('/'), -1);
-        d.serial = drive.value(QStringLiteral("Serial")).toString();
+        d.model = cleanName(d.model);
+        d.serial = cleanName(drive.value(QStringLiteral("Serial")).toString());
         d.bus = drive.value(QStringLiteral("ConnectionBus")).toString();
         d.removable = drive.value(QStringLiteral("Removable")).toBool();
         d.rotationRate = drive.value(QStringLiteral("RotationRate"), -1).toInt();

@@ -25,3 +25,9 @@ private:
 
 // True if `latest` (e.g. "v0.5.0") is newer than `current` ("0.4.0").
 bool isNewerVersion(const QString &latest, const QString &current);
+
+// Reads GitHub's answer about the latest release and returns its version ("0.5.0"), or
+// sets error. Only a plain version number is accepted.
+QString parseLatestRelease(const QByteArray &json, QString *error);
+// The release page for a version. Built here rather than taken from GitHub's answer.
+QString releasePageUrl(const QString &version);

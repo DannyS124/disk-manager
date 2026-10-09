@@ -26,6 +26,7 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QTextDocument>
 
 #include <climits>
 #include <cmath>
@@ -181,7 +182,7 @@ bool TreemapWidget::event(QEvent *event)
         text += QStringLiteral(", ") + countText(c.files);
     if (m_node->size)
         text += tr("\n%1% of this folder").arg(QString::number(100.0 * c.size / m_node->size, 'f', 1));
-    QToolTip::showText(help->globalPos(), text, this);
+    QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(text, Qt::WhiteSpaceNormal), this);
     return true;
 }
 
@@ -209,6 +210,7 @@ UsageDialog::UsageDialog(const QString &mountPoint, const QString &title, QWidge
     m_busy->setMaximumHeight(10);
     m_busy->setTextVisible(false);
     m_status->setWordWrap(true);
+    m_status->setTextFormat(Qt::PlainText); // folder names come from the drive
 
     auto *top = new QHBoxLayout;
     top->addWidget(m_up);

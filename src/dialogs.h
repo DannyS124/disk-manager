@@ -28,6 +28,11 @@ QString describeVolume(const Volume &v);
 // Non-empty for disks where changes have side effects (Ventoy).
 QString diskWarning(const Disk &d);
 
+// Message boxes for text with names from drives, files or add-ons in it. It's shown as
+// plain text, so a name like "<b>" stays just that.
+bool askPlain(QWidget *parent, const QString &title, const QString &text);
+void warnPlain(QWidget *parent, const QString &title, const QString &text);
+
 class FsPicker
 {
 public:

@@ -64,18 +64,19 @@ BackupInfo BackupInfo::fromJson(const QJsonObject &j)
         i.error = QObject::tr("Made by a newer DiskForge; update to restore it");
         return i;
     }
+    // The file could come from anywhere, so the names in it are cleaned like a drive's.
     i.kind = j.value(QStringLiteral("kind")).toString();
-    i.device = j.value(QStringLiteral("device")).toString();
-    i.model = j.value(QStringLiteral("model")).toString();
-    i.serial = j.value(QStringLiteral("serial")).toString();
-    i.label = j.value(QStringLiteral("label")).toString();
-    i.fsType = j.value(QStringLiteral("filesystem")).toString();
+    i.device = cleanName(j.value(QStringLiteral("device")).toString());
+    i.model = cleanName(j.value(QStringLiteral("model")).toString());
+    i.serial = cleanName(j.value(QStringLiteral("serial")).toString());
+    i.label = cleanName(j.value(QStringLiteral("label")).toString());
+    i.fsType = cleanName(j.value(QStringLiteral("filesystem")).toString());
     i.tableType = j.value(QStringLiteral("table")).toString();
     i.size = j.value(QStringLiteral("size")).toString().toULongLong();
     i.sectorSize = j.value(QStringLiteral("sectorSize")).toInt(512);
     i.sha256 = j.value(QStringLiteral("sha256")).toString();
     i.fileSha256 = j.value(QStringLiteral("fileSha256")).toString();
-    i.app = j.value(QStringLiteral("app")).toString();
+    i.app = cleanName(j.value(QStringLiteral("app")).toString());
     i.created = QDateTime::fromString(j.value(QStringLiteral("created")).toString(), Qt::ISODate);
     if (i.size == 0)
         i.error = QObject::tr("The backup description is incomplete");

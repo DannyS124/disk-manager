@@ -135,3 +135,53 @@ QString partitionTypeName(const QString &type)
     const auto it = names.constFind(type.toLower());
     return it == names.constEnd() ? type : QStringLiteral("%1 (%2)").arg(tr(*it), type);
 }
+
+namespace {
+
+enum class Hidden { No, Space, Drop };
+
+Hidden hidden(char32_t c)
+{
+    switch (QChar::category(c)) {
+    case QChar::Other_Control:
+    case QChar::Separator_Line:
+    case QChar::Separator_Paragraph:
+        return Hidden::Space;
+    case QChar::Other_Format: // zero-width characters, text direction overrides
+    case QChar::Other_Surrogate:
+        return Hidden::Drop;
+    default:
+        return Hidden::No;
+    }
+}
+
+} // namespace
+
+QString cleanName(const QString &name)
+{
+    if (!hasHiddenCharacters(name))
+        return name;
+    QString out;
+    for (const char32_t c : name.toUcs4()) {
+        switch (hidden(c)) {
+        case Hidden::No:
+            out += QString::fromUcs4(&c, 1);
+            break;
+        case Hidden::Space:
+            out += QLatin1Char(' ');
+            break;
+        case Hidden::Drop:
+            break;
+        }
+    }
+    return out;
+}
+
+bool hasHiddenCharacters(const QString &text)
+{
+    for (const char32_t c : text.toUcs4()) {
+        if (hidden(c) != Hidden::No)
+            return true;
+    }
+    return false;
+}

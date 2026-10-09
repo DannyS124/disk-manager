@@ -57,6 +57,13 @@ Plan plan(const Disk &source, const Disk &target)
         return p;
     }
 
+    // A partition table can say anything; one that runs past the end of the drive is broken.
+    for (const Volume &v : source.volumes) {
+        if (v.offset > source.size || v.size > source.size - v.offset) {
+            p.error = QObject::tr("The partition table on %1 doesn't fit the drive, so it can't be copied this way.").arg(shortDevice(source.device));
+            return p;
+        }
+    }
     if (source.tableType.isEmpty()) {
         // A file system on the whole drive: copy all of it.
         p.extents = {{0, source.size, 0}};

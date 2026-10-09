@@ -110,6 +110,10 @@ Result relocateBackup(int fd, int sectorSize, bool newGuids)
     }
     const quint64 entriesBytes = quint64(count) * entrySize;
     const quint64 entriesSectors = (entriesBytes + sector - 1) / sector;
+    if (lastLba < entriesSectors + 34 || lastLba >= quint64(1) << 48) {
+        r.error = QObject::tr("The disk is too small for its partitions");
+        return r;
+    }
     blockio::Buffer entries = blockio::alignedBuffer(size_t(entriesSectors * sector));
     if (!entries || !blockio::readAt(fd, entries.get(), entriesSectors * sector, entriesLba * sector)
         || crc32(entries.get(), entriesBytes) != le32(h + kEntriesCrc)) {

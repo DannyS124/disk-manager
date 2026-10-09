@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QVersionNumber>
 
 namespace {
@@ -25,6 +26,22 @@ bool isNewerVersion(const QString &latest, const QString &current)
     return QVersionNumber::fromString(stripV(latest)) > QVersionNumber::fromString(stripV(current));
 }
 
+QString parseLatestRelease(const QByteArray &json, QString *error)
+{
+    const QString tag = QJsonDocument::fromJson(json).object().value(QStringLiteral("tag_name")).toString();
+    static const QRegularExpression version(QStringLiteral("^v?\\d{1,4}(\\.\\d{1,4}){1,3}$"));
+    if (!version.match(tag).hasMatch()) {
+        *error = QObject::tr("GitHub sent an unexpected reply");
+        return {};
+    }
+    return stripV(tag);
+}
+
+QString releasePageUrl(const QString &version)
+{
+    return QStringLiteral(APP_HOMEPAGE "/releases/tag/v") + version;
+}
+
 UpdateChecker::UpdateChecker(QObject *parent)
     : QObject(parent)
 {
@@ -38,6 +55,11 @@ void UpdateChecker::check()
     request.setTransferTimeout(15000);
 
     QNetworkReply *reply = m_network.get(request);
+    // The answer is a few kilobytes; anything far bigger isn't from GitHub's API.
+    connect(reply, &QNetworkReply::downloadProgress, reply, [reply](qint64 received, qint64) {
+        if (received > 1024 * 1024)
+            reply->abort();
+    });
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::ContentNotFoundError) {
@@ -48,12 +70,12 @@ void UpdateChecker::check()
             emit finished({}, {}, reply->errorString());
             return;
         }
-        const QJsonObject release = QJsonDocument::fromJson(reply->readAll()).object();
-        const QString tag = release.value(QStringLiteral("tag_name")).toString();
-        if (tag.isEmpty()) {
-            emit finished({}, {}, tr("GitHub sent an unexpected reply"));
+        QString error;
+        const QString version = parseLatestRelease(reply->readAll(), &error);
+        if (version.isEmpty()) {
+            emit finished({}, {}, error);
             return;
         }
-        emit finished(stripV(tag), release.value(QStringLiteral("html_url")).toString(), {});
+        emit finished(version, releasePageUrl(version), {});
     });
 }

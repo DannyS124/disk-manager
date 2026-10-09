@@ -8,6 +8,7 @@
 #include <QHelpEvent>
 #include <QPainter>
 #include <QToolTip>
+#include <QTextDocument>
 
 #include <cmath>
 
@@ -147,6 +148,6 @@ bool BlockMapWidget::event(QEvent *event)
     default:
         lines << tr("Slowest read: %1 ms").arg(m_data.slowestMs(c));
     }
-    QToolTip::showText(help->globalPos(), lines.join(QLatin1Char('\n')), this);
+    QToolTip::showText(help->globalPos(), Qt::convertFromPlainText(lines.join(QLatin1Char('\n')), Qt::WhiteSpaceNormal), this);
     return true;
 }
