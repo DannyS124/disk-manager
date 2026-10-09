@@ -138,7 +138,10 @@ prints in a window. In the Add-ons window you can pin an action to the toolbar o
 <a name="trouble"></a>
 <h2>Problems</h2>
 <p><b>Something is greyed out:</b> hover over it in the Action menu to see why.</p>
-<p><b>"Not authorized":</b> the password prompt was cancelled, or there's no polkit agent running.</p>
+<p><b>"Not authorized":</b> the password prompt was cancelled, or there's no polkit agent running. KDE and GNOME
+have one; on tiling window managers you start one yourself (polkit-kde-agent, polkit-gnome or hyprpolkitagent).</p>
+<p><b>It says something "needs" a package, or isn't installed:</b> install that package (on Arch:
+<code>sudo pacman -S</code> and its name). DiskForge never installs anything by itself.</p>
 <p><b>"Device or resource busy":</b> something still has files open on the drive. Close it and try again.</p>
 <p><b>A drive is missing:</b> press F5. Empty card readers are hidden.</p>
 <p><b>A USB stick still shows two partitions after it held an ISO:</b> a Linux ISO leaves its own layout on the stick,

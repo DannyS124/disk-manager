@@ -48,6 +48,11 @@ For exFAT you need `exfatprogs`, for NTFS `ntfs-3g`, for XFS `xfsprogs`. Disk Cl
 `pacman-contrib` for the package cache, and the snapshot list needs `snapper`. The firmware check
 needs `fwupd`, LVM needs `udisks2-lvm2`, and Btrfs scrubs come with `btrfs-progs`.
 
+DiskForge never installs anything by itself. If something's missing, it says which package it needs
+(Format shows "needs exfatprogs", for example), so install that one. If every change fails with
+"Not authorized", your desktop isn't running a polkit agent: KDE and GNOME have one, but on tiling
+window managers you have to start one yourself (polkit-kde-agent, polkit-gnome or hyprpolkitagent).
+
 ## Other distros
 Each release also has a Flatpak and an AppImage on the Releases page. They're not on Flathub (a disk
 manager needs more access than Flathub allows). In the Flatpak, Disk Usage only sees your home folder and

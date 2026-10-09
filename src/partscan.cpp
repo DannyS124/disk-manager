@@ -40,7 +40,13 @@ std::optional<partscan::Found> partscan::probe(int fd, quint64 offset, quint64 d
     if (blkid_probe_set_device(pr, fd, blkid_loff_t(offset), blkid_loff_t(deviceSize - offset)) == 0) {
         blkid_probe_enable_partitions(pr, 0);
         blkid_probe_enable_superblocks(pr, 1);
+        // File system sizes need libblkid 2.39 (2023). Older ones still say what's there, so
+        // the scan works; sizes then run up to the next thing found.
+#ifdef BLKID_SUBLKS_FSINFO
         blkid_probe_set_superblocks_flags(pr, BLKID_SUBLKS_TYPE | BLKID_SUBLKS_LABEL | BLKID_SUBLKS_UUID | BLKID_SUBLKS_FSINFO);
+#else
+        blkid_probe_set_superblocks_flags(pr, BLKID_SUBLKS_TYPE | BLKID_SUBLKS_LABEL | BLKID_SUBLKS_UUID);
+#endif
         blkid_probe_filter_superblocks_type(pr, BLKID_FLTR_ONLYIN, const_cast<char **>(kTypes));
         if (blkid_do_safeprobe(pr) == 0) { // 1 = nothing, -2 = two at once, -1 = error
             Found f;
