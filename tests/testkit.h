@@ -52,4 +52,5 @@ void fuzzTests();
 void healthTests();
 void jobsTests();
 void recoverTests();
+void raidTests();
 void stopTests();

@@ -45,6 +45,8 @@ QString volumeStatus(const Volume &v, bool brief)
     };
 
     QStringList parts;
+    if (!v.raidMemberOf.isEmpty())
+        parts << tr("RAID member of %1").arg(v.raidMemberOf);
     if (v.isEfi)
         parts << tr("EFI System");
     if (v.isSystem)
@@ -80,8 +82,35 @@ QString volumeStatus(const Volume &v, bool brief)
     return parts.join(QStringLiteral(" · "));
 }
 
+QString raidLevelName(const QString &level)
+{
+    if (level.startsWith(QLatin1String("raid")))
+        return QStringLiteral("RAID %1").arg(level.mid(4));
+    if (level == QLatin1String("linear"))
+        return tr("Linear");
+    return level.isEmpty() ? tr("RAID") : level;
+}
+
+QString raidStatus(const Disk &d)
+{
+    if (!d.raidRunning)
+        return tr("Stopped");
+    const int percent = int(d.raidSyncDone * 100);
+    if (d.raidSync == QLatin1String("recover") || d.raidSync == QLatin1String("resync"))
+        return tr("Rebuilding: %1%").arg(percent);
+    if (d.raidSync == QLatin1String("check") || d.raidSync == QLatin1String("repair"))
+        return tr("Checking: %1%").arg(percent);
+    if (d.raidSync == QLatin1String("reshape"))
+        return tr("Reshaping: %1%").arg(percent);
+    if (d.raidDegraded > 0)
+        return tr("Degraded: %1 of %2 drives missing").arg(d.raidDegraded).arg(d.raidDevices);
+    return QCoreApplication::translate("format", "%n drive(s), all there", nullptr, d.raidDevices);
+}
+
 QString diskKind(const Disk &d)
 {
+    if (d.isRaid)
+        return raidLevelName(d.raidLevel);
     if (d.isLoop)
         return tr("Disk image");
     if (d.bus == QLatin1String("usb"))

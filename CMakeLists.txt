@@ -124,7 +124,7 @@ if(DISKFORGE_SELFTEST)
         tests/test_gpt.cpp tests/test_copy.cpp tests/test_blockmap.cpp
         tests/test_usage.cpp tests/test_backup.cpp
         tests/test_rescue.cpp tests/test_clone.cpp tests/test_system.cpp
-        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp)
+        tests/test_catalog.cpp tests/test_fuzz.cpp tests/test_health.cpp tests/test_jobs.cpp tests/test_recover.cpp tests/test_raid.cpp)
     target_link_libraries(diskforge-selftest PRIVATE diskforge-ui)
     target_compile_definitions(diskforge-selftest PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

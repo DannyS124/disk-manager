@@ -270,6 +270,13 @@ void MainWindow::createActions()
             TableInspectorDialog(m_udisks, *d, this).exec();
     });
 
+    m_raidCheck = new QAction(themeIcon("tools-check-spelling", "edit-find"), tr("Check RAID &Array"), this);
+    m_raidCheck->setToolTip(tr("Reads the whole array and compares its copies. It can be stopped any time."));
+    connect(m_raidCheck, &QAction::triggered, this, [this] {
+        if (const Disk *d = selectedDisk(); d && d->isRaid)
+            m_udisks->raidSyncAction(*d, QStringLiteral("check"));
+    });
+
     m_recover = new QAction(themeIcon("edit-undo", "document-revert"), tr("Re&cover Partitions…"), this);
     connect(m_recover, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
@@ -522,6 +529,11 @@ void MainWindow::createActions()
             return;
         }
         for (const Disk &d : m_udisks->disks()) {
+            if (d.isRaid && (d.raidSync == QLatin1String("check") || d.raidSync == QLatin1String("repair"))
+                && (!selected || selected->blockPath == d.blockPath)) {
+                m_udisks->raidSyncAction(d, QStringLiteral("idle"));
+                return;
+            }
             if (d.health.selftestStatus == QLatin1String("inprogress") && (!selected || selected->blockPath == d.blockPath)) {
                 m_udisks->smartSelftestAbort(d);
                 return;
@@ -553,7 +565,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newTable, m_inspect, m_recover, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
-    action->addActions({m_health, m_badSectors, m_benchmark});
+    action->addActions({m_health, m_badSectors, m_benchmark, m_raidCheck});
     action->addSeparator();
     action->addActions({m_backup, m_restore, m_clone, m_rescue});
     action->addSeparator();
@@ -847,6 +859,26 @@ void MainWindow::updateJobBars()
         place(path, jobSelfErasing(j) ? NoticeBar::Level::Warning : NoticeBar::Level::Info, text,
               cantStop.isEmpty() ? jobStopButton(j) : QString(), [this, path] { stopJob(path); });
     }
+    // RAID arrays checking or rebuilding: a check can be stopped, a rebuild is best left to finish.
+    for (const Disk &d : m_udisks->disks()) {
+        if (!d.isRaid || d.raidSync.isEmpty() || d.raidSync == QLatin1String("idle") || d.raidSync == QLatin1String("frozen"))
+            continue;
+        const bool checking = d.raidSync == QLatin1String("check") || d.raidSync == QLatin1String("repair");
+        stoppable = stoppable || checking;
+        const QString blockPath = d.blockPath;
+        QString text = tr("%1 %2: %3%").arg(checking ? tr("Checking") : tr("Rebuilding"), shortDevice(d.device)).arg(int(d.raidSyncDone * 100));
+        if (d.raidSyncRate)
+            text += QStringLiteral(", ") + tr("%1/s").arg(formatSize(d.raidSyncRate));
+        if (d.raidSyncLeftUs)
+            text += QStringLiteral(", ") + tr("%1 left").arg(durationText(double(d.raidSyncLeftUs) / 1e6));
+        text += QLatin1Char('.');
+        if (!checking)
+            text += QLatin1Char(' ') + tr("It's safest to let it finish; the array works meanwhile.");
+        place(QStringLiteral("raid:") + d.blockPath, NoticeBar::Level::Info, text, checking ? tr("Stop Checking") : QString(), [this, blockPath] {
+            if (const Disk *disk = m_udisks->diskByPath(blockPath))
+                m_udisks->raidSyncAction(*disk, QStringLiteral("idle"));
+        });
+    }
     for (const Disk &d : m_udisks->disks()) {
         if (d.health.selftestStatus != QLatin1String("inprogress"))
             continue;
@@ -1030,6 +1062,8 @@ void MainWindow::updateActions()
     m_rename->setEnabled(changeable && v && v->canMount());
     m_inspect->setEnabled(d && d->size > 0 && !busy); // read-only: the system disk too
     m_recover->setEnabled(d && d->size > 0 && !d->isSystem && !busy);
+    m_raidCheck->setEnabled(d && d->isRaid && d->raidRunning && d->raidDegraded == 0 && !busy
+                            && (d->raidSync.isEmpty() || d->raidSync == QLatin1String("idle")));
     m_typeFlags->setEnabled(changeable && v && !v->isContainer
                             && (d->tableType == QLatin1String("gpt") || d->tableType == QLatin1String("dos")));
     m_check->setEnabled(changeable && v && v->canMount() && fs && fs->canCheck);

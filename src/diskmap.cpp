@@ -288,6 +288,8 @@ QString DiskMap::toolTipAt(int row, int segment) const
         QStringList lines = {d.model, d.device, tableName(d) + QStringLiteral(" · ") + diskKind(d)};
         if (d.isSystem)
             lines << tr("System disk (%1): read-only in this app").arg(d.systemReason);
+        if (d.isRaid)
+            lines << raidStatus(d);
         if (d.health.state != Health::State::Unknown) {
             QString health = tr("Health: %1").arg(d.health.summary);
             if (d.health.temperatureC > 0)
@@ -362,6 +364,8 @@ void DiskMap::paintHeader(QPainter &p, int row) const
     }
     if (dot.isValid())
         state = d.health.summary;
+    if (d.isRaid)
+        state = raidStatus(d);
     const QStringList lines = {
         tableName(d) + QStringLiteral(" · ") + diskKind(d),
         formatSize(d.size),

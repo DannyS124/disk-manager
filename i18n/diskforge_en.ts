@@ -75,7 +75,7 @@
 <context>
     <name>MainWindow</name>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="768"/>
+        <location filename="../src/mainwindow.cpp" line="780"/>
         <source>%n more drive(s) need a look; their health is in the Status column.</source>
         <translation>
             <numerusform>%n more drive need a look; their health is in the Status column.</numerusform>
@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1635"/>
+        <location filename="../src/mainwindow.cpp" line="1669"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -404,6 +404,17 @@
         <translation>
             <numerusform>%n folder couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>
             <numerusform>%n folders couldn't be opened (they belong to the system or other users), so the total may be a little low.</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>format</name>
+    <message numerus="yes">
+        <location filename="../src/format.cpp" line="107"/>
+        <source>%n drive(s), all there</source>
+        <translation>
+            <numerusform>%n drive, all there</numerusform>
+            <numerusform>%n drives, all there</numerusform>
         </translation>
     </message>
 </context>

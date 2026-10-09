@@ -917,6 +917,10 @@ int main(int argc, char *argv[])
         jobsTests();
     } else if (args.contains(QStringLiteral("--recover"))) {
         recoverTests();
+    } else if (args.contains(QStringLiteral("--raid"))) {
+        if (needsRoot("--raid"))
+            return 2;
+        raidTests();
     } else if (args.contains(QStringLiteral("--stop"))) {
         if (needsRoot("--stop"))
             return 2;

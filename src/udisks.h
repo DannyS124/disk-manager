@@ -28,6 +28,7 @@ struct Volume {
     QString label;
     QString partName; // GPT only
     QString partUuid; // the partition's own ID (GPT), or "<disk signature>-<number>" (MBR)
+    QString raidMemberOf; // part of a RAID array: the array's device (md127)
     QString fsType;
     QString fsUsage;
     QString uuid;
@@ -113,6 +114,18 @@ struct Disk {
     int ataEraseMinutes = 0; // ATA Secure Erase estimates; 0 = not supported
     int ataEnhancedEraseMinutes = 0;
     bool ataFrozen = false; // the firmware refuses security commands until the next sleep/wake
+    // A software RAID array (Linux md), listed like a drive.
+    bool isRaid = false;
+    QString raidPath;         // its MDRaid object
+    QString raidLevel;        // "raid1", "raid5", ...
+    int raidDevices = 0;      // how many drives it's made of
+    int raidDegraded = 0;     // how many of those are missing
+    bool raidRunning = true;
+    QString raidSync;         // "idle", "check", "repair", "resync", "recover", "reshape", "frozen"
+    double raidSyncDone = 0;  // 0-1
+    quint64 raidSyncRate = 0; // bytes per second
+    quint64 raidSyncLeftUs = 0;
+    QString raidMemberOf;     // a whole drive in an array: the array's device
     // Power settings (ATA): what the drive can do, and what UDisks keeps for it.
     bool ataPm = false;
     bool ataApm = false;
@@ -259,6 +272,8 @@ public:
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
     void smartSelftestAbort(const Disk &disk);
+    // A RAID array: "check" reads it all and compares the copies, "idle" stops that.
+    void raidSyncAction(const Disk &array, const QString &action);
     // Fresh health data (the temperature) without a message either way; never asks for a
     // password. Rescue Copy uses it once a minute while it watches the heat.
     void refreshHealthQuietly(const Disk &disk);

@@ -15,6 +15,8 @@ QString volumeStatus(const Volume &v, bool brief = false);
 QString diskKind(const Disk &d); // "NVMe SSD", "USB", ...
 QString tableName(const Disk &d);
 QString partitionTypeName(const QString &type);
+QString raidLevelName(const QString &level); // "raid1" -> "RAID 1"
+QString raidStatus(const Disk &d);           // "2 of 2 drives, all there", "Rebuilding: 34%"...
 
 // What Type and Flags offers for a GPT or MBR ("dos") table.
 struct PartitionTypeChoice {

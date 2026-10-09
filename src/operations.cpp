@@ -282,6 +282,15 @@ void UDisks::smartSelftest(const Disk &disk, const QString &type)
          tr("Couldn't start a self-test on %1").arg(name));
 }
 
+void UDisks::raidSyncAction(const Disk &array, const QString &action)
+{
+    const QString name = shortDevice(array.device);
+    const bool check = action == QLatin1String("check");
+    call(array.raidPath, kMDRaid, QStringLiteral("RequestSyncAction"), {action, options()},
+         [name, check](const QDBusMessage &) { return check ? tr("Checking %1").arg(name) : tr("Stopped checking %1").arg(name); },
+         check ? tr("Couldn't check %1").arg(name) : tr("Couldn't stop checking %1").arg(name));
+}
+
 void UDisks::refreshHealthQuietly(const Disk &disk)
 {
     QDBusMessage message = QDBusMessage::createMethodCall(kService, disk.drivePath, disk.health.nvme ? kNvme : kAta, QStringLiteral("SmartUpdate"));

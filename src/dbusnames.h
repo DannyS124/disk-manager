@@ -23,6 +23,7 @@ inline const QString kEncrypted = QStringLiteral("org.freedesktop.UDisks2.Encryp
 inline const QString kLoop = QStringLiteral("org.freedesktop.UDisks2.Loop");
 inline const QString kJob = QStringLiteral("org.freedesktop.UDisks2.Job");
 inline const QString kNvmeNamespace = QStringLiteral("org.freedesktop.UDisks2.NVMe.Namespace");
+inline const QString kMDRaid = QStringLiteral("org.freedesktop.UDisks2.MDRaid");
 
 // Wipes, checks and image writes can take hours, and polkit may wait for a password:
 // never give up on a reply (INT_MAX is libdbus's "no timeout").

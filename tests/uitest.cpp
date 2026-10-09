@@ -1178,6 +1178,46 @@ void scanThroughWindow()
     sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
 }
 
+// A degraded RAID array gets a warning bar: RAID 1 on two loop devices, one failed.
+void raidBanner()
+{
+    QTemporaryDir dir;
+    QStringList loops;
+    for (const char *name : {"a.img", "b.img"}) {
+        const QString image = dir.filePath(QLatin1String(name));
+        sh(QStringLiteral("truncate"), {QStringLiteral("-s"), QStringLiteral("64M"), image});
+        QString loop;
+        sh(QStringLiteral("losetup"), {QStringLiteral("-f"), QStringLiteral("--show"), image}, &loop);
+        loops << loop.trimmed();
+    }
+    const int created = sh(QStringLiteral("mdadm"), {QStringLiteral("--create"), QStringLiteral("/dev/md/dfbanner"), QStringLiteral("--level=1"),
+                                                     QStringLiteral("--raid-devices=2"), QStringLiteral("--metadata=1.2"), QStringLiteral("--assume-clean"),
+                                                     QStringLiteral("--run"), QStringLiteral("--quiet"), loops.value(0), loops.value(1)});
+    if (created == 0)
+        sh(QStringLiteral("mdadm"), {QStringLiteral("--manage"), QStringLiteral("/dev/md/dfbanner"), QStringLiteral("--fail"), loops.value(1)});
+    {
+        UDisks udisks;
+        udisks.setInteractive(false);
+        MainWindow window(&udisks);
+        window.show();
+        QString text;
+        waitUntil([&] {
+            udisks.refresh();
+            for (NoticeBar *b : window.findChildren<NoticeBar *>(QStringLiteral("health"))) {
+                if (!b->isHidden() && b->text().contains(QLatin1String("dfbanner")))
+                    text = b->text();
+            }
+            return !text.isEmpty();
+        }, 20000);
+        report(created == 0 && text.contains(QLatin1String("missing 1 of its 2 drives")), QStringLiteral("a degraded RAID array gets a warning bar"), text);
+    }
+    sh(QStringLiteral("mdadm"), {QStringLiteral("--stop"), QStringLiteral("/dev/md/dfbanner")});
+    for (const QString &loop : std::as_const(loops)) {
+        sh(QStringLiteral("mdadm"), {QStringLiteral("--zero-superblock"), loop});
+        sh(QStringLiteral("losetup"), {QStringLiteral("-d"), loop});
+    }
+}
+
 // Job bars, with jobs faked through the test hook: a firmware erase says it can't be
 // stopped and has no Stop; a wipe has Stop and turns on the toolbar's Stop; when the jobs
 // end, the bars go.
@@ -1346,6 +1386,7 @@ int main(int argc, char *argv[])
     inspector();
     recoverThroughWindow();
     scanThroughWindow();
+    raidBanner();
 
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;

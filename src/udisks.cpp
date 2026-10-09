@@ -227,6 +227,28 @@ void UDisks::refresh()
     }
     m_jobs += m_testJobs;
 
+    // RAID arrays, and the block device each one runs as.
+    QMap<QString, QVariantMap> arrays;
+    QMap<QString, QString> arrayDevice;
+    for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
+        if (it->contains(kMDRaid))
+            arrays.insert(it.key().path(), it->value(kMDRaid));
+        const QString runsAs = objectPath(it->value(kBlock).value(QStringLiteral("MDRaid")));
+        if (it->contains(kBlock) && !runsAs.isEmpty() && runsAs != QLatin1String("/")) {
+            // The same name the array itself goes by (its preferred device, like /dev/md/data).
+            QString device = byteString(it->value(kBlock).value(QStringLiteral("PreferredDevice")));
+            if (device.isEmpty())
+                device = byteString(it->value(kBlock).value(QStringLiteral("Device")));
+            arrayDevice.insert(runsAs, device);
+        }
+    }
+    auto memberOf = [&objects, &arrayDevice](const QString &blockPath) {
+        const QString array = objectPath(objects.value(QDBusObjectPath(blockPath)).value(kBlock).value(QStringLiteral("MDRaidMember")));
+        if (array.isEmpty() || array == QLatin1String("/"))
+            return QString();
+        return shortDevice(arrayDevice.value(array, QStringLiteral("md")));
+    };
+
     // whole disks
     QMap<QString, Disk> disks;
     for (auto it = objects.cbegin(); it != objects.cend(); ++it) {
@@ -243,9 +265,24 @@ void UDisks::refresh()
         d.isLoop = ifaces.contains(kLoop);
         if (d.isLoop)
             d.backingFile = byteString(ifaces.value(kLoop).value(QStringLiteral("BackingFile")));
-        // skip zram/dm/md (no drive) and unused loop devices
-        if (d.isLoop ? d.backingFile.isEmpty() : d.drivePath == QLatin1String("/"))
+        // skip zram/dm (no drive) and unused loop devices; RAID arrays are listed like drives
+        const QString raid = objectPath(block.value(QStringLiteral("MDRaid")));
+        d.isRaid = arrays.contains(raid);
+        if (d.isLoop ? d.backingFile.isEmpty() : (d.drivePath == QLatin1String("/") && !d.isRaid))
             continue;
+        if (d.isRaid) {
+            const QVariantMap a = arrays.value(raid);
+            d.raidPath = raid;
+            d.raidLevel = a.value(QStringLiteral("Level")).toString();
+            d.raidDevices = int(a.value(QStringLiteral("NumDevices")).toUInt());
+            d.raidDegraded = int(a.value(QStringLiteral("Degraded")).toUInt());
+            d.raidRunning = a.value(QStringLiteral("Running"), true).toBool();
+            d.raidSync = a.value(QStringLiteral("SyncAction")).toString();
+            d.raidSyncDone = std::clamp(a.value(QStringLiteral("SyncCompleted")).toDouble(), 0.0, 1.0);
+            d.raidSyncRate = a.value(QStringLiteral("SyncRate")).toULongLong();
+            d.raidSyncLeftUs = a.value(QStringLiteral("SyncRemainingTime")).toULongLong();
+            d.health.key = health::keyFor(QStringLiteral("raid-") + a.value(QStringLiteral("UUID")).toString(), raid);
+        }
         d.size = block.value(QStringLiteral("Size")).toULongLong();
         if (d.size == 0)
             continue; // no media
@@ -262,6 +299,8 @@ void UDisks::refresh()
             d.model = vendor + QLatin1Char(' ') + d.model;
         if (d.isLoop)
             d.model = d.backingFile.section(QLatin1Char('/'), -1);
+        if (d.isRaid) // "nas:0" is host:name; the name is what people chose
+            d.model = tr("%1 array %2").arg(raidLevelName(d.raidLevel), arrays.value(raid).value(QStringLiteral("Name")).toString().section(QLatin1Char(':'), -1));
         d.model = cleanName(d.model);
         d.serial = cleanName(drive.value(QStringLiteral("Serial")).toString());
         d.revision = cleanName(drive.value(QStringLiteral("Revision")).toString());
@@ -373,6 +412,18 @@ void UDisks::refresh()
                                        tr("Btrfs on %1 has seen errors. %2 A scrub (in Disk Health) checks everything.")
                                            .arg(QFileInfo(v.device).fileName(), btrfscheck::describe(counts))});
             }
+        }
+        // RAID: members say which array they're in; a degraded array goes into its health.
+        d.raidMemberOf = memberOf(d.blockPath);
+        for (Volume &v : d.volumes)
+            v.raidMemberOf = memberOf(v.objectPath);
+        if (d.isRaid && d.raidDegraded > 0) {
+            health::add(d.health, {HealthReason::Level::Warning, QStringLiteral("raid-degraded"), d.raidDegraded,
+                                   tr("%1 is missing %2 of its %3 drives. It still works, but losing another one can lose "
+                                      "everything on it: replace the missing drive.")
+                                       .arg(shortDevice(d.device))
+                                       .arg(d.raidDegraded)
+                                       .arg(d.raidDevices)});
         }
         if (m_testHealth.contains(d.blockPath))
             d.health = m_testHealth.value(d.blockPath);
