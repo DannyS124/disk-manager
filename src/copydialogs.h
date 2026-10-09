@@ -22,6 +22,8 @@ class CloneJob;
 class RestoreJob;
 class QCheckBox;
 class QComboBox;
+class QTimer;
+class QSpinBox;
 class QLabel;
 class QLineEdit;
 class QProgressBar;
@@ -159,9 +161,23 @@ private:
     void start();
     void setRunning(bool running);
     void showBlocks(const QVector<RescueMap::Block> &blocks);
+    void applyCoolDown(); // to the running copy
+    void checkHeat();
 
     UDisks *m_udisks;
     QString m_source;
+    // Going easy on the drive
+    QCheckBox *m_heat;
+    QSpinBox *m_hot;
+    QSpinBox *m_cool;
+    QCheckBox *m_rest;
+    QSpinBox *m_restSeconds;
+    QSpinBox *m_restErrors;
+    QCheckBox *m_limit;
+    QSpinBox *m_rate;
+    QLabel *m_heatStatus;
+    QTimer *m_heatTimer;
+    bool m_paused = false;
     QRadioButton *m_toFile;
     QRadioButton *m_toDrive;
     QLineEdit *m_file;

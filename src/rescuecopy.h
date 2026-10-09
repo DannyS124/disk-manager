@@ -70,6 +70,14 @@ public:
     RescueCopy(int sourceFd, quint64 size, int targetFd, const QString &mapPath);
     ~RescueCopy() override;
     void cancel() { m_cancel = true; }
+    // Going easy on a failing drive. All of these can change while it runs.
+    void setSpeedLimit(quint64 bytesPerSecond) { m_maxRate = bytesPerSecond; } // 0 = as fast as it goes
+    void setErrorRest(int errorsInARow, int seconds) // 0 = never rest
+    {
+        m_restSeconds = seconds;
+        m_restAfter = errorsInARow;
+    }
+    void setPaused(bool paused) { m_paused = paused; } // while the drive is too hot
 
 public slots:
     void run();
@@ -81,6 +89,8 @@ signals:
 
 private:
     bool readSource(char *buf, quint64 len, quint64 pos);
+    void waitWhilePaused();
+    void coolDown(bool readOk, quint64 len); // after each read: rests and the speed limit
     bool writeTarget(const char *buf, quint64 len, quint64 pos);
     void tick(bool force = false);
 
@@ -93,6 +103,14 @@ private:
     QString m_phase;
     QString m_writeError;
     std::atomic<bool> m_cancel{false};
+    std::atomic<quint64> m_maxRate{0};
+    std::atomic<int> m_restAfter{0};
+    std::atomic<int> m_restSeconds{60};
+    std::atomic<bool> m_paused{false};
+    int m_errorsInARow = 0;
+    QElapsedTimer m_rateClock;
+    quint64 m_rateBytes = 0;
+    quint64 m_rateSeen = 0;
     QElapsedTimer m_clock;
     qint64 m_lastSave = 0, m_lastSignal = 0;
 };

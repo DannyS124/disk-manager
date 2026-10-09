@@ -27,6 +27,8 @@
 #include <QRegularExpression>
 #include <QStorageInfo>
 #include <QTimer>
+#include <QGroupBox>
+#include <QSpinBox>
 #include <QVBoxLayout>
 
 #include <cerrno>
@@ -896,6 +898,53 @@ RescueDialog::RescueDialog(UDisks *udisks, const QString &sourceBlockPath, QWidg
     driveRow->addWidget(m_toDrive);
     driveRow->addWidget(m_targets, 1);
 
+    // Going easy on the drive: all off to start with, and they can change while it runs.
+    auto spin = [](int low, int high, int value, const QString &suffix) {
+        auto *s = new QSpinBox;
+        s->setRange(low, high);
+        s->setValue(value);
+        s->setSuffix(suffix);
+        return s;
+    };
+    m_heat = new QCheckBox(tr("Pause when it's hotter than"));
+    m_hot = spin(40, 70, 55, QStringLiteral(" °C"));
+    m_cool = spin(30, 69, 50, QStringLiteral(" °C"));
+    m_rest = new QCheckBox(tr("Rest for"));
+    m_restSeconds = spin(5, 600, 60, tr(" s"));
+    m_restErrors = spin(1, 1000, 10, QString());
+    m_limit = new QCheckBox(tr("Read at most"));
+    m_rate = spin(1, 2000, 50, tr(" MB/s"));
+    m_heatStatus = new QLabel;
+    m_heatTimer = new QTimer(this);
+    m_heatTimer->setInterval(60000);
+    const bool hasTemperature = source && source->health.temperatureC > 0;
+    if (!hasTemperature) {
+        m_heat->setEnabled(false);
+        m_heat->setToolTip(tr("This drive doesn't report its temperature (often the case through USB adapters)."));
+    }
+    auto row = [](std::initializer_list<QWidget *> parts) {
+        auto *r = new QHBoxLayout;
+        for (QWidget *w : parts)
+            r->addWidget(w);
+        r->addStretch();
+        return r;
+    };
+    auto *easy = new QGroupBox(tr("Go easy on the drive"));
+    auto *easyLayout = new QVBoxLayout(easy);
+    easyLayout->addLayout(row({m_heat, m_hot, new QLabel(tr("and carry on at")), m_cool, m_heatStatus}));
+    easyLayout->addLayout(row({m_rest, m_restSeconds, new QLabel(tr("after")), m_restErrors, new QLabel(tr("read errors in a row"))}));
+    easyLayout->addLayout(row({m_limit, m_rate}));
+    for (QCheckBox *c : {m_heat, m_rest, m_limit})
+        connect(c, &QCheckBox::toggled, this, &RescueDialog::applyCoolDown);
+    for (QSpinBox *s : {m_hot, m_cool, m_restSeconds, m_restErrors, m_rate})
+        connect(s, &QSpinBox::valueChanged, this, &RescueDialog::applyCoolDown);
+    connect(m_hot, &QSpinBox::valueChanged, this, [this](int hot) { m_cool->setMaximum(hot - 1); }); // carrying on needs cooler
+    connect(m_heatTimer, &QTimer::timeout, this, [this] {
+        if (const Disk *d = m_udisks->diskByPath(m_source))
+            m_udisks->refreshHealthQuietly(*d);
+    });
+    connect(m_udisks, &UDisks::changed, this, &RescueDialog::checkHeat);
+
     auto *layout = new QVBoxLayout(this);
     layout->addWidget(wrappingLabel(
         tr("<p>Copies everything that can still be read off <b>%1</b>: the easy parts first, then it goes back for the hard ones. "
@@ -906,6 +955,7 @@ RescueDialog::RescueDialog(UDisks *udisks, const QString &sourceBlockPath, QWidg
     layout->addLayout(driveRow);
     layout->addWidget(m_info);
     layout->addWidget(m_resume);
+    layout->addWidget(easy);
     layout->addWidget(m_map, 1);
     layout->addWidget(m_stats);
     layout->addWidget(m_progress);
@@ -940,6 +990,41 @@ RescueDialog::~RescueDialog()
         m_thread->quit();
         m_thread->wait();
     }
+}
+
+void RescueDialog::applyCoolDown()
+{
+    if (m_job) {
+        m_job->setSpeedLimit(m_limit->isChecked() ? quint64(m_rate->value()) * 1000 * 1000 : 0);
+        m_job->setErrorRest(m_rest->isChecked() ? m_restErrors->value() : 0, m_restSeconds->value());
+    }
+    if (m_job && m_heat->isChecked())
+        m_heatTimer->start();
+    else
+        m_heatTimer->stop();
+    checkHeat();
+}
+
+// Pauses the copy when the drive gets too hot, and carries on once it's cooled down.
+void RescueDialog::checkHeat()
+{
+    const Disk *d = m_udisks->diskByPath(m_source);
+    const double temperature = d ? d->health.temperatureC : -1;
+    const bool watch = m_job && m_heat->isChecked() && temperature > 0;
+    if (!watch) {
+        if (m_job && m_paused)
+            m_job->setPaused(false);
+        m_paused = false;
+        m_heatStatus->clear();
+        return;
+    }
+    if (!m_paused && temperature >= m_hot->value())
+        m_paused = true;
+    else if (m_paused && temperature <= m_cool->value())
+        m_paused = false;
+    m_job->setPaused(m_paused);
+    m_heatStatus->setText(m_paused ? tr("Resting: %1 °C, waiting for %2 °C").arg(qRound(temperature)).arg(m_cool->value())
+                                   : tr("now %1 °C").arg(qRound(temperature)));
 }
 
 void RescueDialog::fillTargets()
@@ -1139,6 +1224,7 @@ void RescueDialog::start()
             m_thread->wait();
             m_thread = nullptr;
             m_job = nullptr;
+            applyCoolDown(); // stops watching the heat
             setRunning(false);
             m_stats->setText(message);
             m_progress->setVisible(false);
@@ -1148,6 +1234,7 @@ void RescueDialog::start()
             updateState();
         });
         m_thread = startOnThread(this, m_job);
+        applyCoolDown();
     };
     openBlockThen(m_udisks, this, m_source, UDisks::OpenMode::Benchmark, [=, this](int in) {
         if (in < 0)

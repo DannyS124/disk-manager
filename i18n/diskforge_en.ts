@@ -64,7 +64,7 @@
 <context>
     <name>CloneDialog</name>
     <message numerus="yes">
-        <location filename="../src/copydialogs.cpp" line="233"/>
+        <location filename="../src/copydialogs.cpp" line="235"/>
         <source>Copies %n partition(s), %1 in all. Takes %2.</source>
         <translation>
             <numerusform>Copies %n partition, %1 in all. Takes %2.</numerusform>
@@ -328,6 +328,17 @@
         <translation>
             <numerusform>The partition table of %1 is back: %n partition.</numerusform>
             <numerusform>The partition table of %1 is back: %n partitions.</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
+    <name>RescueCopy</name>
+    <message numerus="yes">
+        <location filename="../src/rescuecopy.cpp" line="247"/>
+        <source>Resting for %n second(s) after %1 read errors in a row</source>
+        <translation>
+            <numerusform>Resting for %n second after %1 read errors in a row</numerusform>
+            <numerusform>Resting for %n seconds after %1 read errors in a row</numerusform>
         </translation>
     </message>
 </context>

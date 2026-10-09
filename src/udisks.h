@@ -259,6 +259,9 @@ public:
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
     void smartSelftestAbort(const Disk &disk);
+    // Fresh health data (the temperature) without a message either way; never asks for a
+    // password. Rescue Copy uses it once a minute while it watches the heat.
+    void refreshHealthQuietly(const Disk &disk);
     // Power settings, kept by UDisks in /etc/udisks2 (polkit asks). Allowed on the system
     // disk too: nothing here touches what's stored.
     void setPowerSettings(const Disk &disk, const QVariantMap &configuration);

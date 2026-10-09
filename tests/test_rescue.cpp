@@ -8,9 +8,15 @@
 
 #include "../src/rescuecopy.h"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QRandomGenerator>
 #include <QTemporaryDir>
+#include <QThread>
+
+#include <algorithm>
+#include <functional>
+#include <thread>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -23,20 +29,33 @@ constexpr qint64 kSize = 48 * MiB;
 struct Run {
     bool completed = false;
     QString message;
+    QStringList phases; // every phase it reported, in order, once each
+    qint64 ms = 0;
 };
 
-Run rescue(const QString &device, const QString &image, const QString &map, double stopAt = 0)
+Run rescue(const QString &device, const QString &image, const QString &map, double stopAt = 0,
+           const std::function<void(RescueCopy &)> &setup = {})
 {
     Run r;
     const int source = ::open(QFile::encodeName(device).constData(), O_RDONLY | O_DIRECT | O_CLOEXEC);
     const int target = ::open(QFile::encodeName(image).constData(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
     RescueCopy copy(source, quint64(kSize), target, map);
-    QObject::connect(&copy, &RescueCopy::progress, [&](quint64 rescued, quint64, quint64 total, const QString &) {
+    QObject::connect(&copy, &RescueCopy::progress, [&](quint64 rescued, quint64, quint64 total, const QString &phase) {
+        if (r.phases.isEmpty() || r.phases.last() != phase)
+            r.phases << phase;
         if (stopAt > 0 && rescued >= quint64(total * stopAt))
             copy.cancel();
     });
-    QObject::connect(&copy, &RescueCopy::finished, [&](bool completed, const QString &m) { r = {completed, m}; });
+    QObject::connect(&copy, &RescueCopy::finished, [&](bool completed, const QString &m) {
+        r.completed = completed;
+        r.message = m;
+    });
+    if (setup)
+        setup(copy);
+    QElapsedTimer t;
+    t.start();
     copy.run();
+    r.ms = t.elapsed();
     return r;
 }
 
@@ -129,6 +148,34 @@ void rescueTests()
     report(r.completed && resumed.mid(2 * MiB, 4096) == QByteArray(4096, char(0xEE)), QStringLiteral("continuing skips what was already copied"), r.message);
     resumed.replace(2 * MiB, 4096, expected.mid(2 * MiB, 4096));
     report(resumed == expected, QStringLiteral("and the result is the same as in one go"));
+
+    // Going easy on the drive. A speed limit on a drive that reads fine: 48 MiB at 16 MB/s
+    // can't take less than about 3 s (without it, a fraction of a second).
+    const QString image3 = dir.filePath(QStringLiteral("limited.img"));
+    r = rescue(loop, image3, image3 + QStringLiteral(".map"), 0, [](RescueCopy &c) { c.setSpeedLimit(16 * 1000 * 1000); });
+    const double rate = double(kSize) / (double(r.ms) / 1000);
+    report(r.completed && rate <= 16e6 * 1.1, QStringLiteral("the speed limit holds"),
+           QStringLiteral("%1 MB/s over %2 s").arg(rate / 1e6, 0, 'f', 1).arg(r.ms / 1000.0, 0, 'f', 1));
+    // Resting after errors in a row: the 512 unreadable sectors are read one by one at the
+    // end, so 200 in a row happen twice there.
+    const QString image4 = dir.filePath(QStringLiteral("rested.img"));
+    r = rescue(device, image4, image4 + QStringLiteral(".map"), 0, [](RescueCopy &c) { c.setErrorRest(200, 1); });
+    const int rests = int(std::count_if(r.phases.cbegin(), r.phases.cend(), [](const QString &p) { return p.startsWith(QLatin1String("Resting for")); }));
+    report(r.completed && rests >= 2 && readFile(image4) == expected, QStringLiteral("it rests after that many read errors in a row, and the copy is the same"),
+           QStringLiteral("%1 rests").arg(rests));
+    // Paused (too hot): it waits until it isn't.
+    const QString image5 = dir.filePath(QStringLiteral("paused.img"));
+    std::thread later;
+    r = rescue(loop, image5, image5 + QStringLiteral(".map"), 0, [&later](RescueCopy &c) {
+        c.setPaused(true);
+        later = std::thread([&c] {
+            QThread::msleep(1500);
+            c.setPaused(false);
+        });
+    });
+    later.join();
+    report(r.completed && r.ms >= 1400 && r.phases.contains(QStringLiteral("Resting while the drive cools down")),
+           QStringLiteral("paused for the heat, it waits, then carries on"), QStringLiteral("%1 s").arg(r.ms / 1000.0, 0, 'f', 1));
 
     // A map for a different-size drive is refused.
     RescueMap wrong;

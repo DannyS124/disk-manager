@@ -282,6 +282,18 @@ void UDisks::smartSelftest(const Disk &disk, const QString &type)
          tr("Couldn't start a self-test on %1").arg(name));
 }
 
+void UDisks::refreshHealthQuietly(const Disk &disk)
+{
+    QDBusMessage message = QDBusMessage::createMethodCall(kService, disk.drivePath, disk.health.nvme ? kNvme : kAta, QStringLiteral("SmartUpdate"));
+    message.setArguments({options()});
+    message.setInteractiveAuthorizationAllowed(false);
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, 60000), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher] {
+        watcher->deleteLater();
+        refresh();
+    });
+}
+
 void UDisks::smartSelftestAbort(const Disk &disk)
 {
     const QString name = shortDevice(disk.device);

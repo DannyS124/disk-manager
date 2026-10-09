@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QThread>
 #include <QSaveFile>
 #include <QTextStream>
 
@@ -213,7 +214,62 @@ RescueCopy::~RescueCopy()
 
 bool RescueCopy::readSource(char *buf, quint64 len, quint64 pos)
 {
-    return blockio::readAt(m_source, buf, len, pos);
+    waitWhilePaused();
+    // Read even when stopping meanwhile: a read that didn't happen mustn't count as bad.
+    const bool ok = blockio::readAt(m_source, buf, len, pos);
+    coolDown(ok, len);
+    return ok;
+}
+
+void RescueCopy::waitWhilePaused()
+{
+    if (!m_paused || m_cancel)
+        return;
+    const QString was = m_phase;
+    m_phase = tr("Resting while the drive cools down");
+    tick(true); // saves the map too
+    while (m_paused && !m_cancel)
+        QThread::msleep(200);
+    m_phase = was;
+    m_rateClock.invalidate(); // no catching up on the speed limit after a rest
+    tick(true);
+}
+
+void RescueCopy::coolDown(bool ok, quint64 len)
+{
+    // Some failing drives do better after a rest than when hammered with retries.
+    m_errorsInARow = ok ? 0 : m_errorsInARow + 1;
+    const int restAfter = m_restAfter;
+    if (restAfter > 0 && m_errorsInARow >= restAfter) {
+        m_errorsInARow = 0;
+        const int seconds = m_restSeconds;
+        const QString was = m_phase;
+        m_phase = tr("Resting for %n second(s) after %1 read errors in a row", nullptr, seconds).arg(restAfter);
+        tick(true);
+        for (int i = 0; i < seconds * 5 && !m_cancel; ++i)
+            QThread::msleep(200);
+        m_phase = was;
+        m_rateClock.invalidate();
+        tick(true);
+    }
+    // The speed limit: wait until what's been read fits under it. Measured over windows of
+    // about ten seconds, so a change of limit or a rest starts afresh.
+    const quint64 rate = m_maxRate;
+    if (rate == 0)
+        return;
+    if (!m_rateClock.isValid() || rate != m_rateSeen || m_rateClock.elapsed() > 10000) {
+        m_rateClock.start();
+        m_rateBytes = 0;
+        m_rateSeen = rate;
+    }
+    m_rateBytes += len;
+    const qint64 due = qint64(double(m_rateBytes) * 1000.0 / double(rate));
+    while (!m_cancel) {
+        const qint64 ahead = due - m_rateClock.elapsed();
+        if (ahead <= 0)
+            break;
+        QThread::msleep(quint64(std::min<qint64>(ahead, 200)));
+    }
 }
 
 bool RescueCopy::writeTarget(const char *buf, quint64 len, quint64 pos)
