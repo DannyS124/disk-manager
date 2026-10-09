@@ -11,6 +11,7 @@
 
 #include "../src/addonoutput.h"
 #include "../src/addonform.h"
+#include "../src/addonmaker.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
 #include "../src/copydialogs.h"
@@ -41,6 +42,7 @@
 #include <QElapsedTimer>
 #include <QMessageBox>
 #include <QProcess>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QThread>
@@ -569,6 +571,94 @@ void themes()
     theme.select(QStringLiteral("system"), addons);
 }
 
+// The Add-on Maker: what it saves loads and isn't flagged, replacing asks first, editing an
+// add-on that turned up from outside keeps the flag, and Test hands over the action.
+void maker()
+{
+    Addons addons;
+    addons.load();
+    auto clickButton = [](QWidget *window, const QString &text) {
+        for (QPushButton *b : window->findChildren<QPushButton *>()) {
+            if (b->text() == text) {
+                b->click();
+                return true;
+            }
+        }
+        return false;
+    };
+    auto find = [&addons](const QString &id) {
+        for (const Addon &a : addons.all()) {
+            if (a.id == id)
+                return a;
+        }
+        return Addon();
+    };
+    auto fillIn = [](AddonMaker &m, const QString &name, const QString &label, const QString &program) {
+        m.findChild<QLineEdit *>(QStringLiteral("name"))->setText(name);
+        m.findChild<QLineEdit *>(QStringLiteral("label"))->setText(label);
+        auto *command = m.findChild<QTableWidget *>(QStringLiteral("command"));
+        command->item(0, 0)->setText(program);
+    };
+    {
+        AddonMaker m(&addons, nullptr, {});
+        fillIn(m, QStringLiteral("Maker Test"), QStringLiteral("Say Hi"), QStringLiteral("echo"));
+        clickButton(&m, QStringLiteral("Save"));
+    }
+    addons.load();
+    const Addon made = find(QStringLiteral("maker-test"));
+    report(made.error.isEmpty() && !made.outside && made.actions.value(0).label == QLatin1String("Say Hi")
+               && made.actions.value(0).command == QStringList{QStringLiteral("echo")},
+           QStringLiteral("the Add-on Maker saves an add-on that loads and isn't flagged"), made.error);
+
+    QStringList asked;
+    Answerer answerer;
+    answerer.answer = [&asked](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            asked << box->text();
+            if (QAbstractButton *no = box->button(QMessageBox::No))
+                no->click();
+            else
+                box->close();
+            return true;
+        }
+        return false;
+    };
+    {
+        AddonMaker m(&addons, nullptr, {});
+        fillIn(m, QStringLiteral("Maker Test"), QStringLiteral("Something Else"), QStringLiteral("true"));
+        clickButton(&m, QStringLiteral("Save"));
+    }
+    addons.load();
+    report(asked.value(0).contains(QLatin1String("already")) && find(QStringLiteral("maker-test")).actions.value(0).label == QLatin1String("Say Hi"),
+           QStringLiteral("saving over an existing add-on asks first (and No keeps it)"), asked.join(QStringLiteral(" / ")));
+
+    const QString planted = Addons::userDir() + QStringLiteral("/planted-maker/addon.json");
+    QDir().mkpath(QFileInfo(planted).path());
+    QFile f(planted);
+    if (f.open(QIODevice::WriteOnly))
+        f.write(R"({"id":"planted-maker","name":"Planted","actions":[{"label":"Hi","command":["echo","hi"]}]})");
+    f.close();
+    addons.load();
+    {
+        const Addon outside = find(QStringLiteral("planted-maker"));
+        asked.clear();
+        AddonMaker m(&addons, &outside, {});
+        m.findChild<QLineEdit *>(QStringLiteral("label"))->setText(QStringLiteral("Hello"));
+        clickButton(&m, QStringLiteral("Save"));
+    }
+    addons.load();
+    report(find(QStringLiteral("planted-maker")).outside && find(QStringLiteral("planted-maker")).actions.value(0).label == QLatin1String("Hello"),
+           QStringLiteral("editing an add-on that turned up from outside keeps the flag"), asked.join(QStringLiteral(" / ")));
+
+    QString tested;
+    {
+        AddonMaker m(&addons, nullptr, [&tested](const Addon &, const AddonAction &action) { tested = action.label; });
+        fillIn(m, QStringLiteral("Try Me"), QStringLiteral("Try This"), QStringLiteral("true"));
+        clickButton(&m, QStringLiteral("Test"));
+    }
+    report(tested == QLatin1String("Try This"), QStringLiteral("Test hands the unsaved action over to be run"), tested);
+}
+
 int userScenarios()
 {
     QTemporaryDir home;
@@ -577,6 +667,7 @@ int userScenarios()
     outputWindow();
     addonMenus();
     themes();
+    maker();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

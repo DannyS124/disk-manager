@@ -181,8 +181,9 @@ public:
     static bool run(const AddonAction &action, const QStringList &argv, QString *error);
 
     // Saves exactly these bytes (after parsing them) into the user's add-on folder and notes
-    // their checksum, so the add-on doesn't show up as added from outside.
-    static bool install(const QByteArray &data, QString *error);
+    // their checksum, so the add-on doesn't show up as added from outside. record = false
+    // leaves that out (the Maker saving an add-on that was already flagged keeps the flag).
+    static bool install(const QByteArray &data, QString *error, bool record = true);
     static bool remove(const Addon &addon, QString *error);
 
 private:

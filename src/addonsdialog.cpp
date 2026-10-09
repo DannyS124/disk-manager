@@ -26,13 +26,15 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-AddonsDialog::AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShortcuts, QWidget *parent)
+AddonsDialog::AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShortcuts, AddonMaker::Tester tester, QWidget *parent)
     : QDialog(parent)
     , m_addons(addons)
     , m_list(new QTreeWidget)
     , m_details(new QTextBrowser)
     , m_accept(new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok")), tr("I Added It")))
     , m_settings(new QPushButton(QIcon::fromTheme(QStringLiteral("configure")), tr("Settings…")))
+    , m_edit(new QPushButton(QIcon::fromTheme(QStringLiteral("document-edit")), tr("Edit…")))
+    , m_tester(std::move(tester))
     , m_actions(new QTableWidget)
     , m_taken(takenShortcuts)
 {
@@ -76,7 +78,22 @@ AddonsDialog::AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShort
     auto *install = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), tr("Install from File…"));
     auto *remove = new QPushButton(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove"));
     auto *folder = new QPushButton(QIcon::fromTheme(QStringLiteral("folder-open")), tr("Open Folder"));
-    auto *guide = new QPushButton(QIcon::fromTheme(QStringLiteral("help-contents")), tr("How to Make One"));
+    auto *guide = new QPushButton(QIcon::fromTheme(QStringLiteral("help-contents")), tr("How It Works"));
+    auto *make = new QPushButton(QIcon::fromTheme(QStringLiteral("document-new")), tr("Make an Add-on…"));
+    connect(make, &QPushButton::clicked, this, [this] {
+        AddonMaker(m_addons, nullptr, m_tester, this).exec();
+        m_addons->load();
+        fill();
+    });
+    connect(m_edit, &QPushButton::clicked, this, [this] {
+        const int row = currentRow();
+        if (row < 0)
+            return;
+        const Addon a = m_addons->all()[row];
+        AddonMaker(m_addons, &a, m_tester, this).exec();
+        m_addons->load();
+        fill();
+    });
     auto *close = new QPushButton(tr("Close"));
 
     connect(install, &QPushButton::clicked, this, [this] {
@@ -152,6 +169,8 @@ AddonsDialog::AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShort
     });
 
     auto *buttons = new QHBoxLayout;
+    buttons->addWidget(make);
+    buttons->addWidget(m_edit);
     buttons->addWidget(catalog);
     buttons->addWidget(install);
     buttons->addWidget(remove);
@@ -179,6 +198,7 @@ void AddonsDialog::fill()
     m_list->clear();
     m_accept->setEnabled(false);
     m_settings->setEnabled(false);
+    m_edit->setEnabled(false);
     m_actions->setRowCount(0);
     for (const Addon &a : m_addons->all()) {
         const QString status = !a.error.isEmpty() ? tr("Broken") : a.outside ? tr("Added outside") : a.enabled ? tr("On") : tr("Off");
@@ -195,8 +215,9 @@ void AddonsDialog::fill()
         m_list->setCurrentItem(m_list->topLevelItem(0));
     else
         m_details->setHtml(tr("<p>No add-ons installed.</p><p>Add-ons add actions to DiskForge's menus, like backing up a "
-                              "drive or opening it in another tool. Install one with <b>Install from File</b>, or see "
-                              "<b>How to Make One</b>.</p><p>They live in <code>%1</code>.</p>").arg(Addons::userDir()));
+                              "drive or opening it in another tool. Make one with <b>Make an Add-on</b>, get one with "
+                              "<b>Get Add-ons</b>, or install a file with <b>Install from File</b>.</p><p>They live in <code>%1</code>.</p>")
+                               .arg(Addons::userDir().toHtmlEscaped()));
 }
 
 int AddonsDialog::currentRow() const
@@ -210,6 +231,8 @@ void AddonsDialog::showDetails()
     const int row = currentRow();
     m_accept->setEnabled(row >= 0 && m_addons->all()[row].outside && m_addons->all()[row].error.isEmpty());
     m_settings->setEnabled(row >= 0 && !m_addons->all()[row].settings.isEmpty() && m_addons->all()[row].error.isEmpty());
+    m_edit->setEnabled(row >= 0 && m_addons->all()[row].error.isEmpty());
+    m_edit->setText(row >= 0 && m_addons->all()[row].systemWide ? tr("Edit a Copy…") : tr("Edit…"));
     showActions(row);
     if (row < 0)
         return;

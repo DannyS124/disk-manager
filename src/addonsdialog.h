@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "addonmaker.h"
+
 #include <QDialog>
 #include <QKeySequence>
 #include <QList>
@@ -19,7 +21,9 @@ class AddonsDialog : public QDialog
     Q_OBJECT
 public:
     // takenShortcuts: the main window's own, which add-on actions can't use.
-    AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShortcuts = {}, QWidget *parent = nullptr);
+    // tester: runs an action from the Add-on Maker's Test button on the main window's selection.
+    AddonsDialog(Addons *addons, const QList<QKeySequence> &takenShortcuts = {}, AddonMaker::Tester tester = {},
+                 QWidget *parent = nullptr);
 
 private:
     void fill();
@@ -33,6 +37,8 @@ private:
     QTextBrowser *m_details;
     QPushButton *m_accept;
     QPushButton *m_settings;
+    QPushButton *m_edit;
+    AddonMaker::Tester m_tester;
     QTableWidget *m_actions;
     QList<QKeySequence> m_taken;
     bool m_filling = false;

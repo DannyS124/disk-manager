@@ -58,6 +58,8 @@ private:
     void checkForUpdates();
     bool addAddonActions(QMenu *menu); // false if none apply
     void runAddon(const QString &addonId, const QString &label);
+    // test: from the Add-on Maker; always asks, never remembers.
+    void runAddonWith(const Addon &addon, const AddonAction &action, bool test);
     // Why an add-on action doesn't fit the current selection; empty if it does.
     QString addonReason(const QString &addonId, const QString &label) const;
     QList<QKeySequence> takenShortcuts() const; // the window's own, for the Add-ons window

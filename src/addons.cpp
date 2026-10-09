@@ -961,7 +961,7 @@ bool Addons::run(const AddonAction &action, const QStringList &argv, QString *er
     return true;
 }
 
-bool Addons::install(const QByteArray &data, QString *error)
+bool Addons::install(const QByteArray &data, QString *error, bool record)
 {
     const Addon a = parseData(data, QString());
     if (!a.error.isEmpty()) {
@@ -978,7 +978,10 @@ bool Addons::install(const QByteArray &data, QString *error)
     }
     // Noted, so it isn't flagged as added from outside.
     QSettings s = settings();
-    s.setValue(QStringLiteral("installed/") + a.id, hashText(a));
+    if (record)
+        s.setValue(QStringLiteral("installed/") + a.id, hashText(a));
+    else
+        s.remove(QStringLiteral("installed/") + a.id);
     return true;
 }
 

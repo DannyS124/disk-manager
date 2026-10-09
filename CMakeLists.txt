@@ -80,6 +80,7 @@ add_library(diskforge-ui STATIC
     src/addonsdialog.cpp src/addonsdialog.h
     src/addonprompt.cpp src/addonprompt.h
     src/addonform.cpp src/addonform.h
+    src/addonmaker.cpp src/addonmaker.h
     src/addonoutput.cpp src/addonoutput.h
     src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h

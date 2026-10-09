@@ -501,7 +501,7 @@ void MainWindow::createActions()
             tools->addAction(tr("No add-ons installed"))->setEnabled(false);
         tools->addSeparator();
         tools->addAction(themeIcon("preferences-plugin", "application-x-addon"), tr("&Add-ons…"), this, [this] {
-            AddonsDialog(&m_addons, takenShortcuts(), this).exec();
+            AddonsDialog(&m_addons, takenShortcuts(), [this](const Addon &a, const AddonAction &act) { runAddonWith(a, act, true); }, this).exec();
             refreshAddons();
         });
     });
@@ -1103,20 +1103,35 @@ bool MainWindow::addAddonActions(QMenu *menu)
 
 void MainWindow::runAddon(const QString &addonId, const QString &label)
 {
-    // Copies: the form and the questions below run their own event loops.
-    Addon addon;
-    AddonAction action;
+    // Copies: the form and the questions run their own event loops, and the list can be reloaded.
     for (const Addon &a : m_addons.all()) {
         for (const AddonAction &act : a.actions) {
             if (a.id == addonId && act.label == label) {
-                addon = a;
-                action = act;
+                const Addon addon = a;
+                const AddonAction action = act;
+                runAddonWith(addon, action, false);
+                return;
             }
         }
     }
+}
+
+void MainWindow::runAddonWith(const Addon &addon, const AddonAction &action, bool test)
+{
+    // From the Add-on Maker, the Maker is the window on top; its children aren't blocked by it.
+    QWidget *owner = QApplication::activeModalWidget() ? QApplication::activeModalWidget() : this;
     const Disk *d = selectedDisk();
-    if (addon.id.isEmpty() || !d)
+    if (!d) {
+        warnPlain(owner, action.label, tr("Pick a drive or partition in the main window first."));
         return;
+    }
+    if (test) {
+        const QString why = Addons::whyNot(action, *d, selectedVolume(), m_map->selection().kind == DiskMap::Selection::Kind::Free);
+        if (!why.isEmpty()) {
+            warnPlain(owner, action.label, tr("It wouldn't be offered for what's selected in the main window: %1").arg(why));
+            return;
+        }
+    }
     // Paths, not pointers: a refresh while the form is open rebuilds the disk list.
     const QString diskPath = d->blockPath;
     const QString volumePath = selectedVolume() ? selectedVolume()->objectPath : QString();
@@ -1127,7 +1142,7 @@ void MainWindow::runAddon(const QString &addonId, const QString &label)
         for (const AddonField &f : std::as_const(action.ask))
             defaults.insert(f.id, Addons::fieldDefault(f, *d, selectedVolume()));
         AddonFormDialog form(action.label, tr("\"%1\" from the add-on \"%2\" needs a few things first:").arg(action.label, addon.name),
-                             action.ask, defaults, tr("Continue"), this);
+                             action.ask, defaults, tr("Continue"), owner);
         if (form.exec() != QDialog::Accepted)
             return;
         answers = form.values();
@@ -1135,42 +1150,43 @@ void MainWindow::runAddon(const QString &addonId, const QString &label)
     d = m_udisks->diskByPath(diskPath);
     const Volume *v = volumePath.isEmpty() ? nullptr : volumeByPath(volumePath);
     if (!d || (!volumePath.isEmpty() && !v)) {
-        warnPlain(this, action.label, tr("The drive isn't there anymore."));
+        warnPlain(owner, action.label, tr("The drive isn't there anymore."));
         return;
     }
     QString error;
     const QStringList argv = Addons::fillCommand(addon, action, *d, v, answers, &error);
     if (argv.isEmpty()) {
-        warnPlain(this, action.label, error);
+        warnPlain(owner, action.label, error);
         return;
     }
     const QString confirmText = action.confirm.isEmpty() ? QString() : Addons::expandText(action.confirm, *d, v, &error);
     if (!action.confirm.isEmpty() && confirmText.isEmpty()) {
-        warnPlain(this, action.label, error);
+        warnPlain(owner, action.label, error);
         return;
     }
-    if (!Addons::isTrusted(addon, action, argv)) {
+    // A test run always asks and never remembers anything.
+    if (test || !Addons::isTrusted(addon, action, argv)) {
         bool remember = false;
-        if (!askRunAddon(this, addon, action, argv, &remember))
+        if (!askRunAddon(owner, addon, action, argv, test ? nullptr : &remember))
             return;
         if (remember) {
             Addons::trust(addon, action);
             m_addons.accept(addon.id, addon.fileHash); // they've seen it and said yes, so it's theirs now
         }
     }
-    if (!confirmText.isEmpty() && !askPlain(this, action.label, confirmText))
+    if (!confirmText.isEmpty() && !askPlain(owner, action.label, confirmText))
         return;
     if (action.window) {
         if (!Addons::prepare(action, argv, &error)) {
-            warnPlain(this, action.label, error);
+            warnPlain(owner, action.label, error);
             return;
         }
-        auto *window = new AddonOutputWindow(action.label, Addons::processCommand(action, argv), this);
+        auto *window = new AddonOutputWindow(action.label, Addons::processCommand(action, argv), owner);
         window->show();
         return;
     }
     if (!Addons::run(action, argv, &error))
-        warnPlain(this, action.label, error);
+        warnPlain(owner, action.label, error);
     else
         statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
 }

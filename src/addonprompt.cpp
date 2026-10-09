@@ -148,7 +148,9 @@ bool askRunAddon(QWidget *parent, const Addon &addon, const AddonAction &action,
     layout->addWidget(plainLabel(risks.admin.isEmpty() ? QObject::tr("Only run add-ons you trust. It runs as you, not as root.")
                                                        : QObject::tr("Only run add-ons you trust.")));
     QCheckBox *again = nullptr;
-    if (risks.alwaysAsk() || Addons::risks(action, addon.settings).alwaysAsk()) {
+    if (!remember) {
+        // A test run from the Add-on Maker: nothing is remembered.
+    } else if (risks.alwaysAsk() || Addons::risks(action, addon.settings).alwaysAsk()) {
         layout->addWidget(plainLabel(QObject::tr("Actions with admin power or that run other commands ask every time.")));
     } else {
         again = new QCheckBox(QObject::tr("Don't ask again for this action"));

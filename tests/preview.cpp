@@ -5,6 +5,7 @@
 
 #include "../src/about.h"
 #include "../src/addonform.h"
+#include "../src/addonmaker.h"
 #include "../src/addonoutput.h"
 #include "../src/addonprompt.h"
 #include "../src/addons.h"
@@ -78,6 +79,16 @@ int main(int argc, char *argv[])
     save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
     ThemeMaker themeMaker(&addons);
     save(themeMaker, out.filePath(QStringLiteral("theme-maker.png")));
+    {
+        // The Add-on Maker, editing the backup example (its form fields and all).
+        Addon backupExample = Addons::parse(QStringLiteral(SOURCE_DIR "/examples/addons/backup-rsync/addon.json"));
+        AddonMaker maker(&addons, &backupExample, [](const Addon &, const AddonAction &) {});
+        save(maker, out.filePath(QStringLiteral("addon-maker.png")));
+        if (auto *tabs = maker.findChild<QTabWidget *>()) {
+            tabs->setCurrentIndex(1);
+            save(maker, out.filePath(QStringLiteral("addon-maker-where.png")));
+        }
+    }
 
     // The add-on questions open their own dialogs: grab each one while it's open.
     auto grabDialog = [](const QString &path) {
