@@ -1,5 +1,5 @@
-# Programs DiskForge can use. setup.sh checks every one is in the rescue image, so the app
-# there can do everything it does on a normal PC. One per line, then what it's for.
+# Programs DiskForge and the rescue system use. setup.sh checks every one is in the image, so
+# the app there can do everything it does on a normal PC. One per line, then what it's for.
 mkfs.fat       FAT32 (Format, every USB tool)
 mkfs.exfat     exFAT
 mkfs.ntfs      NTFS
@@ -17,3 +17,6 @@ fstrim         Optimize Drives
 btrfs          Btrfs checks and scrubs
 mdadm          RAID arrays
 lvm            LVM
+thin_check     LVM thin volumes
+gio            the desktop icons (the session marks them as trusted)
+wpa_supplicant Wi-Fi

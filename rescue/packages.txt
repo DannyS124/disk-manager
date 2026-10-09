@@ -1,9 +1,15 @@
 # What goes on the rescue stick, one package per line. Lines starting with # are notes.
+# Only these and what they need get in (no "recommended" extras), so anything the stick uses
+# has to be here, even when it came along by itself before.
 
 # Linux and the live boot (finds the stick, runs the system from RAM on top of it)
 linux-image-amd64
 live-boot
+live-boot-initramfs-tools
+busybox
 systemd-sysv
+# The login session: polkit only lets the person at the PC mount and format without root
+libpam-systemd
 systemd-timesyncd
 dbus-user-session
 amd64-microcode
@@ -18,6 +24,8 @@ firmware-nvidia-graphics
 firmware-realtek
 firmware-iwlwifi
 firmware-atheros
+firmware-ath9k-htc
+firmware-carl9170
 firmware-brcm80211
 firmware-mediatek
 firmware-libertas
@@ -32,6 +40,8 @@ spice-vdagent
 # The desktop (LXQt on X11, light and Qt like DiskForge). xserver-xorg brings the drivers
 # for every graphics card X has one for.
 xserver-xorg
+# Lets X start as root, which "Safe graphics" (nomodeset, the VESA driver) needs
+xserver-xorg-legacy
 xinit
 xauth
 x11-xserver-utils
@@ -55,19 +65,31 @@ fonts-dejavu-core
 fonts-noto-core
 gvfs
 gvfs-daemons
+libglib2.0-bin
 libnotify-bin
 
-# Network and the web browser
+# Network and the web browser (wpasupplicant and the regulatory list are what Wi-Fi needs)
 network-manager
+wpasupplicant
+wireless-regdb
 nm-tray
 firefox-esr
 ca-certificates
 curl
 
-# Disk tools (DiskForge itself comes from our own .deb)
+# Disk tools (DiskForge itself comes from our own .deb). The libblockdev plugins are how UDisks
+# does encryption, RAID, NVMe and the rest.
 udisks2
 udisks2-lvm2
 udisks2-btrfs
+libblockdev-crypto3
+libblockdev-mdraid3
+libblockdev-nvme3
+libblockdev-fs3
+libblockdev-part3
+libblockdev-loop3
+libblockdev-swap3
+eject
 polkitd
 bubblewrap
 smartmontools
@@ -83,6 +105,7 @@ btrfs-progs
 xfsprogs
 f2fs-tools
 lvm2
+thin-provisioning-tools
 mdadm
 cryptsetup
 parted
@@ -95,9 +118,11 @@ chntpw
 wimtools
 fwupd
 
-# Looking at the hardware (and for the logs)
+# Looking at the hardware (and for the logs); bolt lets Thunderbolt drive enclosures in
 pciutils
 usbutils
+usb.ids
+bolt
 dmidecode
 lshw
 mokutil
@@ -106,6 +131,8 @@ efibootmgr
 # Everyday command line
 sudo
 less
+bash-completion
+psmisc
 nano
 htop
 locales

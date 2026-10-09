@@ -29,9 +29,11 @@ rsvg-convert -w 1920 -h 1080 "$rescue/art/desktop.svg" -o "$work/art/wallpaper.p
 echo "--> The live system"
 # Downloaded packages live in /cache between builds. The hooks run in order: our files, then
 # DiskForge, then setup.sh, which cleans up after itself.
+# Only what packages.txt names and what that really needs: Debian's "recommended" extras made
+# it a whole desktop (a sound server, speech recognition, printing, a mail server...).
 mmdebstrap --mode=root --variant=important \
     --components="${components// /,}" \
-    --aptopt='Apt::Install-Recommends "true"' \
+    --aptopt='Apt::Install-Recommends "false"' \
     --include="$packages" \
     --skip=download/empty \
     --setup-hook='mkdir -p "$1"/var/cache/apt/archives/' \
