@@ -96,11 +96,16 @@ void usageTests()
     report(sorted(many), QStringLiteral("biggest file comes first"));
     report(unreadable == 0, QStringLiteral("no folder was unreadable"));
 
+    int code = -1;
     if (geteuid() == 0) {
         QDir(root).mkpath(QStringLiteral("mnt"));
-        int code = -1;
         sh(QStringLiteral("mount"), {QStringLiteral("-t"), QStringLiteral("tmpfs"), QStringLiteral("-o"), QStringLiteral("size=16m"),
                                      QStringLiteral("none"), root + QStringLiteral("/mnt")}, &code);
+    }
+    if (geteuid() == 0 && code != 0) {
+        // Root inside a container usually can't mount anything.
+        out << "SKIP  couldn't mount a tmpfs, so the nested mount isn't tested" << Qt::endl;
+    } else if (geteuid() == 0) {
         writeFile(root + QStringLiteral("/mnt/elsewhere.bin"), 4 << 20);
         const auto again = scan(root);
         const UsageNode *mnt = again ? child(*again, QStringLiteral("mnt")) : nullptr;
