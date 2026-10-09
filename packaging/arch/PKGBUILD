@@ -1,7 +1,7 @@
 # Maintainer: Danny S <48356907+DannyS124@users.noreply.github.com>
 pkgname=diskforge
-pkgver=0.4.3
-pkgrel=2
+pkgver=0.5.0
+pkgrel=1
 pkgdesc='Disk manager for Linux that works like Windows Disk Management'
 arch=('x86_64')
 url='https://github.com/DannyS124/diskforge'
@@ -21,7 +21,7 @@ optdepends=(
   'udisks2-lvm2: show LVM volume groups'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('49488d50d351425049072fea429b89fe12ed21edcad457020b8658fc265d4f1b')
+sha256sums=('fbb5e10ee13fb2701f1943d61794d4434657cef92b9cd0ee373b757e29a089b2')
 
 build() {
   rm -rf build  # makepkg keeps src/ between builds; an old cache breaks updates
