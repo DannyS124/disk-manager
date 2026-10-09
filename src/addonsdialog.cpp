@@ -3,15 +3,17 @@
 
 #include "addonsdialog.h"
 
+#include "addonprompt.h"
 #include "addons.h"
 #include "catalogdialog.h"
+#include "dialogs.h"
 
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QTextBrowser>
 #include <QTreeWidget>
@@ -23,6 +25,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     , m_addons(addons)
     , m_list(new QTreeWidget)
     , m_details(new QTextBrowser)
+    , m_accept(new QPushButton(QIcon::fromTheme(QStringLiteral("dialog-ok")), tr("I Added It")))
 {
     setWindowTitle(tr("Add-ons"));
     m_list->setHeaderLabels({tr("Add-on"), tr("Version"), tr("Author"), tr("Status")});
@@ -41,37 +44,51 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
         const QString file = QFileDialog::getOpenFileName(this, tr("Install Add-on"), QDir::homePath(), tr("Add-on manifest (addon.json *.json)"));
         if (file.isEmpty())
             return;
-        const Addon a = Addons::parse(file);
-        if (!a.error.isEmpty()) {
-            QMessageBox::warning(this, windowTitle(), tr("This add-on is broken: %1").arg(a.error));
+        // Read once, so what the question shows is exactly what gets installed.
+        QFile f(file);
+        if (!f.open(QIODevice::ReadOnly)) {
+            warnPlain(this, windowTitle(), tr("Couldn't open %1: %2").arg(file, f.errorString()));
             return;
         }
-        QStringList commands;
-        for (const AddonAction &act : a.actions)
-            commands << QStringLiteral("• %1: %2").arg(act.label, act.command.join(QLatin1Char(' ')));
-        const auto answer = QMessageBox::question(this, windowTitle(),
-            tr("Install \"%1\"%2?\n\nIt adds these actions, which run these commands:\n%3\n\nOnly install add-ons you trust.")
-                .arg(a.name, a.author.isEmpty() ? QString() : tr(" by %1").arg(a.author), commands.join(QLatin1Char('\n'))));
-        if (answer != QMessageBox::Yes)
+        const QByteArray data = f.read(Addons::kMaxDownload * 4);
+        const Addon a = Addons::parseData(data, file);
+        if (!a.error.isEmpty()) {
+            warnPlain(this, windowTitle(), tr("This add-on is broken: %1").arg(a.error));
+            return;
+        }
+        if (!askInstallAddon(this, a))
             return;
         QString error;
-        if (!Addons::install(file, &error))
-            QMessageBox::warning(this, windowTitle(), error);
+        if (!Addons::install(data, &error))
+            warnPlain(this, windowTitle(), error);
         m_addons->load();
         fill();
     });
     connect(remove, &QPushButton::clicked, this, [this] {
-        const int row = m_list->indexOfTopLevelItem(m_list->currentItem());
-        if (row < 0 || row >= m_addons->all().size())
+        const int row = currentRow();
+        if (row < 0)
             return;
         const Addon a = m_addons->all()[row];
-        if (QMessageBox::question(this, windowTitle(), tr("Remove \"%1\"?").arg(a.name)) != QMessageBox::Yes)
+        if (!askPlain(this, windowTitle(), tr("Remove \"%1\"?").arg(a.name)))
             return;
         QString error;
         if (!Addons::remove(a, &error))
-            QMessageBox::warning(this, windowTitle(), error);
+            warnPlain(this, windowTitle(), error);
         m_addons->load();
         fill();
+    });
+    m_accept->setToolTip(tr("This add-on is yours: stop warning that it was added from outside DiskForge"));
+    connect(m_accept, &QPushButton::clicked, this, [this] {
+        const int row = currentRow();
+        if (row < 0)
+            return;
+        const Addon a = m_addons->all()[row];
+        if (!askPlain(this, windowTitle(), tr("Did you put \"%1\" in the add-on folder (or change it) yourself?\n\n"
+                                               "Only say yes if you did. DiskForge stops warning about this version of it.").arg(a.name)))
+            return;
+        m_addons->accept(a.id);
+        fill();
+        m_list->setCurrentItem(m_list->topLevelItem(row));
     });
     connect(folder, &QPushButton::clicked, this, [] {
         QDir().mkpath(Addons::userDir());
@@ -99,6 +116,7 @@ AddonsDialog::AddonsDialog(Addons *addons, QWidget *parent)
     buttons->addWidget(catalog);
     buttons->addWidget(install);
     buttons->addWidget(remove);
+    buttons->addWidget(m_accept);
     buttons->addWidget(folder);
     buttons->addWidget(guide);
     buttons->addStretch();
@@ -116,13 +134,16 @@ void AddonsDialog::fill()
 {
     m_filling = true;
     m_list->clear();
+    m_accept->setEnabled(false);
     for (const Addon &a : m_addons->all()) {
-        auto *item = new QTreeWidgetItem(m_list, {a.name.isEmpty() ? a.file : a.name, a.version, a.author,
-                                                  a.error.isEmpty() ? (a.enabled ? tr("On") : tr("Off")) : tr("Broken")});
+        const QString status = !a.error.isEmpty() ? tr("Broken") : a.outside ? tr("Added outside") : a.enabled ? tr("On") : tr("Off");
+        auto *item = new QTreeWidgetItem(m_list, {a.name.isEmpty() ? a.file : a.name, a.version, a.author, status});
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, a.enabled ? Qt::Checked : Qt::Unchecked);
         if (!a.error.isEmpty())
             item->setForeground(3, QColor(QStringLiteral("#e74c3c")));
+        else if (a.outside)
+            item->setForeground(3, QColor(QStringLiteral("#e08a1e")));
     }
     m_filling = false;
     if (m_list->topLevelItemCount() > 0)
@@ -133,10 +154,17 @@ void AddonsDialog::fill()
                               "<b>How to Make One</b>.</p><p>They live in <code>%1</code>.</p>").arg(Addons::userDir()));
 }
 
-void AddonsDialog::showDetails()
+int AddonsDialog::currentRow() const
 {
     const int row = m_list->indexOfTopLevelItem(m_list->currentItem());
-    if (row < 0 || row >= m_addons->all().size())
+    return row >= 0 && row < m_addons->all().size() ? row : -1;
+}
+
+void AddonsDialog::showDetails()
+{
+    const int row = currentRow();
+    m_accept->setEnabled(row >= 0 && m_addons->all()[row].outside && m_addons->all()[row].error.isEmpty());
+    if (row < 0)
         return;
     const Addon &a = m_addons->all()[row];
     QString html = QStringLiteral("<h3>%1</h3>").arg(a.name.toHtmlEscaped());
@@ -144,10 +172,13 @@ void AddonsDialog::showDetails()
         html += QStringLiteral("<p>%1</p>").arg(a.description.toHtmlEscaped());
     if (!a.error.isEmpty())
         html += QStringLiteral("<p style=\"color:#e74c3c\"><b>%1</b></p>").arg(tr("Broken: %1").arg(a.error).toHtmlEscaped());
+    if (a.outside && a.error.isEmpty())
+        html += outsideNote();
     for (const AddonAction &act : a.actions) {
         html += QStringLiteral("<p><b>%1</b> <small>(%2%3)</small><br><code>%4</code></p>")
-                    .arg(act.label.toHtmlEscaped(), act.appliesTo, act.terminal ? tr(", in a terminal") : QString(),
-                         act.command.join(QLatin1Char(' ')).toHtmlEscaped());
+                    .arg(act.label.toHtmlEscaped(), act.appliesTo.toHtmlEscaped(), act.terminal ? tr(", in a terminal") : QString(),
+                         act.command.join(QLatin1Char(' ')).toHtmlEscaped())
+            + addonNotes(act);
     }
     html += QStringLiteral("<p><small>%1</small></p>").arg(a.file.toHtmlEscaped());
     m_details->setHtml(html);

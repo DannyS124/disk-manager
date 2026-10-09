@@ -20,6 +20,8 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets DBus Network LinguistTools)
 qt_standard_project_setup(I18N_SOURCE_LANGUAGE en)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
+# Ed25519, for the signature on the online add-on list
+find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS Crypto)
 
 set(APP_DEFINITIONS
     APP_VERSION="${PROJECT_VERSION}"
@@ -48,8 +50,9 @@ add_library(diskforge-core STATIC
     src/rescuecopy.cpp src/rescuecopy.h
     src/cleanup.cpp src/cleanup.h
     src/snapper.cpp src/snapper.h
+    src/signature.cpp src/signature.h
 )
-target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD)
+target_link_libraries(diskforge-core PUBLIC Qt6::Core Qt6::DBus PRIVATE PkgConfig::ZSTD OpenSSL::Crypto)
 target_include_directories(diskforge-core PUBLIC src)
 target_compile_definitions(diskforge-core PUBLIC ${APP_DEFINITIONS})
 target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
@@ -67,6 +70,7 @@ add_library(diskforge-ui STATIC
     src/systemtools.cpp src/systemtools.h
     src/erasedialog.cpp src/erasedialog.h
     src/addonsdialog.cpp src/addonsdialog.h
+    src/addonprompt.cpp src/addonprompt.h
     src/catalogdialog.cpp src/catalogdialog.h
     src/about.cpp src/about.h
     src/updates.cpp src/updates.h

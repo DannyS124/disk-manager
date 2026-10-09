@@ -6,6 +6,7 @@
 #include <QDialog>
 
 class Addons;
+class QPushButton;
 class QTextBrowser;
 class QTreeWidget;
 
@@ -19,9 +20,11 @@ public:
 private:
     void fill();
     void showDetails();
+    int currentRow() const;
 
     Addons *m_addons;
     QTreeWidget *m_list;
     QTextBrowser *m_details;
+    QPushButton *m_accept;
     bool m_filling = false;
 };

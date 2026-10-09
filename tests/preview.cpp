@@ -4,6 +4,7 @@
 // Renders the dialogs to PNGs: QT_QPA_PLATFORM=offscreen diskforge-preview <dir>
 
 #include "../src/about.h"
+#include "../src/addonprompt.h"
 #include "../src/addons.h"
 #include "../src/addonsdialog.h"
 #include "../src/blockmapwidget.h"
@@ -29,6 +30,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QElapsedTimer>
 #include <QProgressBar>
 #include <QLabel>
@@ -70,6 +72,33 @@ int main(int argc, char *argv[])
     addons.load();
     AddonsDialog addonsDialog(&addons);
     save(addonsDialog, out.filePath(QStringLiteral("addons.png")));
+
+    // The add-on questions open their own dialogs: grab each one while it's open.
+    auto grabDialog = [](const QString &path) {
+        QTimer::singleShot(100, [path] {
+            if (QWidget *w = QApplication::activeModalWidget()) {
+                w->grab().save(path);
+                QTextStream(stdout) << path << Qt::endl;
+                w->close();
+            }
+        });
+    };
+    const QString examples = QStringLiteral(SOURCE_DIR "/examples/addons/");
+    const Addon smart = Addons::parse(examples + QStringLiteral("smart-report/addon.json"));
+    const Addon sizes = Addons::parse(examples + QStringLiteral("folder-sizes/addon.json"));
+    Addon backup = Addons::parse(examples + QStringLiteral("backup-rsync/addon.json"));
+    backup.outside = true;
+    grabDialog(out.filePath(QStringLiteral("addon-install.png")));
+    askInstallAddon(nullptr, smart);
+    grabDialog(out.filePath(QStringLiteral("addon-run-admin.png")));
+    askRunAddon(nullptr, smart, smart.actions.value(0), {QStringLiteral("sudo"), QStringLiteral("smartctl"), QStringLiteral("-x"), QStringLiteral("/dev/sdb")}, nullptr);
+    grabDialog(out.filePath(QStringLiteral("addon-run-outside.png")));
+    askRunAddon(nullptr, backup, backup.actions.value(0),
+                {QStringLiteral("rsync"), QStringLiteral("-a"), QStringLiteral("--info=progress2"), QStringLiteral("--mkpath"),
+                 QStringLiteral("/run/media/me/My Stuff/"), QDir::homePath() + QStringLiteral("/Backups/My Stuff/")}, nullptr);
+    grabDialog(out.filePath(QStringLiteral("addon-run-lookonly.png")));
+    askRunAddon(nullptr, sizes, sizes.actions.value(0),
+                {QStringLiteral("sh"), QStringLiteral("-c"), sizes.actions.value(0).command.value(2), QStringLiteral("sh"), QStringLiteral("/")}, nullptr);
     previewTools(udisks, out);
 
     // prefer Ventoy so the warning shows up

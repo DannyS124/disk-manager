@@ -3,10 +3,11 @@
 
 #include "catalogdialog.h"
 
+#include "addonprompt.h"
+
 #include <QDialogButtonBox>
 #include <QHeaderView>
 #include <QLabel>
-#include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -30,6 +31,7 @@ CatalogDialog::CatalogDialog(Addons *addons, QWidget *parent)
     m_list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_details->setOpenLinks(false);
     m_status->setWordWrap(true);
+    m_status->setTextFormat(Qt::PlainText);
     m_install->setEnabled(false);
 
     auto *layout = new QVBoxLayout(this);
@@ -82,10 +84,17 @@ void CatalogDialog::load()
             m_status->setText(tr("Couldn't get the list: %1").arg(error));
             return;
         }
-        QString problem;
-        m_entries = Addons::parseCatalog(data, &problem);
-        m_status->setText(problem);
-        fill();
+        // The list is only used if it's signed with the maintainer's key.
+        fetch(Addons::catalogSignatureUrl(), [this, data](const QByteArray &sig, const QString &error) {
+            if (!error.isEmpty()) {
+                m_status->setText(tr("Couldn't get the list's signature: %1").arg(error));
+                return;
+            }
+            QString problem;
+            m_entries = Addons::parseSignedCatalog(data, sig, Addons::catalogKeys(), &problem);
+            m_status->setText(problem);
+            fill();
+        });
     });
 }
 
@@ -144,17 +153,9 @@ void CatalogDialog::install()
         }
         // Same question as installing from a file: what does it run?
         const Addon a = Addons::parseData(data, QString());
-        QStringList commands;
-        for (const AddonAction &act : a.actions)
-            commands << QStringLiteral("• %1: %2").arg(act.label, act.command.join(QLatin1Char(' ')));
-        if (a.error.isEmpty()) {
-            const auto answer = QMessageBox::question(this, windowTitle(),
-                tr("Install \"%1\"%2?\n\nIt adds these actions, which run these commands:\n%3\n\nOnly install add-ons you trust.")
-                    .arg(a.name, a.author.isEmpty() ? QString() : tr(" by %1").arg(a.author), commands.join(QLatin1Char('\n'))));
-            if (answer != QMessageBox::Yes) {
-                m_status->clear();
-                return;
-            }
+        if (a.error.isEmpty() && !askInstallAddon(this, a)) {
+            m_status->clear();
+            return;
         }
         QString problem;
         if (!Addons::installVerified(data, entry, &problem)) {

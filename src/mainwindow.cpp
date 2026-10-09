@@ -4,6 +4,7 @@
 #include "mainwindow.h"
 
 #include "about.h"
+#include "addonprompt.h"
 #include "addonsdialog.h"
 #include "copydialogs.h"
 #include "erasedialog.h"
@@ -134,9 +135,7 @@ MainWindow::MainWindow(UDisks *udisks, QWidget *parent)
         const Volume *v = volumeByPath(objectPath);
         if (clean || !v)
             return;
-        const auto answer = QMessageBox::question(this, tr("Errors Found"),
-                                                  tr("%1 has file system errors. Repair them now?").arg(volumeTitle(*v)));
-        if (answer != QMessageBox::Yes)
+        if (!askPlain(this, tr("Errors Found"), tr("%1 has file system errors. Repair them now?").arg(volumeTitle(*v))))
             return;
         if (const Volume *fresh = volumeByPath(objectPath))
             m_udisks->repair(*fresh);
@@ -227,8 +226,7 @@ void MainWindow::createActions()
             return;
         const QString path = v->objectPath;
         if (!v->mounts().isEmpty()
-            && QMessageBox::question(this, tr("Check for Errors"),
-                                     tr("%1 has to be unmounted while it's checked. Continue?").arg(volumeTitle(*v))) != QMessageBox::Yes)
+            && !askPlain(this, tr("Check for Errors"), tr("%1 has to be unmounted while it's checked. Continue?").arg(volumeTitle(*v))))
             return;
         const Volume *fresh = volumeByPath(path);
         if (!fresh)
@@ -1033,30 +1031,27 @@ void MainWindow::runAddon(const Addon &addon, const AddonAction &action)
     QString error;
     const QStringList argv = Addons::expand(action.command, *d, selectedVolume(), &error);
     if (argv.isEmpty()) {
-        QMessageBox::warning(this, action.label, error);
+        warnPlain(this, action.label, error);
         return;
     }
-    const QString confirmText = action.confirm.isEmpty()
-        ? QString() : Addons::expand({action.confirm}, *d, selectedVolume(), &error).value(0, action.confirm);
-    if (!Addons::isTrusted(addon, action)) {
-        QMessageBox box(QMessageBox::Warning, tr("Run Add-on?"),
-                        tr("\"%1\" from the add-on \"%2\" wants to run:").arg(action.label, addon.name),
-                        QMessageBox::Cancel, this);
-        box.setInformativeText(argv.join(QLatin1Char(' ')) + tr("\n\nOnly run add-ons you trust. It runs as you, not as root."));
-        auto *remember = new QCheckBox(tr("Don't ask again for this action"));
-        box.setCheckBox(remember);
-        QAbstractButton *run = box.addButton(tr("Run"), QMessageBox::AcceptRole);
-        box.setDefaultButton(QMessageBox::Cancel);
-        box.exec();
-        if (box.clickedButton() != run)
-            return;
-        if (remember->isChecked())
-            Addons::trust(addon, action);
+    const QString confirmText = action.confirm.isEmpty() ? QString() : Addons::expandText(action.confirm, *d, selectedVolume(), &error);
+    if (!action.confirm.isEmpty() && confirmText.isEmpty()) {
+        warnPlain(this, action.label, error);
+        return;
     }
-    if (!confirmText.isEmpty() && QMessageBox::question(this, action.label, confirmText) != QMessageBox::Yes)
+    if (!Addons::isTrusted(addon, action)) {
+        bool remember = false;
+        if (!askRunAddon(this, addon, action, argv, &remember))
+            return;
+        if (remember) {
+            Addons::trust(addon, action);
+            m_addons.accept(addon.id); // they've seen it and said yes, so it's theirs now
+        }
+    }
+    if (!confirmText.isEmpty() && !askPlain(this, action.label, confirmText))
         return;
     if (!Addons::run(action, argv, &error))
-        QMessageBox::warning(this, action.label, error);
+        warnPlain(this, action.label, error);
     else
         statusBar()->showMessage(tr("Started %1").arg(action.label), 6000);
 }

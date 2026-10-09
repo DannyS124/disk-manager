@@ -4,6 +4,7 @@
 #include "addons.h"
 
 #include "format.h"
+#include "signature.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -28,10 +29,58 @@ const QStringList kPlaceholders = {
     QStringLiteral("device"), QStringLiteral("disk"), QStringLiteral("mountpoint"), QStringLiteral("label"),
     QStringLiteral("uuid"), QStringLiteral("fstype"), QStringLiteral("size"), QStringLiteral("model"), QStringLiteral("home"),
 };
+// Placeholders whose values come from the drive, so whoever made the drive picked them.
+const QStringList kDriveValues = {
+    QStringLiteral("mountpoint"), QStringLiteral("label"), QStringLiteral("uuid"), QStringLiteral("fstype"), QStringLiteral("model"),
+};
+
+// Programs that change what an action can do. Every part of the command is checked, so
+// "env sudo ..." or "konsole -e bash ..." count too.
+const QStringList kAdmin = {
+    QStringLiteral("pkexec"), QStringLiteral("sudo"), QStringLiteral("sudoedit"), QStringLiteral("doas"), QStringLiteral("run0"),
+    QStringLiteral("su"), QStringLiteral("kdesu"), QStringLiteral("kdesudo"), QStringLiteral("gksu"), QStringLiteral("gksudo"),
+    QStringLiteral("lxsu"), QStringLiteral("lxsudo"), QStringLiteral("lxqt-sudo"), QStringLiteral("beesu"),
+    QStringLiteral("systemd-run"), QStringLiteral("machinectl"),
+};
+const QStringList kAnything = {
+    // shells
+    QStringLiteral("sh"), QStringLiteral("bash"), QStringLiteral("zsh"), QStringLiteral("fish"), QStringLiteral("dash"),
+    QStringLiteral("ksh"), QStringLiteral("mksh"), QStringLiteral("oksh"), QStringLiteral("csh"), QStringLiteral("tcsh"),
+    QStringLiteral("yash"), QStringLiteral("nu"), QStringLiteral("elvish"), QStringLiteral("xonsh"), QStringLiteral("pwsh"),
+    QStringLiteral("busybox"), QStringLiteral("toybox"),
+    // programs that run a command line or a script handed to them
+    QStringLiteral("env"), QStringLiteral("xargs"), QStringLiteral("watch"), QStringLiteral("script"), QStringLiteral("flock"),
+    QStringLiteral("parallel"), QStringLiteral("expect"), QStringLiteral("awk"), QStringLiteral("gawk"), QStringLiteral("mawk"),
+    QStringLiteral("nawk"), QStringLiteral("node"), QStringLiteral("nodejs"), QStringLiteral("deno"), QStringLiteral("bun"),
+    QStringLiteral("irb"), QStringLiteral("Rscript"), QStringLiteral("julia"), QStringLiteral("java"),
+};
+const QStringList kNetwork = {
+    QStringLiteral("curl"), QStringLiteral("wget"), QStringLiteral("wget2"), QStringLiteral("aria2c"), QStringLiteral("axel"),
+    QStringLiteral("ssh"), QStringLiteral("scp"), QStringLiteral("sftp"), QStringLiteral("nc"), QStringLiteral("ncat"),
+    QStringLiteral("netcat"), QStringLiteral("socat"), QStringLiteral("telnet"), QStringLiteral("ftp"), QStringLiteral("lftp"),
+    QStringLiteral("rclone"),
+};
+const QStringList kDeletes = {
+    QStringLiteral("rm"), QStringLiteral("rmdir"), QStringLiteral("shred"), QStringLiteral("srm"), QStringLiteral("dd"),
+    QStringLiteral("wipefs"), QStringLiteral("blkdiscard"), QStringLiteral("truncate"), QStringLiteral("mkswap"),
+    QStringLiteral("mke2fs"), QStringLiteral("sgdisk"), QStringLiteral("sfdisk"), QStringLiteral("fdisk"), QStringLiteral("gdisk"),
+    QStringLiteral("cfdisk"), QStringLiteral("parted"), QStringLiteral("cryptsetup"),
+};
+
+// The key that signs the online add-on list. It's on the maintainer's PC only, so the
+// list can't be changed by someone who gets into the GitHub account.
+const QStringList kCatalogKeys = {
+    QStringLiteral("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDQf3ECvgg/mFU909xd37joeI3/yW1X1v1gYYwcIfhir DannyS124"),
+};
 
 QSettings settings()
 {
     return QSettings(QStringLiteral("diskforge"), QStringLiteral("addons"));
+}
+
+QString hashText(const Addon &addon)
+{
+    return QString::fromLatin1(addon.fileHash.toHex());
 }
 
 QString firstMount(const Disk &disk, const Volume *volume)
@@ -86,6 +135,15 @@ bool programExists(const QString &name)
     return QProcess::execute(QStringLiteral("flatpak-spawn"), {QStringLiteral("--host"), QStringLiteral("test"), QStringLiteral("-x"), path}) == 0;
 }
 
+// Runs a command on the host and waits, for quick checks.
+int runOnHost(QStringList command)
+{
+    if (inFlatpak())
+        return QProcess::execute(QStringLiteral("flatpak-spawn"), QStringList{QStringLiteral("--host")} + command);
+    const QString program = command.takeFirst();
+    return QProcess::execute(program, command);
+}
+
 QStringList inTerminal(const QStringList &argv)
 {
     const QString preferred = qEnvironmentVariable("TERMINAL");
@@ -108,6 +166,84 @@ QStringList inTerminal(const QStringList &argv)
     return {};
 }
 
+// How a placeholder's value is described when it can't be used.
+QString what(const QString &placeholder)
+{
+    if (placeholder == QLatin1String("label"))
+        return QObject::tr("name");
+    if (placeholder == QLatin1String("model"))
+        return QObject::tr("model name");
+    if (placeholder == QLatin1String("uuid"))
+        return QObject::tr("UUID");
+    if (placeholder == QLatin1String("fstype"))
+        return QObject::tr("file system type");
+    if (placeholder == QLatin1String("mountpoint"))
+        return QObject::tr("folder");
+    return QLatin1Char('{') + placeholder + QLatin1Char('}');
+}
+
+// Fills in placeholders. For command arguments (not the confirm text), a value that
+// begins an argument can't begin with "-", or the program could read it as an option.
+QStringList fill(const QStringList &args, const Disk &disk, const Volume *v, bool arguments, QString *error)
+{
+    auto value = [&](const QString &name) -> QString {
+        if (name == QLatin1String("device"))
+            return v ? v->device : disk.device;
+        if (name == QLatin1String("disk"))
+            return disk.device;
+        if (name == QLatin1String("mountpoint"))
+            return firstMount(disk, v);
+        if (name == QLatin1String("label"))
+            return v ? (!v->label.isEmpty() ? v->label : !v->partName.isEmpty() ? v->partName : shortDevice(v->device)) : disk.model;
+        if (name == QLatin1String("uuid"))
+            return v ? v->uuid : QString();
+        if (name == QLatin1String("fstype"))
+            return v ? v->effectiveFsType() : QString();
+        if (name == QLatin1String("size"))
+            return QString::number(v ? v->size : disk.size);
+        if (name == QLatin1String("model"))
+            return disk.model;
+        if (name == QLatin1String("home"))
+            return QDir::homePath();
+        return {};
+    };
+    auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return QStringList();
+    };
+    static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
+    QStringList out;
+    for (const QString &arg : args) {
+        QString result;
+        qsizetype last = 0;
+        for (auto it = placeholder.globalMatch(arg); it.hasNext();) {
+            const QRegularExpressionMatch m = it.next();
+            const QString name = m.captured(1);
+            QString v = value(name);
+            if (v.isEmpty())
+                return fail(name == QLatin1String("mountpoint") ? QObject::tr("Mount it first") : QObject::tr("{%1} isn't available here").arg(name));
+            if (kDriveValues.contains(name)) {
+                // Like UDisks does for folder names under /run/media: a name is one folder name.
+                if (name != QLatin1String("mountpoint"))
+                    v.replace(QLatin1Char('/'), QLatin1Char('_'));
+                if (hasHiddenCharacters(v))
+                    return fail(QObject::tr("The drive's %1 has hidden characters in it, so this wasn't run. Rename the drive first.").arg(what(name)));
+                if (v == QLatin1String(".") || v == QLatin1String(".."))
+                    return fail(QObject::tr("The drive's %1 is \"%2\", which would point to another folder, so this wasn't run. "
+                                            "Rename the drive first.").arg(what(name), v));
+            }
+            if (arguments && m.capturedStart() == 0 && v.startsWith(QLatin1Char('-')))
+                return fail(QObject::tr("The drive's %1 starts with \"-\", so the program could take it for an option. "
+                                        "It wasn't run; rename the drive first.").arg(what(name)));
+            result += arg.mid(last, m.capturedStart() - last) + v;
+            last = m.capturedEnd();
+        }
+        out << result + arg.mid(last);
+    }
+    return out;
+}
+
 } // namespace
 
 QString Addons::userDir()
@@ -115,9 +251,14 @@ QString Addons::userDir()
     return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/diskforge/addons");
 }
 
+QString Addons::systemDir()
+{
+    return QStringLiteral("/usr/share/diskforge/addons");
+}
+
 QStringList Addons::searchDirs()
 {
-    return {userDir(), QStringLiteral("/usr/share/diskforge/addons")};
+    return {userDir(), systemDir()};
 }
 
 Addon Addons::parse(const QString &file)
@@ -136,6 +277,7 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
 {
     Addon a;
     a.file = file;
+    a.fileHash = QCryptographicHash::hash(json, QCryptographicHash::Sha256);
     QJsonParseError parseError;
     const QJsonObject o = QJsonDocument::fromJson(json, &parseError).object();
     if (parseError.error != QJsonParseError::NoError) {
@@ -156,18 +298,20 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
     for (const QJsonValue &value : o.value(QStringLiteral("actions")).toArray()) {
         const QJsonObject j = value.toObject();
         AddonAction act;
+        act.index = int(actions.size());
         act.label = j.value(QStringLiteral("label")).toString();
         act.icon = j.value(QStringLiteral("icon")).toString();
         act.appliesTo = j.value(QStringLiteral("applies_to")).toString(QStringLiteral("volume"));
         act.terminal = j.value(QStringLiteral("terminal")).toBool();
         act.confirm = j.value(QStringLiteral("confirm")).toString();
         act.systemDisks = j.value(QStringLiteral("system_disks")).toBool();
+        act.lookOnly = j.value(QStringLiteral("look_only")).toBool();
         for (const QJsonValue &w : j.value(QStringLiteral("when")).toArray())
             act.when << w.toString();
         for (const QJsonValue &c : j.value(QStringLiteral("command")).toArray())
             act.command << c.toString();
 
-        if (act.label.isEmpty() || act.command.isEmpty()) {
+        if (act.label.isEmpty() || act.command.isEmpty() || act.command.first().isEmpty()) {
             a.error = QObject::tr("Every action needs a \"label\" and a \"command\"");
             return a;
         }
@@ -182,13 +326,28 @@ Addon Addons::parseData(const QByteArray &json, const QString &file)
             }
         }
         static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
-        for (const QString &arg : act.command) {
-            for (auto it = placeholder.globalMatch(arg); it.hasNext();) {
+        for (qsizetype i = 0; i < act.command.size(); ++i) {
+            for (auto it = placeholder.globalMatch(act.command.at(i)); it.hasNext();) {
                 const QString name = it.next().captured(1);
                 if (!kPlaceholders.contains(name)) {
                     a.error = QObject::tr("Unknown placeholder {%1}").arg(name);
                     return a;
                 }
+                // The program itself can't come from the drive (like {mountpoint}/run.sh).
+                if (i == 0 && name != QLatin1String("home")) {
+                    a.error = QObject::tr("The program to run can't come from the drive: only {home} can be used in the first "
+                                          "part of \"command\"");
+                    return a;
+                }
+            }
+        }
+        if (act.lookOnly) {
+            AddonAction unboxed = act;
+            unboxed.lookOnly = false;
+            const QString admin = risks(unboxed).admin;
+            if (!admin.isEmpty()) {
+                a.error = QObject::tr("\"look_only\" actions can't use %1: the sandbox doesn't allow admin power").arg(admin);
+                return a;
             }
         }
         actions << act;
@@ -205,8 +364,12 @@ void Addons::load()
 {
     m_addons.clear();
     QStringList seen;
-    const QSettings s = settings();
+    QSettings s = settings();
+    // Until 0.5.0, trust was remembered per command. It's per add-on file now, so the old
+    // entries go and each action asks once more.
+    s.remove(QStringLiteral("trusted"));
     for (const QString &dir : searchDirs()) {
+        const bool system = dir == systemDir();
         for (const QFileInfo &sub : QDir(dir).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
             const QString file = sub.filePath() + QStringLiteral("/addon.json");
             if (!QFileInfo::exists(file))
@@ -216,6 +379,10 @@ void Addons::load()
                 continue; // the user's copy wins over a system-wide one
             seen << a.id;
             a.enabled = s.value(QStringLiteral("enabled/") + a.id, true).toBool();
+            a.systemWide = system;
+            // DiskForge notes the checksum of every add-on it installs. One that doesn't
+            // match was put there (or changed) some other way.
+            a.outside = !system && s.value(QStringLiteral("installed/") + a.id).toString() != hashText(a);
             m_addons << a;
         }
     }
@@ -231,9 +398,21 @@ void Addons::setEnabled(const QString &id, bool enabled)
     }
 }
 
+void Addons::accept(const QString &id)
+{
+    QSettings s = settings();
+    for (Addon &a : m_addons) {
+        if (a.id == id && !a.systemWide && a.error.isEmpty()) {
+            s.setValue(QStringLiteral("installed/") + a.id, hashText(a));
+            a.outside = false;
+        }
+    }
+}
+
 bool Addons::applies(const AddonAction &action, const Disk &disk, const Volume *volume, bool freeSpace)
 {
-    if (disk.isSystem && !action.systemDisks)
+    // On the disk the system runs from, only look-only actions (in the sandbox) are offered.
+    if (disk.isSystem && !(action.systemDisks && action.lookOnly))
         return false;
     const QString &to = action.appliesTo;
     const bool target = to == QLatin1String("any") || (to == QLatin1String("volume") && volume)
@@ -263,67 +442,85 @@ QVector<QPair<const Addon *, const AddonAction *>> Addons::actionsFor(const Disk
 
 QStringList Addons::expand(const QStringList &args, const Disk &disk, const Volume *v, QString *error)
 {
-    auto value = [&](const QString &name) -> QString {
-        if (name == QLatin1String("device"))
-            return v ? v->device : disk.device;
-        if (name == QLatin1String("disk"))
-            return disk.device;
-        if (name == QLatin1String("mountpoint"))
-            return firstMount(disk, v);
-        if (name == QLatin1String("label"))
-            return v ? (!v->label.isEmpty() ? v->label : !v->partName.isEmpty() ? v->partName : shortDevice(v->device)) : disk.model;
-        if (name == QLatin1String("uuid"))
-            return v ? v->uuid : QString();
-        if (name == QLatin1String("fstype"))
-            return v ? v->effectiveFsType() : QString();
-        if (name == QLatin1String("size"))
-            return QString::number(v ? v->size : disk.size);
-        if (name == QLatin1String("model"))
-            return disk.model;
-        if (name == QLatin1String("home"))
-            return QDir::homePath();
-        return {};
-    };
-    static const QRegularExpression placeholder(QStringLiteral("\\{([a-z]+)\\}"));
-    QStringList out;
-    for (const QString &arg : args) {
-        QString result;
-        qsizetype last = 0;
-        for (auto it = placeholder.globalMatch(arg); it.hasNext();) {
-            const QRegularExpressionMatch m = it.next();
-            const QString v = value(m.captured(1));
-            if (v.isEmpty()) {
-                if (error)
-                    *error = m.captured(1) == QLatin1String("mountpoint") ? QObject::tr("Mount it first")
-                                                                          : QObject::tr("{%1} isn't available here").arg(m.captured(1));
-                return {};
-            }
-            result += arg.mid(last, m.capturedStart() - last) + v;
-            last = m.capturedEnd();
-        }
-        out << result + arg.mid(last);
-    }
-    return out;
+    return fill(args, disk, v, true, error);
 }
 
-namespace {
-QString trustKey(const Addon &addon, const AddonAction &action)
+QString Addons::expandText(const QString &text, const Disk &disk, const Volume *v, QString *error)
 {
-    const QByteArray what = (addon.id + QLatin1Char('\n') + action.label + QLatin1Char('\n') + action.command.join(QChar(0))
-                             + (action.terminal ? QStringLiteral("\nterminal") : QString())).toUtf8();
-    return QStringLiteral("trusted/") + QString::fromLatin1(QCryptographicHash::hash(what, QCryptographicHash::Sha256).toHex());
+    return fill({text}, disk, v, false, error).value(0);
 }
-} // namespace
+
+AddonRisks Addons::risks(const AddonAction &action)
+{
+    AddonRisks r;
+    if (action.lookOnly)
+        return r; // the sandbox stops all of it
+    static const QRegularExpression versioned(QStringLiteral("^(python|pypy|lua|luajit|perl|php|ruby|tclsh|wish)[0-9.]*$"));
+    for (const QString &part : action.command) {
+        const QString name = part.section(QLatin1Char('/'), -1);
+        if (kAdmin.contains(name)) {
+            if (r.admin.isEmpty())
+                r.admin = name;
+        } else if (kAnything.contains(name) || versioned.match(name).hasMatch()) {
+            if (r.anything.isEmpty())
+                r.anything = name;
+        } else if (kNetwork.contains(name)) {
+            if (r.network.isEmpty())
+                r.network = name;
+        } else if (kDeletes.contains(name) || name.startsWith(QLatin1String("mkfs"))) {
+            if (r.deletes.isEmpty())
+                r.deletes = name;
+        }
+    }
+    if (r.deletes.isEmpty() && action.command.contains(QLatin1String("-delete")))
+        r.deletes = QStringLiteral("find -delete");
+    return r;
+}
 
 bool Addons::isTrusted(const Addon &addon, const AddonAction &action)
 {
-    return settings().value(trustKey(addon, action)).toBool();
+    // Admin power, a shell, or an add-on that turned up from outside: always ask.
+    if (addon.outside || risks(action).alwaysAsk())
+        return false;
+    return settings().value(QStringLiteral("allowed/%1-%2").arg(hashText(addon)).arg(action.index)).toBool();
 }
 
 void Addons::trust(const Addon &addon, const AddonAction &action)
 {
     QSettings s = settings();
-    s.setValue(trustKey(addon, action), true);
+    s.setValue(QStringLiteral("allowed/%1-%2").arg(hashText(addon)).arg(action.index), true);
+}
+
+QStringList Addons::sandboxed(const QStringList &argv)
+{
+    // Everything read-only, with its own empty /tmp and /run, so the sockets other programs
+    // listen on (the session bus, Wayland, X11, ssh-agent...) aren't there. No network, a
+    // /dev without the disks, its own process list, and no way to gain privileges. Mounted
+    // drives under /run/media stay readable.
+    return QStringList{
+        QStringLiteral("bwrap"),
+        QStringLiteral("--ro-bind"), QStringLiteral("/"), QStringLiteral("/"),
+        QStringLiteral("--dev"), QStringLiteral("/dev"),
+        QStringLiteral("--proc"), QStringLiteral("/proc"),
+        QStringLiteral("--tmpfs"), QStringLiteral("/tmp"),
+        QStringLiteral("--tmpfs"), QStringLiteral("/run"),
+        QStringLiteral("--ro-bind-try"), QStringLiteral("/run/media"), QStringLiteral("/run/media"),
+        QStringLiteral("--ro-bind-try"), QStringLiteral("/run/udev"), QStringLiteral("/run/udev"),
+        QStringLiteral("--unshare-all"),
+        QStringLiteral("--new-session"),
+        QStringLiteral("--"),
+    } + argv;
+}
+
+QStringList Addons::commandLine(const AddonAction &action, const QStringList &argv, QString *error)
+{
+    QStringList command = action.lookOnly ? sandboxed(argv) : argv;
+    if (action.terminal) {
+        command = inTerminal(command);
+        if (command.isEmpty() && error)
+            *error = QObject::tr("No terminal program found (install konsole, kitty or xterm)");
+    }
+    return command;
 }
 
 bool Addons::run(const AddonAction &action, const QStringList &argv, QString *error)
@@ -334,17 +531,28 @@ bool Addons::run(const AddonAction &action, const QStringList &argv, QString *er
                                  "flatpak override --user --talk-name=org.freedesktop.Flatpak " APP_ID);
         return false;
     }
-    QStringList full = action.terminal ? inTerminal(argv) : argv;
-    if (full.isEmpty()) {
-        if (error)
-            *error = QObject::tr("No terminal program found (install konsole, kitty or xterm)");
-        return false;
-    }
     if (!programExists(argv.first())) {
         if (error)
             *error = QObject::tr("%1 isn't installed").arg(argv.first());
         return false;
     }
+    if (action.lookOnly) {
+        if (!programExists(QStringLiteral("bwrap"))) {
+            if (error)
+                *error = QObject::tr("Look-only add-ons run in a sandbox made with bubblewrap, which isn't installed.\n"
+                                     "Install it with: sudo pacman -S bubblewrap");
+            return false;
+        }
+        // Some kernels don't allow sandboxes for normal users; then it doesn't run at all.
+        if (runOnHost(sandboxed({QStringLiteral("true")})) != 0) {
+            if (error)
+                *error = QObject::tr("The sandbox for look-only add-ons doesn't work on this system, so it wasn't run.");
+            return false;
+        }
+    }
+    QStringList full = commandLine(action, argv, error);
+    if (full.isEmpty())
+        return false;
     if (inFlatpak())
         full.prepend(QStringLiteral("--host"));
     const QString program = inFlatpak() ? QStringLiteral("flatpak-spawn") : full.takeFirst();
@@ -356,27 +564,24 @@ bool Addons::run(const AddonAction &action, const QStringList &argv, QString *er
     return true;
 }
 
-bool Addons::install(const QString &file, QString *error)
+bool Addons::install(const QByteArray &data, QString *error)
 {
-    const Addon a = parse(file);
+    const Addon a = parseData(data, QString());
     if (!a.error.isEmpty()) {
         if (error)
             *error = a.error;
         return false;
     }
     const QString dir = userDir() + QLatin1Char('/') + a.id;
-    if (!QDir().mkpath(dir)) {
+    QSaveFile f(dir + QStringLiteral("/addon.json"));
+    if (!QDir().mkpath(dir) || !f.open(QIODevice::WriteOnly) || f.write(data) != data.size() || !f.commit()) {
         if (error)
-            *error = QObject::tr("Couldn't create %1").arg(dir);
+            *error = QObject::tr("Couldn't save it in %1").arg(dir);
         return false;
     }
-    const QString target = dir + QStringLiteral("/addon.json");
-    QFile::remove(target);
-    if (!QFile::copy(file, target)) {
-        if (error)
-            *error = QObject::tr("Couldn't copy it to %1").arg(dir);
-        return false;
-    }
+    // Noted, so it isn't flagged as added from outside.
+    QSettings s = settings();
+    s.setValue(QStringLiteral("installed/") + a.id, hashText(a));
     return true;
 }
 
@@ -385,12 +590,34 @@ QString Addons::catalogUrl()
     return QStringLiteral("https://raw.githubusercontent.com/DannyS124/diskforge-addons/main/catalog.json");
 }
 
+QString Addons::catalogSignatureUrl()
+{
+    return catalogUrl() + QStringLiteral(".sig");
+}
+
+QStringList Addons::catalogKeys()
+{
+    return kCatalogKeys;
+}
+
 bool Addons::isPinnedUrl(const QString &url)
 {
     static const QRegularExpression pinned(
         QStringLiteral("^https://raw\\.githubusercontent\\.com/DannyS124/diskforge-addons/[0-9a-f]{40}/[A-Za-z0-9._/-]+\\.json$"));
     // No "..": the path has to stay inside that commit of the repository.
     return pinned.match(url).hasMatch() && !url.contains(QLatin1String(".."));
+}
+
+QVector<CatalogEntry> Addons::parseSignedCatalog(const QByteArray &json, const QByteArray &sig, const QStringList &keys, QString *error)
+{
+    QString why;
+    if (json.size() > kMaxDownload || sig.size() > kMaxDownload
+        || !signature::verify(json, sig, QString::fromLatin1(kCatalogNamespace), keys, &why)) {
+        *error = QObject::tr("The add-on list didn't pass the signature check, so it wasn't used (%1). If it was just updated, "
+                             "try again in a few minutes.").arg(why.isEmpty() ? QObject::tr("too big") : why);
+        return {};
+    }
+    return parseCatalog(json, error);
 }
 
 QVector<CatalogEntry> Addons::parseCatalog(const QByteArray &json, QString *error)
@@ -445,8 +672,7 @@ bool Addons::installVerified(const QByteArray &data, const CatalogEntry &entry, 
         *error = QObject::tr("The download doesn't match the list's checksum, so it wasn't installed");
         return false;
     }
-    const QString dir = userDir() + QLatin1Char('/') + entry.id;
-    const Addon a = parseData(data, dir + QStringLiteral("/addon.json"));
+    const Addon a = parseData(data, QString());
     if (!a.error.isEmpty()) {
         *error = a.error;
         return false;
@@ -455,17 +681,12 @@ bool Addons::installVerified(const QByteArray &data, const CatalogEntry &entry, 
         *error = QObject::tr("The add-on calls itself \"%1\", not \"%2\"").arg(a.id, entry.id);
         return false;
     }
-    QSaveFile f(dir + QStringLiteral("/addon.json"));
-    if (!QDir().mkpath(dir) || !f.open(QIODevice::WriteOnly) || f.write(data) != data.size() || !f.commit()) {
-        *error = QObject::tr("Couldn't save it in %1").arg(dir);
-        return false;
-    }
-    return true;
+    return install(data, error);
 }
 
 bool Addons::remove(const Addon &addon, QString *error)
 {
-    if (!addon.file.startsWith(userDir())) {
+    if (addon.systemWide || !addon.file.startsWith(userDir())) {
         if (error)
             *error = QObject::tr("This add-on was installed by a package; remove it with pacman");
         return false;
@@ -475,5 +696,8 @@ bool Addons::remove(const Addon &addon, QString *error)
             *error = QObject::tr("Couldn't delete %1").arg(QFileInfo(addon.file).path());
         return false;
     }
+    QSettings s = settings();
+    s.remove(QStringLiteral("installed/") + addon.id);
+    s.remove(QStringLiteral("enabled/") + addon.id);
     return true;
 }

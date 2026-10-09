@@ -1,16 +1,15 @@
 {
   "id": "smart-report",
   "name": "Full SMART Report",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Danny S",
-  "description": "Shows everything smartctl knows about a drive. Needs smartmontools. Read-only, so it's also offered for the system disk.",
+  "description": "Shows everything smartctl knows about a drive. Needs smartmontools. It uses sudo, so it asks for your password, and DiskForge asks before every run.",
   "actions": [
     {
       "label": "Full SMART Report",
       "icon": "dialog-information",
       "applies_to": "disk",
       "when": ["has-health"],
-      "system_disks": true,
       "terminal": true,
       "command": ["sudo", "smartctl", "-x", "{disk}"]
     }

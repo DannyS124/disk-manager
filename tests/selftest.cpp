@@ -33,6 +33,7 @@
 
 #include <QFileInfo>
 #include <QRandomGenerator>
+#include <QStandardPaths>
 
 #include <functional>
 #include <unistd.h>
@@ -426,6 +427,11 @@ void badSectorTests()
 // Add-on parsing, matching and placeholder filling. Touches no disks.
 void addonTests()
 {
+    // Keep away from the real add-on folder and settings.
+    QTemporaryDir home;
+    qputenv("XDG_DATA_HOME", QFile::encodeName(home.filePath(QStringLiteral("data"))));
+    qputenv("XDG_CONFIG_HOME", QFile::encodeName(home.filePath(QStringLiteral("config"))));
+
     const QString examples = QStringLiteral(SOURCE_DIR "/examples/addons");
     QMap<QString, Addon> byId;
     for (const QString &name : QDir(examples).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
@@ -449,6 +455,14 @@ void addonTests()
     broken(R"({"id":"x","actions":[{"label":"L","when":["sometimes"],"command":["echo"]}]})", "Unknown condition", QStringLiteral("unknown condition is rejected"));
     broken(R"({"id":"x","actions":[]})", "No actions", QStringLiteral("add-on without actions is rejected"));
     broken("not json", "JSON", QStringLiteral("invalid JSON is rejected"));
+    broken(R"({"id":"x","actions":[{"label":"L","command":["{mountpoint}/run.sh"]}]})", "program to run",
+           QStringLiteral("a program on the drive can't be the command"));
+    broken(R"({"id":"x","actions":[{"label":"L","look_only":true,"command":["pkexec","ls"]}]})", "look_only",
+           QStringLiteral("look-only actions can't use admin power"));
+    {
+        const Addon a = Addons::parseData(R"({"id":"x","actions":[{"label":"L","command":["{home}/bin/tool","{device}"]}]})", QString());
+        report(a.error.isEmpty(), QStringLiteral("a program in your home folder is fine"), a.error);
+    }
 
     Disk usb;
     usb.device = QStringLiteral("/dev/sdz");
@@ -474,8 +488,13 @@ void addonTests()
     Disk system = usb;
     system.isSystem = true;
     system.health.state = Health::State::Healthy;
-    report(Addons::applies(smart, system, nullptr, false), QStringLiteral("smart-report is offered on the system disk (read-only)"));
+    report(!Addons::applies(smart, system, nullptr, false), QStringLiteral("smart-report (sudo) isn't offered on the system disk"));
     report(!Addons::applies(backup, system, &system.volumes[0], false), QStringLiteral("other add-ons aren't offered on the system disk"));
+    AddonAction look = terminal;
+    look.systemDisks = true;
+    report(!Addons::applies(look, system, &system.volumes[0], false), QStringLiteral("system_disks alone isn't enough for the system disk"));
+    look.lookOnly = true;
+    report(Addons::applies(look, system, &system.volumes[0], false), QStringLiteral("a look-only action with system_disks is offered there"));
 
     QString error;
     const QStringList argv = Addons::expand(backup.command, usb, &usb.volumes[0], &error);
@@ -485,6 +504,163 @@ void addonTests()
     error.clear();
     report(Addons::expand(backup.command, usb, &unmounted, &error).isEmpty() && error.contains(QLatin1String("Mount")),
            QStringLiteral("{mountpoint} on an unmounted volume asks to mount first"), error);
+
+    // A drive's name can't steer a command: no options, no other folders, nothing hidden.
+    auto named = [&](const QString &label) {
+        Disk d = usb;
+        d.volumes[0].label = label;
+        return d;
+    };
+    Disk sneaky = named(QStringLiteral("../.config/autostart"));
+    error.clear();
+    QStringList filled = Addons::expand(backup.command, sneaky, &sneaky.volumes[0], &error);
+    report(filled.value(5) == QDir::homePath() + QStringLiteral("/Backups/.._.config_autostart/"),
+           QStringLiteral("a name with slashes stays one folder inside ~/Backups"), filled.value(5) + error);
+    for (const QString &bad : {QStringLiteral(".."), QStringLiteral(".")}) {
+        Disk d = named(bad);
+        error.clear();
+        report(Addons::expand(backup.command, d, &d.volumes[0], &error).isEmpty() && error.contains(QLatin1String("another folder")),
+               QStringLiteral("a drive named \"%1\" is refused").arg(bad), error);
+    }
+    Disk dash = named(QStringLiteral("--delete"));
+    error.clear();
+    report(Addons::expand({QStringLiteral("tool"), QStringLiteral("{label}")}, dash, &dash.volumes[0], &error).isEmpty()
+               && error.contains(QLatin1String("option")),
+           QStringLiteral("a name starting with - can't become an option"), error);
+    error.clear();
+    filled = Addons::expand({QStringLiteral("tool"), QStringLiteral("--name={label}")}, dash, &dash.volumes[0], &error);
+    report(filled.value(1) == QLatin1String("--name=--delete"), QStringLiteral("but it's fine after the add-on's own option"), filled.join(QLatin1Char(' ')) + error);
+    error.clear();
+    report(Addons::expandText(QStringLiteral("{label} will be copied"), dash, &dash.volumes[0], &error) == QLatin1String("--delete will be copied"),
+           QStringLiteral("and fine in the confirm question"), error);
+    for (const QString &hidden : {QStringLiteral("SATA\u202E005"), QStringLiteral("two\nlines"), QStringLiteral("zero\u200Bwidth")}) {
+        Disk d = named(hidden);
+        error.clear();
+        report(Addons::expand(backup.command, d, &d.volumes[0], &error).isEmpty() && error.contains(QLatin1String("hidden")),
+               QStringLiteral("a name with hidden characters is refused (%1)").arg(QString(hidden).replace(QLatin1Char('\n'), QLatin1Char(' '))), error);
+    }
+    Disk mountedOdd = usb;
+    mountedOdd.volumes[0].mountPoints = {QStringLiteral("/run/media/me/a\nb")};
+    error.clear();
+    report(Addons::expand(backup.command, mountedOdd, &mountedOdd.volumes[0], &error).isEmpty(),
+           QStringLiteral("a mount folder with a line break is refused"), error);
+    report(cleanName(QStringLiteral("SATA\u202E005\u200B")) == QLatin1String("SATA005") && cleanName(QStringLiteral("a\tb")) == QLatin1String("a b")
+               && cleanName(QStringLiteral("Täst 💾")) == QStringLiteral("Täst 💾"),
+           QStringLiteral("cleanName drops invisible characters and keeps the rest"));
+
+    // What each command could do.
+    auto risksOf = [](const QStringList &command, bool lookOnly = false) {
+        AddonAction act;
+        act.command = command;
+        act.lookOnly = lookOnly;
+        return Addons::risks(act);
+    };
+    report(risksOf({QStringLiteral("pkexec"), QStringLiteral("fsck"), QStringLiteral("{device}")}).admin == QLatin1String("pkexec"),
+           QStringLiteral("pkexec counts as admin power"));
+    report(risksOf({QStringLiteral("konsole"), QStringLiteral("-e"), QStringLiteral("/usr/bin/sudo"), QStringLiteral("x")}).admin == QLatin1String("sudo"),
+           QStringLiteral("so does sudo further along the command"));
+    report(risksOf({QStringLiteral("bash"), QStringLiteral("-c"), QStringLiteral("x")}).anything == QLatin1String("bash")
+               && risksOf({QStringLiteral("/usr/bin/python3.13"), QStringLiteral("x.py")}).anything == QLatin1String("python3.13")
+               && !risksOf({QStringLiteral("env"), QStringLiteral("x")}).anything.isEmpty(),
+           QStringLiteral("shells and interpreters can do anything"));
+    report(risksOf({QStringLiteral("curl"), QStringLiteral("x")}).network == QLatin1String("curl") && risksOf({QStringLiteral("rm"), QStringLiteral("x")}).deletes == QLatin1String("rm")
+               && risksOf({QStringLiteral("mkfs.ext4"), QStringLiteral("x")}).deletes == QLatin1String("mkfs.ext4")
+               && !risksOf({QStringLiteral("find"), QStringLiteral("."), QStringLiteral("-delete")}).deletes.isEmpty(),
+           QStringLiteral("network and deleting programs are noticed"));
+    report(!risksOf({QStringLiteral("du"), QStringLiteral("-h")}).any() && !risksOf({QStringLiteral("bash"), QStringLiteral("-c"), QStringLiteral("x")}, true).any(),
+           QStringLiteral("plain tools and look-only actions have no warnings"));
+    report(risksOf({QStringLiteral("sudo"), QStringLiteral("x")}).alwaysAsk() && risksOf({QStringLiteral("sh"), QStringLiteral("x")}).alwaysAsk()
+               && !risksOf({QStringLiteral("rm"), QStringLiteral("x")}).alwaysAsk(),
+           QStringLiteral("admin power and shells always ask"));
+
+    // Installing notes the file; one that turns up or changes some other way is flagged,
+    // and trust is tied to the exact file.
+    const QByteArray mine = R"({"id":"mine","name":"Mine","actions":[{"label":"Sizes","command":["du","-sh","{mountpoint}"]}]})";
+    error.clear();
+    report(Addons::install(mine, &error), QStringLiteral("an add-on installs"), error);
+    Addons addons;
+    addons.load();
+    auto find = [&addons](const QString &id) {
+        for (const Addon &a : addons.all()) {
+            if (a.id == id)
+                return a;
+        }
+        return Addon();
+    };
+    report(find(QStringLiteral("mine")).id == QLatin1String("mine") && !find(QStringLiteral("mine")).outside,
+           QStringLiteral("one installed through DiskForge isn't flagged"));
+    Addon a = find(QStringLiteral("mine"));
+    report(!Addons::isTrusted(a, a.actions[0]), QStringLiteral("a new action isn't trusted yet"));
+    Addons::trust(a, a.actions[0]);
+    report(Addons::isTrusted(a, a.actions[0]), QStringLiteral("after 'Don't ask again' it is"));
+
+    const QString planted = Addons::userDir() + QStringLiteral("/planted/addon.json");
+    QDir().mkpath(QFileInfo(planted).path());
+    auto write = [](const QString &file, const QByteArray &data) {
+        QFile f(file);
+        return f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(data) == data.size();
+    };
+    write(planted, R"({"id":"planted","name":"Planted","actions":[{"label":"Hi","command":["echo","hi"]}]})");
+    const QString mineFile = Addons::userDir() + QStringLiteral("/mine/addon.json");
+    write(mineFile, QByteArray(mine).replace("\"Mine\"", "\"Mine 2\""));
+    addons.load();
+    report(find(QStringLiteral("planted")).outside, QStringLiteral("an add-on copied in by hand is flagged as added from outside"));
+    a = find(QStringLiteral("mine"));
+    report(a.outside && !Addons::isTrusted(a, a.actions[0]), QStringLiteral("a changed add-on is flagged and asks again"));
+    addons.accept(QStringLiteral("planted"));
+    addons.load();
+    report(!find(QStringLiteral("planted")).outside, QStringLiteral("'I Added It' clears the flag"));
+    AddonAction shell = a.actions[0];
+    shell.command = {QStringLiteral("sh"), QStringLiteral("-c"), QStringLiteral("true")};
+    Addons::trust(a, shell);
+    a.outside = false;
+    report(!Addons::isTrusted(a, shell), QStringLiteral("a shell action is never trusted for good"));
+
+    // The look-only sandbox: really read-only, and other programs' sockets aren't there.
+    AddonAction looking;
+    looking.lookOnly = true;
+    QStringList wrapped = Addons::commandLine(looking, {QStringLiteral("du"), QStringLiteral("-sh")}, &error);
+    report(wrapped.value(0) == QLatin1String("bwrap") && wrapped.endsWith(QLatin1String("-sh")), QStringLiteral("a look-only action runs in the sandbox"),
+           wrapped.join(QLatin1Char(' ')));
+    looking.terminal = true;
+    wrapped = Addons::commandLine(looking, {QStringLiteral("du"), QStringLiteral("-sh")}, &error);
+    if (!wrapped.isEmpty())
+        report(wrapped.indexOf(QLatin1String("bwrap")) > 0, QStringLiteral("inside the terminal, not around it"), wrapped.join(QLatin1Char(' ')));
+    if (QStandardPaths::findExecutable(QStringLiteral("bwrap")).isEmpty()) {
+        out << "SKIP  bwrap isn't installed, so the sandbox itself isn't tested" << Qt::endl;
+        return;
+    }
+    auto inSandbox = [](const QString &script) {
+        QStringList command = Addons::sandboxed({QStringLiteral("sh"), QStringLiteral("-c"), script});
+        return QProcess::execute(command.takeFirst(), command);
+    };
+    // Not under /tmp: the sandbox gets an empty one of its own.
+    QDir().mkpath(QDir::homePath() + QStringLiteral("/.cache"));
+    QTemporaryDir scratchDir(QDir::homePath() + QStringLiteral("/.cache/diskforge-sandbox-test-XXXXXX"));
+    const QString scratch = scratchDir.path();
+    write(scratch + QStringLiteral("/readme"), "hello");
+    report(inSandbox(QStringLiteral("grep -q hello '%1/readme'").arg(scratch)) == 0, QStringLiteral("the sandbox can read your files"));
+    report(inSandbox(QStringLiteral("echo x 2>/dev/null > '%1/new'").arg(scratch)) != 0 && !QFile::exists(scratch + QStringLiteral("/new")),
+           QStringLiteral("but can't write them"));
+    report(inSandbox(QStringLiteral("rm '%1/readme' 2>/dev/null").arg(scratch)) != 0 && QFile::exists(scratch + QStringLiteral("/readme")),
+           QStringLiteral("or delete them"));
+    const QString runtime = qEnvironmentVariable("XDG_RUNTIME_DIR");
+    if (!runtime.isEmpty() && QFile::exists(runtime + QStringLiteral("/bus")))
+        report(inSandbox(QStringLiteral("test -e '%1/bus'").arg(runtime)) != 0, QStringLiteral("the session bus isn't reachable from it"));
+    report(inSandbox(QStringLiteral("test -z \"$(ls -A /tmp)\" && ! ls /dev/sd* /dev/nvme* 2>/dev/null")) == 0,
+           QStringLiteral("it gets an empty /tmp and no disks in /dev"));
+    report(inSandbox(QStringLiteral("test $(grep -c : /proc/net/dev) -gt 1")) != 0, QStringLiteral("it has no network but loopback"));
+    // A drive mounted under /run/media, if one is: readable in there, but not writable.
+    const QString media = QStringLiteral("/run/media/") + qEnvironmentVariable("USER");
+    for (const QFileInfo &mount : QDir(media).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (!mount.isWritable())
+            continue;
+        const QString probe = mount.filePath() + QStringLiteral("/.diskforge-sandbox-test");
+        report(inSandbox(QStringLiteral("ls '%1' >/dev/null && ! touch '%2' 2>/dev/null").arg(mount.filePath(), probe)) == 0 && !QFile::exists(probe),
+               QStringLiteral("a mounted drive (%1) is readable in it, but not writable").arg(mount.fileName()));
+        QFile::remove(probe);
+        break;
+    }
 }
 
 void guard(UDisks &udisks)

@@ -1,0 +1,19 @@
+{
+  "id": "folder-sizes",
+  "name": "Folder Sizes",
+  "version": "1.0",
+  "author": "Danny S",
+  "description": "Lists the folders on a mounted drive, biggest last. It's look-only, so it runs in a read-only sandbox, which is why it's also offered for the system disk. Needs bubblewrap.",
+  "actions": [
+    {
+      "label": "Show Folder Sizes",
+      "icon": "view-statistics",
+      "applies_to": "volume",
+      "when": ["mounted"],
+      "look_only": true,
+      "system_disks": true,
+      "terminal": true,
+      "command": ["sh", "-c", "du -xh --max-depth=1 \"$1\" 2>/dev/null | sort -h", "sh", "{mountpoint}"]
+    }
+  ]
+}
