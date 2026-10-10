@@ -67,6 +67,13 @@ Each release also has a Flatpak and an AppImage on the Releases page. For Debian
 manager needs more access than Flathub allows). In the Flatpak, Disk Usage only sees your home folder and
 mounted drives, and add-ons need one extra permission (see Help → Problems).
 
+## DiskForge Live
+DiskForge Live is the rescue stick: a small Linux system with DiskForge on it that starts any PC, new or old,
+even one whose own system won't start. Grab `diskforge-live-<version>.iso` from the
+[Releases page](https://github.com/DannyS124/diskforge/releases), then in DiskForge use File → Make a DiskForge
+Live USB. That way the stick still works for files and keeps logs of every start. Rufus, balenaEtcher or dd
+work too, but then the stick is read-only. More in [docs/DISKFORGE-LIVE.md](docs/DISKFORGE-LIVE.md).
+
 ## Updating
 Help → Check for Updates tells you if there's a new version. To update you don't need to
 uninstall anything:
