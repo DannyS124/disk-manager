@@ -104,6 +104,7 @@ void lost::DeepScan::run()
     sinceBatch.start();
     QByteArray chunk(qsizetype(kChunk), Qt::Uninitialized);
     quint64 skipUntil = 0;
+    int foundCount = 0;
     const quint64 total = m_end - m_start;
     qCInfo(lcOps).noquote() << "Find Lost Files: deep scan of" << total << "bytes";
 
@@ -131,9 +132,10 @@ void lost::DeepScan::run()
                 const filetypes::Measured m = filetypes::measure(type, reader);
                 if (m.size == 0 || m.type < 0)
                     continue;
-                if (perType[m.type] >= kPerTypeLimit)
+                if (perType[m.type] >= kPerTypeLimit || foundCount >= kTotalLimit)
                     break;
                 ++perType[m.type];
+                ++foundCount;
                 Found f;
                 f.type = m.type;
                 f.size = m.size;

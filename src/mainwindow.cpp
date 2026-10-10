@@ -3,6 +3,7 @@
 
 #include "mainwindow.h"
 #include "homewindow.h"
+#include "lostfilesdialog.h"
 
 #include "about.h"
 #include "addonform.h"
@@ -282,6 +283,23 @@ void MainWindow::createActions()
             m_udisks->raidSyncAction(*d, QStringLiteral("check"));
     });
 
+    // Find Lost Files: from the selected drive or partition, or picked in the window.
+    m_findFiles = new QAction(themeIcon("bluespark-recover", "edit-find"), tr("Find &Lost Files…"), this);
+    connect(m_findFiles, &QAction::triggered, this, [this] {
+        const Volume *v = selectedVolume();
+        const Disk *d = selectedDisk();
+        LostFilesDialog(m_udisks, v ? v->objectPath : d ? d->blockPath : QString(), toolParent()).exec();
+    });
+    m_findFilesImage = new QAction(themeIcon("bluespark-recover", "edit-find"), tr("Find Lost Files in a Disk &Image…"), this);
+    connect(m_findFilesImage, &QAction::triggered, this, [this] {
+        const QString file = QFileDialog::getOpenFileName(this, tr("Find Lost Files in a Disk Image"), QDir::homePath(),
+                                                          tr("Disk images (*.img *.iso *.raw *.dd *.bin);;All files (*)"));
+        if (file.isEmpty())
+            return;
+        LostFilesDialog dialog(m_udisks, QString(), this);
+        dialog.scanImage(file);
+        dialog.exec();
+    });
     m_recover = new QAction(themeIcon("edit-undo", "document-revert"), tr("Re&cover Partitions…"), this);
     connect(m_recover, &QAction::triggered, this, [this] {
         if (const Disk *d = selectedDisk())
@@ -571,7 +589,7 @@ void MainWindow::createActions()
     });
 
     QMenu *file = menuBar()->addMenu(tr("&File"));
-    file->addActions({m_openImage, m_writeImage, m_windowsUsb, m_rescueUsb});
+    file->addActions({m_openImage, m_findFilesImage, m_writeImage, m_windowsUsb, m_rescueUsb});
     file->addSeparator();
     file->addAction(m_refresh);
     file->addSeparator();
@@ -586,7 +604,7 @@ void MainWindow::createActions()
     action->addSeparator();
     action->addActions({m_newPartition, m_format, m_resize, m_rename, m_typeFlags, m_check, m_startup, m_delete});
     action->addSeparator();
-    action->addActions({m_newTable, m_inspect, m_recover, m_wipe, m_secureErase, m_detachImage});
+    action->addActions({m_newTable, m_inspect, m_recover, m_findFiles, m_wipe, m_secureErase, m_detachImage});
     action->addSeparator();
     action->addActions({m_health, m_badSectors, m_checkStick, m_benchmark, m_raidCheck});
     action->addSeparator();
@@ -774,11 +792,7 @@ void MainWindow::updateNotices()
                                           : tr("%1: %2.").arg(name, h.summary));
         bar->setObjectName(QStringLiteral("health"));
         // Spots it can't read stop a normal backup; Rescue Copy works around them.
-        bool unreadable = failing;
-        for (const HealthReason &r : h.reasons) {
-            unreadable = unreadable || r.code == QLatin1String("pending") || r.code == QLatin1String("offline")
-                || r.code == QLatin1String("uncorrectable") || r.code == QLatin1String("media-errors");
-        }
+        const bool unreadable = health::hasUnreadableSpots(h);
         const QString device = d.device;
         if (!d.isSystem) {
             QPushButton *copy = bar->addButton(unreadable && !d.isLoop ? tr("Rescue Copy…") : tr("Back Up…"));
@@ -1117,6 +1131,8 @@ void MainWindow::updateActions()
     m_writeImage->setEnabled(!busy);
     m_rescueUsb->setEnabled(!busy);
     m_windowsUsb->setEnabled(!busy);
+    m_findFiles->setEnabled(!busy);
+    m_findFilesImage->setEnabled(!busy);
     m_health->setEnabled(d && !d->isLoop && d->health.state != Health::State::Unknown);
     m_benchmark->setEnabled(d && !lvm && !busy);
     m_badSectors->setEnabled(d && !lvm && !d->isLoop && !busy);
@@ -1175,7 +1191,8 @@ bool MainWindow::openTool(const QString &name)
     const QHash<QString, QAction *> tools = {{QStringLiteral("write-image"), m_writeImage},
                                              {QStringLiteral("windows-usb"), m_windowsUsb},
                                              {QStringLiteral("rescue-usb"), m_rescueUsb},
-                                             {QStringLiteral("check-stick"), m_checkStick}};
+                                             {QStringLiteral("check-stick"), m_checkStick},
+                                             {QStringLiteral("lost-files"), m_findFiles}};
     QAction *action = tools.value(name);
     if (!action)
         return false;
@@ -1235,7 +1252,7 @@ void MainWindow::buildContextMenu(QMenu *menu)
     add({m_safelyRemove, m_detachImage, m_health, m_badSectors, m_benchmark});
     if (!v)
         add({m_backup, m_restore});
-    add({m_clone, m_rescue});
+    add({m_clone, m_rescue, m_findFiles});
     if (!d->isSystem && (d->removable || d->bus == QLatin1String("usb")))
         add({m_writeImage, m_windowsUsb, m_rescueUsb, m_checkStick});
     add({m_newTable, m_wipe, m_secureErase});

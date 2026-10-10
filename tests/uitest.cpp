@@ -14,6 +14,8 @@
 #include "../src/addonmaker.h"
 #include "../src/diskmap.h"
 #include "../src/homewindow.h"
+#include "../src/blockio.h"
+#include "../src/lostfilesdialog.h"
 #include "../src/inspectdialog.h"
 #include "../src/isomode.h"
 #include "../src/filecopy.h"
@@ -40,6 +42,11 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QStorageInfo>
+#include <QBuffer>
+#include <QPainter>
+#include <QListView>
+#include <QDirIterator>
 #include <QFileDialog>
 #include <QKeyEvent>
 #include <QComboBox>
@@ -2012,7 +2019,7 @@ void homeScreen()
         if (f.open(QIODevice::WriteOnly))
             f.write("[Desktop Entry]\nName=x\n[Other]\nExec=wrong\n[Desktop Entry]\nExec=" + exec + "\n");
     };
-    desktopFile("bluespark-photorec", "qterminal -e sudo photorec %f");
+    desktopFile("bluespark-testdisk", "qterminal -e sudo testdisk %f");
     desktopFile("bluespark-firmware", "systemctl reboot --firmware-setup");
     desktopFile("qterminal", "qterminal");
     HomeWindow::applicationDirs = {apps};
@@ -2026,7 +2033,7 @@ void homeScreen()
     {
         HomeWindow fixes(&udisks, HomeWindow::Mode::Window);
         const QStringList tiles = ids(fixes);
-        report(!tiles.contains(QLatin1String("drives")) && !tiles.contains(QLatin1String("terminal")) && !tiles.contains(QLatin1String("testdisk"))
+        report(!tiles.contains(QLatin1String("drives")) && !tiles.contains(QLatin1String("terminal")) && !tiles.contains(QLatin1String("web"))
                    && tiles.contains(QLatin1String("writeimage")) && tiles.contains(QLatin1String("recover")),
                QStringLiteral("Quick Fixes: the tools, without the stick's programs or what isn't installed"), tiles.join(QLatin1Char(' ')));
         auto *copy = fixes.findChild<QAbstractButton *>(QStringLiteral("tile-copystick"));
@@ -2046,10 +2053,15 @@ void homeScreen()
                    && !tiles.contains(QLatin1String("web")),
                QStringLiteral("the home screen: DiskForge, the tools and the programs that are there"), tiles.join(QLatin1Char(' ')));
         started.clear();
+        if (auto *testdisk = home.findChild<QAbstractButton *>(QStringLiteral("tile-testdisk")))
+            testdisk->click();
+        report(started.size() == 1 && started[0] == QStringList{QStringLiteral("qterminal"), QStringLiteral("-e"), QStringLiteral("sudo"), QStringLiteral("testdisk")},
+               QStringLiteral("a program tile runs the Exec line of its launcher, without %f"), started.value(0).join(QLatin1Char(' ')));
+        started.clear();
         if (auto *recover = home.findChild<QAbstractButton *>(QStringLiteral("tile-recover")))
             recover->click();
-        report(started.size() == 1 && started[0] == QStringList{QStringLiteral("qterminal"), QStringLiteral("-e"), QStringLiteral("sudo"), QStringLiteral("photorec")},
-               QStringLiteral("a program tile runs the Exec line of its launcher, without %f"), started.value(0).join(QLatin1Char(' ')));
+        report(started.size() == 1 && started[0].mid(1) == QStringList{QStringLiteral("--open"), QStringLiteral("lost-files")},
+               QStringLiteral("Get Files Back opens Find Lost Files"), started.value(0).join(QLatin1Char(' ')));
 
         // Restarting into the firmware asks first: No starts nothing, Yes restarts.
         for (const bool yes : {false, true}) {
@@ -2088,6 +2100,135 @@ void homeScreen()
 
     HomeWindow::applicationDirs.clear();
     HomeWindow::launch = realLaunch;
+}
+
+// Find Lost Files through its window: a disk image with pictures hidden in random bytes, looked
+// through, a picture previewed, everything ticked and saved, and the saved files compared. Then
+// saving onto the drive being looked through is refused.
+void lostFilesThroughWindow()
+{
+    QTemporaryDir dir;
+    QVector<QPair<quint64, QByteArray>> placed;
+    QByteArray data(16 * 1024 * 1024, Qt::Uninitialized);
+    QRandomGenerator rng(2026);
+    for (qsizetype i = 0; i + 4 <= data.size(); i += 4)
+        *reinterpret_cast<quint32 *>(data.data() + i) = rng.generate();
+    quint64 at = 64 * 1024;
+    for (const char *format : {"PNG", "JPG", "PNG"}) {
+        QImage image(240, 160, QImage::Format_RGB32);
+        image.fill(QColor(0x00, 0xe5, 0xff));
+        QPainter p(&image);
+        p.setBrush(QColor(0xff, 0x33, 0x55));
+        p.drawEllipse(QRect(20, 20, 100 + int(placed.size()) * 20, 100));
+        p.end();
+        QByteArray file;
+        QBuffer buffer(&file);
+        buffer.open(QIODevice::WriteOnly);
+        image.save(&buffer, format);
+        data.replace(qsizetype(at), file.size(), file);
+        placed << qMakePair(at, file);
+        at = (at + quint64(file.size()) + 100 * 1024) / 512 * 512;
+    }
+    const QString imagePath = dir.filePath(QStringLiteral("lost.img"));
+    QFile imageFile(imagePath);
+    if (!imageFile.open(QIODevice::WriteOnly) || imageFile.write(data) != data.size()) {
+        report(false, QStringLiteral("write the test image"));
+        return;
+    }
+    imageFile.close();
+
+    UDisks udisks;
+    LostFilesDialog dialog(&udisks, QString());
+    dialog.show();
+    dialog.scanImage(imagePath);
+    auto *status = dialog.findChild<QLabel *>(QStringLiteral("status"));
+    waitUntil([&] { return status->text().startsWith(QLatin1String("Done")); }, 60000);
+    auto *view = dialog.findChild<QListView *>(QStringLiteral("files"));
+    report(status->text().contains(QLatin1String("found 3 files")) && view && view->model()->rowCount() == 3,
+           QStringLiteral("Find Lost Files: the three pictures in the image are found"), status->text());
+
+    view->setCurrentIndex(view->model()->index(0, 0));
+    auto *preview = dialog.findChild<QLabel *>(QStringLiteral("preview"));
+    waitUntil([&] { return !preview->pixmap().isNull(); }, 10000);
+    report(!preview->pixmap().isNull() && preview->pixmap().width() == 240, QStringLiteral("the picture shows in the preview"),
+           QStringLiteral("%1 wide").arg(preview->pixmap().width()));
+    auto *details = dialog.findChild<QLabel *>(QStringLiteral("details"));
+    report(details->text().contains(QLatin1String("should open fine")), QStringLiteral("and the details say it's whole"));
+
+    QPushButton *tickAll = findButton(&dialog, QStringLiteral("Tick All Shown"));
+    if (tickAll)
+        tickAll->click();
+    auto *ticked = dialog.findChild<QLabel *>(QStringLiteral("ticked"));
+    report(ticked->text().startsWith(QLatin1String("3 files ticked")), QStringLiteral("ticking them all"), ticked->text());
+    const QString saveTo = dir.filePath(QStringLiteral("saved"));
+    QDir().mkpath(saveTo);
+    // /tmp is often in memory: then it warns, and "No" saves there anyway.
+    QStringList warnings;
+    {
+        Answerer answerer;
+        answerer.answer = [&warnings](QWidget *modal) {
+            if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+                warnings << box->text();
+                box->button(QMessageBox::No) ? box->button(QMessageBox::No)->click() : box->accept();
+                return true;
+            }
+            return false;
+        };
+        dialog.saveTo(saveTo);
+    }
+    const QByteArray fs = QStorageInfo(saveTo).fileSystemType();
+    report(fs != "tmpfs" || (warnings.size() == 1 && warnings[0].contains(QLatin1String("computer's memory"))),
+           QStringLiteral("a folder in memory gets a warning first"), warnings.join(QStringLiteral(" | ")).left(100));
+    auto *saveStatus = dialog.findChild<QLabel *>(QStringLiteral("saveStatus"));
+    waitUntil([&] { return saveStatus->text().startsWith(QLatin1String("Saved")); }, 30000);
+    int same = 0;
+    QDirIterator it(saveTo, QDir::Files, QDirIterator::Subdirectories);
+    QSet<QByteArray> wanted;
+    for (const auto &p : std::as_const(placed))
+        wanted.insert(QCryptographicHash::hash(p.second, QCryptographicHash::Sha256));
+    while (it.hasNext()) {
+        QFile f(it.next());
+        if (f.fileName().endsWith(QLatin1String(".txt")) || !f.open(QIODevice::ReadOnly))
+            continue;
+        same += wanted.contains(QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha256));
+    }
+    report(saveStatus->text().startsWith(QLatin1String("Saved 3 files")) && same == 3, QStringLiteral("all three saved, byte for byte"),
+           saveStatus->text());
+
+    // The same, as if the files were on the drive a folder in the home folder is on (/tmp can be
+    // in memory): saving there is refused.
+    QTemporaryDir onDisk(QDir::homePath() + QStringLiteral("/.cache/diskforge-uitest-XXXXXX"));
+    QString rootDisk;
+    for (const Disk &d : udisks.disks()) {
+        if (blockio::pathIsOnDisk(onDisk.path(), d.device))
+            rootDisk = d.device;
+    }
+    if (rootDisk.isEmpty()) {
+        out << "SKIP  refusing the source drive: the temporary folder's drive isn't listed" << Qt::endl;
+        return;
+    }
+    QStringList boxes;
+    Answerer answerer;
+    answerer.answer = [&](QWidget *modal) {
+        if (auto *box = qobject_cast<QMessageBox *>(modal)) {
+            boxes << box->text();
+            box->accept();
+            return true;
+        }
+        return false;
+    };
+    dialog.scanSource(lost::Source::fromMemory(data), QStringLiteral("a drive"), rootDisk);
+    waitUntil([&] { return status->text().startsWith(QLatin1String("Done")); }, 60000);
+    if (tickAll)
+        tickAll->click();
+    const QString again = onDisk.filePath(QStringLiteral("again"));
+    QDir().mkpath(again);
+    dialog.saveTo(again);
+    QCoreApplication::processEvents();
+    report(boxes.size() == 1 && boxes[0].contains(QLatin1String("on the drive you're getting the files back from"))
+               && QDir(again).entryList(QDir::NoDotAndDotDot | QDir::AllEntries).isEmpty(),
+           QStringLiteral("saving onto the drive the files are on is refused"), boxes.join(QStringLiteral(" | ")).left(120));
+    dialog.close();
 }
 
 // Enter in a USB dialog goes to Close or Cancel, never to the button that erases the stick, and
@@ -2222,6 +2363,7 @@ int userScenarios()
     rescueMode();
     enterKey();
     homeScreen();
+    lostFilesThroughWindow();
     out << (failures ? QStringLiteral("%1 step(s) failed").arg(failures) : QStringLiteral("All steps passed")) << Qt::endl;
     return failures ? 1 : 0;
 }

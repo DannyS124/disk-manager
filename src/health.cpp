@@ -282,3 +282,15 @@ void health::acknowledge(const QString &driveKey, const QVector<SmartAttribute> 
             s.setValue(QStringLiteral("health/%1/%2").arg(driveKey).arg(id), now);
     }
 }
+
+bool health::hasUnreadableSpots(const Health &h)
+{
+    if (h.state == Health::State::Failing)
+        return true;
+    for (const HealthReason &r : h.reasons) {
+        if (r.code == QLatin1String("pending") || r.code == QLatin1String("offline") || r.code == QLatin1String("uncorrectable")
+            || r.code == QLatin1String("media-errors"))
+            return true;
+    }
+    return false;
+}

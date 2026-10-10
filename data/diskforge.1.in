@@ -37,12 +37,13 @@ and exit. Works with
 .BR QT_QPA_PLATFORM=offscreen .
 .TP
 .BI \-\-open " tool"
-Open just one of the USB tools, without the main window:
+Open just one tool, without the main window:
 .BR write-image ,
 .BR windows-usb ,
-.B rescue-usb
+.BR rescue-usb ,
+.B check-stick
 or
-.BR check-stick .
+.BR lost-files .
 DiskForge closes when the tool is closed.
 .TP
 .BI \-\-log " file"

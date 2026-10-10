@@ -64,6 +64,7 @@ public:
     void cancel() { m_cancel = true; }
 
     static constexpr int kPerTypeLimit = 250000; // past that, more of one type isn't listed
+    static constexpr int kTotalLimit = 1000000;  // and past this, nothing more at all
 
 public Q_SLOTS:
     void run();

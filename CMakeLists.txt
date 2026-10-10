@@ -90,6 +90,7 @@ target_compile_options(diskforge-core PRIVATE -Wall -Wextra)
 add_library(diskforge-ui STATIC
     src/diskmap.cpp src/diskmap.h
     src/homewindow.cpp src/homewindow.h
+    src/lostfilesdialog.cpp src/lostfilesdialog.h
     src/mainwindow.cpp src/mainwindow.h
     src/dialogs.cpp src/dialogs.h
     src/tools.cpp src/tools.h

@@ -274,9 +274,9 @@ QVector<HomeWindow::Tile> HomeWindow::allTiles() const
         add(QStringLiteral("drives"), QStringLiteral("bluespark-drives"), QStringLiteral("drive-harddisk"), tr("Drives and Partitions"),
             tr("Every drive in the PC: health, partitions, backups and more"))
             .mainWindow = true;
-    add(QStringLiteral("recover"), QStringLiteral("bluespark-recover"), QStringLiteral("folder-recent"), tr("Get Files Back"),
-        tr("Deleted files, or files from a formatted drive (PhotoRec)"))
-        .desktopId = QStringLiteral("bluespark-photorec");
+    add(QStringLiteral("recover"), QStringLiteral("bluespark-recover"), QStringLiteral("edit-find"), tr("Get Files Back"),
+        tr("Deleted files, or files from a formatted or damaged drive"))
+        .tool = QStringLiteral("lost-files");
     add(QStringLiteral("testdisk"), QStringLiteral("bluespark-testdisk"), QStringLiteral("drive-harddisk"), tr("Find Lost Partitions"),
         tr("Partitions that disappeared, and boot sectors (TestDisk)"))
         .desktopId = QStringLiteral("bluespark-testdisk");

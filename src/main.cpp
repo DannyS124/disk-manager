@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
                                        QStringLiteral("Write what DiskForge does to <file>. DISKFORGE_LOG=<file> does the same."),
                                        QStringLiteral("file"));
     const QCommandLineOption openOption(QStringLiteral("open"),
-                                        QStringLiteral("Open just one USB tool: write-image, windows-usb, rescue-usb or check-stick."),
+                                        QStringLiteral("Open just one tool: write-image, windows-usb, rescue-usb, check-stick or lost-files."),
                                         QStringLiteral("tool"));
     const QCommandLineOption homeOption(QStringLiteral("home"), QStringLiteral("Be Bluespark's home screen (its desktop)."));
     parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption, homeOption});
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
         const QString tool = parser.value(openOption);
         QTimer::singleShot(0, &window, [&window, tool] {
             if (!window.openTool(tool)) {
-                QTextStream(stderr) << "No tool called " << tool << " (write-image, windows-usb, rescue-usb, check-stick)\n";
+                QTextStream(stderr) << "No tool called " << tool << " (write-image, windows-usb, rescue-usb, check-stick, lost-files)\n";
                 QCoreApplication::exit(2);
                 return;
             }

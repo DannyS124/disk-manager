@@ -66,6 +66,9 @@ QString keyFor(const QString &driveId, const QString &drivePath);
 // back when there's one that wasn't there then, or a number that went up.
 QStringList signature(const Health &h);
 bool worseThan(const Health &h, const QStringList &dismissed);
+// Whether the drive has spots it can't read (or is failing): then a plain copy stops at them,
+// and Rescue Copy, which works around them, is the way to save what's on it.
+bool hasUnreadableSpots(const Health &h);
 
 // The counters whose growth matters (184, 188, 199), with the values DiskForge remembers
 // for a drive. remember() stores values it hasn't seen yet; acknowledge() takes the
