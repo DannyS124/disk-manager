@@ -77,10 +77,11 @@ starts ends up in that file.
 
 Making the stick
 ----------------
-DiskForge does it: File > Make a Rescue USB, then pick this ISO and the stick (inside the
-rescue system it copies the stick it's running from). It also works to write the ISO with
-any image writer (DiskForge's Write Image to USB, Rufus, balenaEtcher, dd). Written like
-that, the stick also starts old BIOS PCs, but it's read-only, so it can't keep logs.
+DiskForge does it: File > Make a Bluespark USB, then pick this ISO and the stick (inside
+the rescue system it copies the stick it's running from). That stick starts UEFI PCs (Secure
+Boot on or off) and old BIOS PCs, and keeps its logs. It also works to write the ISO with
+any image writer (DiskForge's Write Image to USB, Rufus, balenaEtcher, dd); that starts
+both kinds too, but it's read-only, so it can't keep logs.
 
 What it's made of
 -----------------

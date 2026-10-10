@@ -65,6 +65,10 @@ public:
     // `source`: an ISO file, or a folder holding a rescue stick's files.
     StickWriter(const QString &source, const QString &stickRoot);
     void cancel();
+    // GRUB's boot code for old BIOS PCs from the image (checked against its sha256sum.txt), for
+    // writeBiosBoot() once the stick is unmounted. Empty when the image doesn't have it.
+    QByteArray biosBoot() const { return m_biosBoot; }
+    QByteArray biosCore() const { return m_biosCore; }
 
 public slots:
     void run();
@@ -78,8 +82,15 @@ private:
 
     QString m_source;
     QString m_root;
+    QByteArray m_biosBoot, m_biosCore;
     std::atomic<bool> m_cancel{false};
     std::atomic<filecopy::Copier *> m_copier{nullptr};
 };
+
+// Makes a stick start old BIOS PCs too, the way grub-install does it: GRUB's boot code in the
+// first 440 bytes of the first sector (the disk's ID and partition table stay), and its core
+// image right after, in the space before the first partition. `fd` is the whole stick,
+// writable, with an MBR partition table and 512-byte sectors (what Make a Bluespark USB makes).
+bool writeBiosBoot(int fd, const QByteArray &bootImg, const QByteArray &coreImg, QString *error);
 
 } // namespace rescue

@@ -310,10 +310,13 @@ QVector<HomeWindow::Tile> HomeWindow::allTiles() const
             QStringLiteral("bluespark-logs");
         add(QStringLiteral("readme"), QStringLiteral("bluespark-readme"), QStringLiteral("help-about"), tr("Read Me"), {}).desktopId =
             QStringLiteral("bluespark-readme");
-        Tile &firmware = add(QStringLiteral("firmware"), QStringLiteral("bluespark-firmware"), QStringLiteral("system-reboot"),
-                             tr("Firmware Settings"), tr("Restart into the PC's UEFI setup (Secure Boot, boot order...)"));
-        firmware.desktopId = QStringLiteral("bluespark-firmware");
-        firmware.confirm = true;
+        // Only UEFI can be asked to open its setup at the next start.
+        if (secureBoot() != SecureBoot::Bios) {
+            Tile &firmware = add(QStringLiteral("firmware"), QStringLiteral("bluespark-firmware"), QStringLiteral("system-reboot"),
+                                 tr("Firmware Settings"), tr("Restart into the PC's UEFI setup (Secure Boot, boot order...)"));
+            firmware.desktopId = QStringLiteral("bluespark-firmware");
+            firmware.confirm = true;
+        }
     }
 
     // A tile is only there when what it opens is.

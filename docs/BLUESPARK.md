@@ -28,12 +28,17 @@ In DiskForge: File → Make a Bluespark USB, pick the ISO and the stick. That ma
 the ISO's files onto it, checking each one. The stick stays readable everywhere (Windows too), there's room
 left over for files, and the rescue system writes its logs there.
 
+It starts UEFI PCs (Secure Boot on or off) and old BIOS PCs. For BIOS PCs, DiskForge puts GRUB's boot code in
+front of the partition (the way `grub-install` does), from `boot/grub/i386-pc/stick-boot.img` and
+`stick-core.img` in the ISO. That's a direct write to the stick, so on a normal PC it asks for the admin
+password; untick "Also start old PCs without UEFI" to skip it.
+
 Inside the rescue system, Copy This Stick on the home screen (or Make a Bluespark USB) copies the stick it's
 running from onto another one, checked against its sha256sum.txt. After "Copy to memory" the stick isn't
 mounted anymore: mount it in DiskForge and the dialog finds it.
 
-The ISO can also go onto a stick as-is (Write Image to USB, Rufus, balenaEtcher, dd). That stick also starts
-old BIOS-only PCs, but it's read-only, so it can't keep logs.
+The ISO itself is a hybrid image: it starts UEFI and BIOS PCs from a CD, and written onto a stick as-is (Write
+Image to USB, Rufus, balenaEtcher, dd). Written like that it's read-only, so it can't keep logs.
 
 ## Secure Boot
 It starts with Secure Boot on. The first steps are Debian's signed boot files, exactly as Debian ships them:

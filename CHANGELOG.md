@@ -5,8 +5,18 @@ New:
 - Bluespark: a USB stick that starts any PC into a small desktop with DiskForge, PhotoRec, TestDisk, a file manager, a
   web browser and a terminal, plus a memory test in the boot menu. It starts with Secure Boot on (through Debian's signed boot
   files) and keeps logs of every start on the stick. It's built from `rescue/`, see [docs/BLUESPARK.md](docs/BLUESPARK.md)
+- Bluespark has its own look: its logo, boot menu, boot animation, icons, taskbar and window theme, in neon blue, blue, baby
+  blue, red and green. It opens on a home screen with big tiles for what people start it for and a strip saying whether
+  Secure Boot is on, whether there's internet and how many drives it found
 - Make a Bluespark USB (File menu, or right-click a USB stick): puts the Bluespark image on a stick as plain files on FAT32 and checks
-  every one of them. For a stick that's been used, Open Logs shows what it saved
+  every one of them. The stick starts UEFI PCs (Secure Boot on or off) and old BIOS PCs. For a stick that's been used, Open
+  Logs shows what it saved
+- Find Lost Files (Action menu, File menu for disk images, or Get Files Back on Bluespark's home screen): looks through a drive
+  for files that were deleted or are on a drive that was formatted or won't open, by what's inside them: pictures, documents,
+  PDFs, videos, music, archives (31 kinds). Pictures show as thumbnails and in a preview, each file says whether it looks
+  whole, and the ones you tick are saved onto another drive. It only ever reads the drive it looks through
+- Tools > Quick Fixes: the home screen's tiles, on a PC
+- A Bluespark theme (View > Theme)
 - `--log <file>` (or `DISKFORGE_LOG=<file>`): DiskForge writes down what it does, for bug reports
 - A .deb for Debian and Ubuntu (`packaging/deb/build.sh` builds it in a Debian container)
 - Check a USB Stick (Action menu, or right-click a stick): finds bad spots and fake sticks, the ones that say they're bigger
@@ -23,13 +33,14 @@ New:
 - Bluespark has all of it, with icons on its desktop. There, the few things that only change the running system
   (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a Bluespark USB copies the stick it's
   running from
-- `--open <tool>` opens just one of the USB tools, for desktop launchers
+- `--open <tool>` opens just one tool, for desktop launchers (write-image, windows-usb, rescue-usb, check-stick, lost-files)
 
 Changed:
 - New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
   stick doesn't need it
 - On a live system, the system's own image isn't listed as a drive anymore
 - Staging a release also builds Bluespark from the same source, and publishing attaches the ISO
+- Bluespark has only what a rescue stick needs: no sound, printing, mail server or other desktop extras (1.2 GB down to 900 MB)
 - On a screen smaller than the window (small laptops, VMs) it opens maximized, so the bottom isn't under the taskbar
 - Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker when Browse had the focus before
 

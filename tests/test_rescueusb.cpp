@@ -14,6 +14,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QRandomGenerator>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -358,11 +359,75 @@ void folderTests(const QString &dir)
 
 } // namespace
 
+// The boot code for old BIOS PCs: GRUB's in the first 440 bytes, its core right after, the disk's
+// ID and partition table left alone, and refused when it doesn't fit or there's no table.
+void biosBootTests(const QString &dir)
+{
+    const QString image = dir + QStringLiteral("/bios.img");
+    QFile f(image);
+    if (!f.open(QIODevice::WriteOnly) || !f.resize(8 * 1024 * 1024)) {
+        report(false, QStringLiteral("make an image for the boot code"));
+        return;
+    }
+    f.close();
+    QProcess sfdisk;
+    sfdisk.start(QStringLiteral("sfdisk"), {QStringLiteral("-q"), image});
+    sfdisk.waitForStarted();
+    sfdisk.write("label: dos\nlabel-id: 0x5eed1234\nstart=2048, type=c, bootable\n");
+    sfdisk.closeWriteChannel();
+    sfdisk.waitForFinished();
+    auto readBack = [&image](qint64 len) {
+        QFile in(image);
+        return in.open(QIODevice::ReadOnly) ? in.read(len) : QByteArray();
+    };
+    const QByteArray before = readBack(512);
+    report(sfdisk.exitCode() == 0 && uchar(before[510]) == 0x55, QStringLiteral("sfdisk makes a stick image with an MBR"));
+
+    QByteArray boot(512, '\xab'), core(60000, Qt::Uninitialized);
+    for (qsizetype i = 0; i < core.size(); ++i)
+        core[i] = char(i * 13 + 1);
+    const int fd = ::open(QFile::encodeName(image).constData(), O_RDWR | O_CLOEXEC);
+    QString error;
+    const bool ok = rescue::writeBiosBoot(fd, boot, core, &error);
+    const QByteArray after = readBack(512 + core.size());
+    report(ok && after.left(440) == boot.left(440) && after.mid(440, 72) == before.mid(440, 72) && after.mid(512) == core,
+           QStringLiteral("BIOS boot code: GRUB's code in front, its core behind, the disk ID and partitions as they were"), error);
+
+    QString tooBig, noTable, badBoot, gpt;
+    rescue::writeBiosBoot(fd, boot, QByteArray(2 * 1024 * 1024, 'x'), &tooBig);
+    rescue::writeBiosBoot(fd, QByteArray(100, 'x'), core, &badBoot);
+    ::close(fd);
+    QFile blank(dir + QStringLiteral("/blank.img"));
+    if (blank.open(QIODevice::ReadWrite) && blank.resize(4 * 1024 * 1024)) {
+        rescue::writeBiosBoot(blank.handle(), boot, core, &noTable);
+        blank.close();
+    }
+    // A GPT stick: its sector 1 is the GPT itself.
+    QProcess gptTable;
+    gptTable.start(QStringLiteral("sfdisk"), {QStringLiteral("-q"), blank.fileName()});
+    gptTable.waitForStarted();
+    gptTable.write("label: gpt\nstart=2048, type=uefi\n");
+    gptTable.closeWriteChannel();
+    gptTable.waitForFinished();
+    const QByteArray gptBefore = [&blank] { return blank.open(QIODevice::ReadOnly) ? blank.read(1024) : QByteArray(); }();
+    blank.close();
+    if (blank.open(QIODevice::ReadWrite)) {
+        rescue::writeBiosBoot(blank.handle(), boot, core, &gpt);
+        blank.close();
+    }
+    const QByteArray gptAfter = [&blank] { return blank.open(QIODevice::ReadOnly) ? blank.read(1024) : QByteArray(); }();
+    report(tooBig.contains(QLatin1String("room")) && noTable.contains(QLatin1String("partition table")) && badBoot.contains(QLatin1String("usable"))
+               && gpt.contains(QLatin1String("GPT")) && gptAfter == gptBefore,
+           QStringLiteral("refused when it doesn't fit, with no partition table, a GPT, or a broken boot image"),
+           QStringList{tooBig, noTable, badBoot, gpt}.join(QStringLiteral(" | ")));
+}
+
 void rescueUsbTests()
 {
     QTemporaryDir dir;
     folderTests(dir.path());
     parserTests();
+    biosBootTests(dir.path());
     if (QStandardPaths::findExecutable(QStringLiteral("xorriso")).isEmpty()) {
         out << "SKIP  xorriso isn't installed, so there are no test images" << Qt::endl;
         return;

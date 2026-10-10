@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -34,6 +35,9 @@ public:
 
     // For the tests: offer loop devices as sticks too.
     static bool allowLoopDevicesForTest;
+    // For the tests: opens the stick (writable) for the BIOS boot code instead of UDisks, which
+    // wants the admin password even for the user's own loop devices.
+    static std::function<int(const QString &diskPath)> openStickForTest;
     // The newest rescue ISO in Downloads (or the home folder), or empty.
     static QString findImage();
 
@@ -50,6 +54,8 @@ private:
 
     void start();
     void copyFiles(const QString &mountPoint);
+    void writeBiosBoot();
+    QString readyText(bool bios) const;
     void finish(bool ok, const QString &message, bool alreadyShown = false);
 
     UDisks *m_udisks;
@@ -60,6 +66,7 @@ private:
     QPushButton *m_openLogs;
     QLabel *m_warning;
     QLineEdit *m_confirm;
+    QCheckBox *m_bios;
     QPushButton *m_make;
     QProgressBar *m_progress;
     QLabel *m_phase;
@@ -72,6 +79,7 @@ private:
     UsbPrep *m_prep = nullptr;
     QThread *m_thread = nullptr;
     rescue::StickWriter *m_writer = nullptr;
+    QByteArray m_biosBoot, m_biosCore; // from the image, for old BIOS PCs
     bool m_running = false;
     bool m_copyDone = false;
 };

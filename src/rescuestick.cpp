@@ -4,12 +4,15 @@
 #include "rescuestick.h"
 
 #include "applog.h"
+#include "blockio.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
 #include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -217,6 +220,18 @@ void rescue::StickWriter::run()
         if (!find(it.key()))
             return finish(false, tr("The image is damaged: %1 is missing. Download it again.").arg(it.key()));
     }
+    // The boot code for old BIOS PCs goes on after the copy; images from before it was there
+    // just don't have it.
+    const QString bootPath = QStringLiteral("boot/grub/i386-pc/stick-boot.img"), corePath = QStringLiteral("boot/grub/i386-pc/stick-core.img");
+    m_biosBoot = readSmall(find(bootPath));
+    m_biosCore = readSmall(find(corePath));
+    auto checked = [&sums](const QString &path, const QByteArray &data) {
+        return !data.isEmpty() && QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex() == sums.value(path);
+    };
+    if (!checked(bootPath, m_biosBoot) || !checked(corePath, m_biosCore)) {
+        m_biosBoot.clear();
+        m_biosCore.clear();
+    }
 
     // What goes onto the stick: everything sha256sum.txt lists, plus that file itself. The
     // boot catalog xorriso adds is only for CDs, so it's left out.
@@ -254,4 +269,44 @@ void rescue::StickWriter::run()
         ::close(rootFd);
     }
     finish(true, message);
+}
+
+bool rescue::writeBiosBoot(int fd, const QByteArray &bootImg, const QByteArray &coreImg, QString *error)
+{
+    auto fail = [error](const QString &text) {
+        if (error)
+            *error = text;
+        return false;
+    };
+    if (bootImg.size() != 512 || coreImg.isEmpty())
+        return fail(QObject::tr("the boot code in the image isn't usable"));
+    // GRUB's boot sector reads its core from sector 1, counted in 512 bytes.
+    if (blockio::logicalSize(fd) != 512)
+        return fail(QObject::tr("the stick's sectors aren't 512 bytes"));
+    QByteArray sector(512, '\0');
+    if (!blockio::readAt(fd, sector.data(), 512, 0))
+        return fail(QObject::tr("the stick couldn't be read"));
+    if (uchar(sector[510]) != 0x55 || uchar(sector[511]) != 0xAA)
+        return fail(QObject::tr("the stick has no partition table"));
+    // Where the first partition starts, from the table itself. On a GPT stick sector 1 is the
+    // GPT, so that's left alone.
+    quint64 firstPartition = 0;
+    for (int i = 0; i < 4; ++i) {
+        const uchar *entry = reinterpret_cast<const uchar *>(sector.constData()) + 446 + 16 * i;
+        const quint32 start = entry[8] | entry[9] << 8 | entry[10] << 16 | quint32(entry[11]) << 24;
+        if (entry[4] == 0xee)
+            return fail(QObject::tr("the stick has a GPT partition table"));
+        if (entry[4] != 0 && start > 0 && (firstPartition == 0 || start < firstPartition))
+            firstPartition = start;
+    }
+    if (firstPartition == 0)
+        return fail(QObject::tr("the stick has no partition"));
+    if (512 + quint64(coreImg.size()) > firstPartition * 512)
+        return fail(QObject::tr("there's no room for it before the partition"));
+    memcpy(sector.data(), bootImg.constData(), 440);
+    // The core first: a stick with the new boot sector but no core behind it would hang.
+    if (!blockio::writeAt(fd, coreImg.constData(), quint64(coreImg.size()), 512) || ::fdatasync(fd) != 0
+        || !blockio::writeAt(fd, sector.constData(), 512, 0) || ::fdatasync(fd) != 0)
+        return fail(QString::fromLocal8Bit(strerror(errno)));
+    return true;
 }

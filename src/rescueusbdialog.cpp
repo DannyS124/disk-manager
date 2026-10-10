@@ -8,6 +8,7 @@
 #include "format.h"
 #include "usbprep.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -29,6 +30,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <unistd.h>
 #include <utility>
 
 namespace {
@@ -40,6 +42,7 @@ constexpr quint64 kRoomForLogs = 64 * 1024 * 1024;
 } // namespace
 
 bool RescueUsbDialog::allowLoopDevicesForTest = false;
+std::function<int(const QString &)> RescueUsbDialog::openStickForTest;
 
 QString RescueUsbDialog::findImage()
 {
@@ -77,6 +80,7 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
     , m_openLogs(new QPushButton(tr("Open Logs")))
     , m_warning(new QLabel)
     , m_confirm(new QLineEdit)
+    , m_bios(new QCheckBox(tr("Also start old PCs without UEFI (BIOS)")))
     , m_progress(new QProgressBar)
     , m_phase(new QLabel)
     , m_meter(m_progress, m_phase)
@@ -127,6 +131,11 @@ RescueUsbDialog::RescueUsbDialog(UDisks *udisks, const QString &preferredDisk, Q
                                        "even when the PC's own system won't start. The stick stays readable on any PC, and "
                                        "the rescue system keeps its logs on it.")));
     layout->addLayout(form);
+    m_bios->setChecked(true);
+    m_bios->setObjectName(QStringLiteral("bios"));
+    m_bios->setToolTip(tr("Puts GRUB's boot code in front of the stick's partition, so PCs from before UEFI start from it too. "
+                          "That's a direct write to the stick, so on a normal PC it asks for the admin password once."));
+    layout->addWidget(m_bios);
     layout->addWidget(m_warning);
     layout->addWidget(m_confirm);
     layout->addWidget(m_phase);
@@ -362,8 +371,10 @@ void RescueUsbDialog::start()
     m_copyDone = false;
     m_failure.clear();
     m_running = true;
-    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_make, m_openLogs})
+    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_make, m_openLogs, m_bios})
         w->setEnabled(false);
+    m_biosBoot.clear();
+    m_biosCore.clear();
     m_progress->setRange(0, 0);
     m_progress->setVisible(true);
     qCInfo(lcOps).noquote() << "Make a Bluespark USB on" << d->device << d->model << "from" << m_inspectedPath
@@ -379,10 +390,10 @@ void RescueUsbDialog::start()
     connect(m_prep, &UsbPrep::done, this, [this] {
         if (!m_copyDone)
             return finish(false, m_failure.isEmpty() ? tr("The files couldn't be copied.") : m_failure);
-        finish(true, tr("The Bluespark USB is ready.\n\n"
-                        "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot "
-                        "menu key (usually F12, F11, F9 or Esc), then pick the USB stick. Secure Boot can stay on.\n\n"
-                        "Every start leaves its logs in the logs folder on the stick."));
+        // Unmounted now: the boot code for old PCs goes in front of the partition.
+        if (m_bios->isChecked() && !m_biosCore.isEmpty())
+            return writeBiosBoot();
+        finish(true, readyText(false));
     });
     m_prep->start();
 }
@@ -395,6 +406,9 @@ void RescueUsbDialog::copyFiles(const QString &mountPoint)
         m_meter.update(phase, done, total);
     });
     connect(m_writer, &rescue::StickWriter::finished, this, [this](bool ok, const QString &message) {
+        // Before the thread stops: that deletes the writer.
+        m_biosBoot = m_writer->biosBoot();
+        m_biosCore = m_writer->biosCore();
         m_thread->quit();
         m_thread->wait();
         m_thread = nullptr;
@@ -406,6 +420,34 @@ void RescueUsbDialog::copyFiles(const QString &mountPoint)
         m_prep->finish();
     });
     m_thread = startOnThread(this, m_writer);
+}
+
+QString RescueUsbDialog::readyText(bool bios) const
+{
+    return tr("The Bluespark USB is ready.\n\n"
+              "To use it, plug it into the PC that needs fixing and turn the PC on while pressing its boot menu key (usually "
+              "F12, F11, F9 or Esc), then pick the USB stick. %1\n\n"
+              "Every start leaves its logs in the logs folder on the stick.")
+        .arg(bios ? tr("It starts UEFI PCs (Secure Boot can stay on) and old BIOS PCs.") : tr("It starts UEFI PCs, and Secure Boot can stay on."));
+}
+
+void RescueUsbDialog::writeBiosBoot()
+{
+    m_phase->setText(tr("Writing the boot code for old BIOS PCs…"));
+    const QByteArray boot = m_biosBoot, core = m_biosCore;
+    auto write = [this, boot, core](int fd) {
+        QString error = tr("the stick couldn't be opened for writing");
+        const bool ok = fd >= 0 && rescue::writeBiosBoot(fd, boot, core, &error);
+        if (fd >= 0)
+            ::close(fd);
+        qCInfo(lcOps).noquote() << "Make a Bluespark USB: boot code for BIOS PCs" << (ok ? "written" : "not written: " + error);
+        finish(true, ok ? readyText(true)
+                        : readyText(false) + QStringLiteral("\n\n") + tr("Old BIOS-only PCs won't start from it: %1. Making it again "
+                                                                         "adds that.").arg(error));
+    };
+    if (openStickForTest)
+        return write(openStickForTest(m_diskPath));
+    openBlockThen(m_udisks, this, m_diskPath, UDisks::OpenMode::ReadWrite, write);
 }
 
 void RescueUsbDialog::finish(bool ok, const QString &message, bool alreadyShown)
@@ -431,7 +473,7 @@ void RescueUsbDialog::finish(bool ok, const QString &message, bool alreadyShown)
     m_phase->setText(redText(message));
     m_phase->setTextFormat(Qt::RichText);
     m_confirm->clear();
-    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_openLogs})
+    for (QWidget *w : std::initializer_list<QWidget *>{m_image, m_targets, m_confirm, m_openLogs, m_bios})
         w->setEnabled(true);
     fillTargets(m_diskPath);
     updateState();

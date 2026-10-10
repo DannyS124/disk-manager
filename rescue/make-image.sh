@@ -105,6 +105,26 @@ cp /usr/lib/grub/i386-pc/*.mod /usr/lib/grub/i386-pc/*.lst "$iso/boot/grub/i386-
 grub-mkimage -O i386-pc -p /boot/grub -o "$work/core.img" biosdisk iso9660
 cat /usr/lib/grub/i386-pc/cdboot.img "$work/core.img" > "$iso/boot/grub/i386-pc/eltorito.img"
 
+# Old BIOS PCs from a stick DiskForge made (FAT32, files copied): DiskForge puts stick-boot.img
+# in the stick's first sector and stick-core.img right after it, in the free space before the
+# partition, the way grub-install does. The core finds the stick by this build's file and
+# reads the same menu from it. grub-mkimage already points the core at sector 2 and the boot
+# sector at sector 1, so nothing needs patching there; like grub-bios-setup does for a hard
+# disk, the boot drive check is turned off, for BIOSes that hand over the wrong drive number.
+cat > "$work/stick.cfg" <<CFG
+search --no-floppy --set=root --file /.disk/bluespark-$build_id
+set prefix=(\$root)/boot/grub
+CFG
+grub-mkimage -O i386-pc -p /boot/grub -c "$work/stick.cfg" -o "$iso/boot/grub/i386-pc/stick-core.img" \
+    biosdisk part_msdos fat search search_fs_file
+[ "$(stat -c %s "$iso/boot/grub/i386-pc/stick-core.img")" -lt $((1024 * 1024 - 512)) ] ||
+    { echo "stick-core.img doesn't fit before the partition"; exit 1; }
+cp /usr/lib/grub/i386-pc/boot.img "$work/stick-boot.img"
+[ "$(od -An -tx1 -j $((0x66)) -N1 "$work/stick-boot.img" | tr -d ' ')" = eb ] ||
+    { echo "GRUB's boot.img has changed: no drive check jump at 0x66"; exit 1; }
+printf '\x90\x90' | dd of="$work/stick-boot.img" bs=1 seek=$((0x66)) conv=notrunc status=none
+cp "$work/stick-boot.img" "$iso/boot/grub/i386-pc/stick-boot.img"
+
 cp /usr/share/grub/unicode.pf2 "$iso/boot/grub/fonts/"
 # The boot menu's own fonts (theme.txt names them) and its selection bar.
 dejavu=/usr/share/fonts/truetype/dejavu

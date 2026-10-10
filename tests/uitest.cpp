@@ -86,6 +86,7 @@
 
 #include <memory>
 
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace {
@@ -1390,6 +1391,33 @@ int filesMatchingSums(const QString &root, int *listed)
     return good;
 }
 
+// Make a Bluespark USB writes the boot code for BIOS PCs into the stick's image file instead
+// of going through UDisks (see RescueUsbDialog::openStickForTest).
+void writeBiosBootTo(const QString &image)
+{
+    RescueUsbDialog::openStickForTest = [image](const QString &) {
+        return ::open(QFile::encodeName(image).constData(), O_RDWR | O_CLOEXEC);
+    };
+}
+
+// Whether what's in front of the stick's partition is the boot code from its own files: GRUB's
+// code in the first 440 bytes (the partition table behind it stays), its core right after.
+bool biosBootMatches(const QString &image, const QString &root, QString *detail)
+{
+    auto readAll = [](const QString &path, qint64 len = -1) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly))
+            return QByteArray();
+        return len < 0 ? f.readAll() : f.read(len);
+    };
+    const QByteArray boot = readAll(root + QStringLiteral("/boot/grub/i386-pc/stick-boot.img"));
+    const QByteArray core = readAll(root + QStringLiteral("/boot/grub/i386-pc/stick-core.img"));
+    const QByteArray start = readAll(image, 512 + core.size());
+    *detail = QStringLiteral("boot %1 bytes, core %2 bytes").arg(boot.size()).arg(core.size());
+    return boot.size() == 512 && !core.isEmpty() && start.size() == 512 + core.size() && start.left(440) == boot.left(440)
+        && uchar(start[510]) == 0x55 && uchar(start[511]) == 0xAA && start.mid(512) == core;
+}
+
 // Inside Bluespark, Make a Bluespark USB copies the stick it runs from. Here the stick
 // made a moment ago (mounted at `sourceRoot`, build ID "test") stands in for it, with a fake
 // rescue conf: the dialog finds it by its build ID, won't copy it onto itself, and copies it
@@ -1434,6 +1462,7 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
         }
         return false;
     };
+    writeBiosBootTo(image);
     {
         RescueUsbDialog dialog(&udisks, sourceLoop);
         dialog.show();
@@ -1459,11 +1488,15 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
         report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The Bluespark USB is ready")), QStringLiteral("the copy is ready"),
                boxes.join(QStringLiteral(" | ")));
     }
+    RescueUsbDialog::openStickForTest = nullptr;
     const QString root = mountStick(udisks, loopPath, QStringLiteral("BLUESPARK"));
     int listed = 0;
     const int good = filesMatchingSums(root, &listed);
     report(listed > 0 && good == listed && rescue::stickInfo(root).id == QLatin1String("test"),
            QStringLiteral("the copy has every file, matching sha256sum.txt"), QStringLiteral("%1 of %2").arg(good).arg(listed));
+    QString biosDetail;
+    report(boxes.value(0).contains(QLatin1String("and old BIOS PCs")) && biosBootMatches(image, root, &biosDetail),
+           QStringLiteral("the copy starts old BIOS PCs too"), biosDetail);
     rescue::rescueConfPath = realConf;
     cleanUpLoop(udisks, loopPath);
 }
@@ -1481,6 +1514,8 @@ void rescueUsb()
         QMap<QString, QByteArray> files;
         files[QStringLiteral(".disk/bluespark")] = "Bluespark\nversion=0.0.1\nbuilt=2026-10-09\nid=test\n";
         files[QStringLiteral("EFI/BOOT/BOOTX64.EFI")] = QByteArray(300000, 'x');
+        files[QStringLiteral("boot/grub/i386-pc/stick-boot.img")] = QByteArray(510, 'b') + QByteArray("\x55\xaa", 2);
+        files[QStringLiteral("boot/grub/i386-pc/stick-core.img")] = QByteArray(40000, 'c');
         files[QStringLiteral("live/filesystem.squashfs")] = QByteArray(9 * 1024 * 1024, 's');
         QByteArray sums;
         for (auto it = files.cbegin(); it != files.cend(); ++it) {
@@ -1529,6 +1564,8 @@ void rescueUsb()
     const auto stepConn = QObject::connect(&udisks, &UDisks::operationFinished, [&](bool ok, const QString &m) {
         steps << (ok ? QString() : QStringLiteral("FAILED ")) + m;
     });
+    writeBiosBootTo(stickImage);
+    QString readyText;
     {
         QStringList boxes;
         Answerer answerer;
@@ -1557,7 +1594,9 @@ void rescueUsb()
         waitUntil([&] { return !dialog.isVisible(); }, 5000);
         report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The Bluespark USB is ready")), QStringLiteral("it reports the stick ready"),
                (boxes + steps).join(QStringLiteral(" | ")));
+        readyText = boxes.value(0);
     }
+    RescueUsbDialog::openStickForTest = nullptr;
     QObject::disconnect(stepConn);
 
     // What it made: MBR, one FAT32 partition, bootable, with every file checked.
@@ -1584,6 +1623,9 @@ void rescueUsb()
         const int good = filesMatchingSums(root, &listed);
         report(listed > 0 && good == listed, QStringLiteral("every file on it matches sha256sum.txt"),
                QStringLiteral("%1 of %2").arg(good).arg(listed));
+        QString biosDetail;
+        report(readyText.contains(QLatin1String("and old BIOS PCs")) && biosBootMatches(stickImage, root, &biosDetail),
+               QStringLiteral("GRUB's boot code for old BIOS PCs is in front of the partition"), biosDetail);
 
         // Opened again, the dialog knows the stick.
         RescueUsbDialog again(&udisks, loopPath);
