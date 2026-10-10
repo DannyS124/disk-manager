@@ -2133,12 +2133,19 @@ void homeScreen()
             f.write(data);
     };
     const bool noVar = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::Unknown;
+    // Firmware without Secure Boot: other variables, but not that one.
+    QFile other(efi + QStringLiteral("/efivars/BootCurrent-8be4df61-93ca-11d2-aa0d-00e098032b8c"));
+    if (other.open(QIODevice::WriteOnly))
+        other.write(QByteArray("\x06\x00\x00\x00\x01\x00", 6));
+    other.close();
+    const bool noSecureBoot = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::Off;
     secureBootVar(QByteArray("\x06\x00\x00\x00\x01", 5));
     const bool on = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::On;
     secureBootVar(QByteArray("\x06\x00\x00\x00\x00", 5));
     const bool off = HomeWindow::secureBoot(efi) == HomeWindow::SecureBoot::Off;
     const bool bios = HomeWindow::secureBoot(dir.filePath(QStringLiteral("no-efi"))) == HomeWindow::SecureBoot::Bios;
-    report(noVar && on && off && bios, QStringLiteral("Secure Boot is read right: on, off, BIOS, can't tell"));
+    report(noVar && noSecureBoot && on && off && bios,
+           QStringLiteral("Secure Boot is read right: on, off, firmware without it, BIOS, can't tell"));
 
     HomeWindow::applicationDirs.clear();
     HomeWindow::launch = realLaunch;

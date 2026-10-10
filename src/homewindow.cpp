@@ -459,8 +459,12 @@ HomeWindow::SecureBoot HomeWindow::secureBoot(const QString &efiDir)
 {
     if (!QFileInfo::exists(efiDir))
         return SecureBoot::Bios;
-    // The variable is 4 bytes of attributes, then 1 when Secure Boot is on.
-    QFile var(efiDir + QStringLiteral("/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"));
+    // The variable is 4 bytes of attributes, then 1 when Secure Boot is on. Firmware without
+    // Secure Boot doesn't have it at all; with no variables to be seen, they aren't readable.
+    const QString vars = efiDir + QStringLiteral("/efivars");
+    QFile var(vars + QStringLiteral("/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"));
+    if (!var.exists())
+        return QDir(vars).isEmpty() ? SecureBoot::Unknown : SecureBoot::Off;
     if (!var.open(QIODevice::ReadOnly))
         return SecureBoot::Unknown;
     const QByteArray data = var.read(16);
