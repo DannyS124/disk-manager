@@ -1,6 +1,6 @@
 # Maintainer: Danny S <48356907+DannyS124@users.noreply.github.com>
 pkgname=diskforge
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc='Disk manager for Linux that works like Windows Disk Management'
 arch=('x86_64')
@@ -22,7 +22,7 @@ optdepends=(
   'wimlib: Make a Windows USB from ISOs with an install.wim over 4 GB'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('fbb5e10ee13fb2701f1943d61794d4434657cef92b9cd0ee373b757e29a089b2')
+sha256sums=('fa15799a32afd502a564479164095112987e8108d9bf78757d034b7026fe6995')
 
 build() {
   rm -rf build  # makepkg keeps src/ between builds; an old cache breaks updates
