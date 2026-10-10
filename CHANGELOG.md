@@ -25,6 +25,7 @@ Changed:
 - Staging a release also builds DiskForge Live, and publishing attaches the ISO
 
 Fixed:
+- After a Secure Erase the drive shows up blank right away. Before, it kept showing its old partitions until DiskForge was reopened
 - A window that needed a drive unmounted first (Back Up, Clone, Rescue Copy...) waited forever when the unmount failed. Now it says the drive couldn't be opened
 - Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker
 

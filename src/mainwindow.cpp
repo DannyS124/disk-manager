@@ -464,6 +464,15 @@ void MainWindow::createActions()
         if (!fresh)
             return gone();
         statusBar()->showMessage(tr("Erasing %1… the drive is doing it, so there's no progress until it's done.").arg(shortDevice(fresh->device)));
+        // Old controllers can lose a drive during a long erase and not notice it's back. On
+        // DiskForge Live, ask them to look again once it's done.
+        if (rescue::canRescanDrives()) {
+            auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_udisks, &UDisks::operationFinished, this, [this, conn](bool, const QString &) {
+                disconnect(*conn);
+                rescue::rescanDrives({QStringLiteral("scan")}, this);
+            });
+        }
         m_udisks->secureErase(*fresh, dialog.method());
     });
 

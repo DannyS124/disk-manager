@@ -571,16 +571,27 @@ void UDisks::secureErase(const Disk &disk, EraseMethod method)
     const QString blockPath = d->blockPath, drivePath = d->drivePath;
     const bool usb = d->bus == QLatin1String("usb");
     unmountThen(d->volumes, failure, [this, method, ata, blockPath, drivePath, name, failure, usb] {
-        auto done = [name](const QDBusMessage &) { return tr("%1 has been erased. Use New Partition Table to use it again.").arg(name); };
+        // The drive erased itself, so the system still has the old partitions in mind until it
+        // reads the drive again. Whatever that says, the erase itself worked.
+        auto done = [this, blockPath, name](const QDBusMessage &) {
+            QDBusMessage reread = QDBusMessage::createMethodCall(kService, blockPath, kBlock, QStringLiteral("Rescan"));
+            reread << options();
+            auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(reread, 60000), this);
+            connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, name](QDBusPendingCallWatcher *w) {
+                w->deleteLater();
+                refresh();
+                emit operationFinished(true, tr("%1 has been erased. Use New Partition Table to use it again.").arg(name));
+            });
+        };
         if (ata)
-            call(drivePath, kAta, QStringLiteral("SecurityEraseUnit"),
-                 {options({{QStringLiteral("enhanced"), method == EraseMethod::AtaEnhanced}})}, done, failure,
-                 [usb](const QString &error) { return secureEraseRefused(error, usb); });
+            callThen(drivePath, kAta, QStringLiteral("SecurityEraseUnit"),
+                     {options({{QStringLiteral("enhanced"), method == EraseMethod::AtaEnhanced}})}, failure, done, {},
+                     [usb](const QString &error) { return secureEraseRefused(error, usb); });
         else
-            call(blockPath, kNvmeNamespace, QStringLiteral("FormatNamespace"),
-                 {options({{QStringLiteral("secure_erase"),
-                            method == EraseMethod::NvmeCrypto ? QStringLiteral("crypto_erase") : QStringLiteral("user_data")}})},
-                 done, failure);
+            callThen(blockPath, kNvmeNamespace, QStringLiteral("FormatNamespace"),
+                     {options({{QStringLiteral("secure_erase"),
+                                method == EraseMethod::NvmeCrypto ? QStringLiteral("crypto_erase") : QStringLiteral("user_data")}})},
+                     failure, done);
     }, true);
 }
 
