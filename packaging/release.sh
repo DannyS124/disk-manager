@@ -167,7 +167,9 @@ Disk Health: the reasons, the firmware row, the Btrfs part; the warning bar and 
 View > Theme (each one), a hard drive's Properties > Power, Rescue Copy's "Go easy" options.
 USB sticks: Check a USB Stick, Write Image to USB with a compressed image and with "copy the
 files" (and persistence), Make a Windows USB, and Make a Bluespark USB with
-packaging/staging/$v/$rescue_iso. Start a PC (or a VM) from the Bluespark stick and look at its logs.
+packaging/staging/$v/$rescue_iso. Start a PC (or a VM) from the Bluespark stick, UEFI and an old
+BIOS one if you have it, and look at its logs. Find Lost Files on a stick with a few deleted pictures,
+saving them onto another drive.
 
 All good:  packaging/release.sh --publish $v
 Problem:   fix it, commit, and run --stage $v again

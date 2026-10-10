@@ -15,7 +15,7 @@
 <context>
     <name>BadSectorsDialog</name>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1125"/>
+        <location filename="../src/tools.cpp" line="1406"/>
         <source>%n area(s) read slowly. Slow spots often turn into bad sectors later, so keep a backup.</source>
         <translation>
             <numerusform>%n area read slowly. Slow spots often turn into bad sectors later, so keep a backup.</numerusform>
@@ -23,7 +23,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1153"/>
+        <location filename="../src/tools.cpp" line="1434"/>
         <source>Repair %n bad sector(s) on %1?</source>
         <translation>
             <numerusform>Repair %n bad sector on %1?</numerusform>
@@ -31,7 +31,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="1198"/>
+        <location filename="../src/tools.cpp" line="1481"/>
         <source>%n block(s)</source>
         <translation>
             <numerusform>%n block</numerusform>
@@ -42,7 +42,7 @@
 <context>
     <name>BlockMapWidget</name>
     <message numerus="yes">
-        <location filename="../src/blockmapwidget.cpp" line="102"/>
+        <location filename="../src/blockmapwidget.cpp" line="107"/>
         <source>Slow (%n area(s))</source>
         <translation>
             <numerusform>Slow (%n area)</numerusform>
@@ -53,7 +53,7 @@
 <context>
     <name>CleanupDialog</name>
     <message numerus="yes">
-        <location filename="../src/systemtools.cpp" line="440"/>
+        <location filename="../src/systemtools.cpp" line="443"/>
         <source>%n item(s) couldn&apos;t be deleted (first: %1).</source>
         <translation>
             <numerusform>%n item couldn't be deleted (first: %1).</numerusform>
@@ -64,7 +64,7 @@
 <context>
     <name>CloneDialog</name>
     <message numerus="yes">
-        <location filename="../src/copydialogs.cpp" line="235"/>
+        <location filename="../src/copydialogs.cpp" line="236"/>
         <source>Copies %n partition(s), %1 in all. Takes %2.</source>
         <translation>
             <numerusform>Copies %n partition, %1 in all. Takes %2.</numerusform>
@@ -75,7 +75,7 @@
 <context>
     <name>MainWindow</name>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="780"/>
+        <location filename="../src/mainwindow.cpp" line="824"/>
         <source>%n more drive(s) need a look; their health is in the Status column.</source>
         <translation>
             <numerusform>%n more drive need a look; their health is in the Status column.</numerusform>
@@ -83,7 +83,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/mainwindow.cpp" line="1673"/>
+        <location filename="../src/mainwindow.cpp" line="1752"/>
         <source>%n add-on command(s) still running. Stop them and quit?</source>
         <translation>
             <numerusform>%n add-on command still running. Stop them and quit?</numerusform>
@@ -110,7 +110,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/tools.cpp" line="92"/>
+        <location filename="../src/tools.cpp" line="104"/>
         <source>%n sector(s)</source>
         <translation>
             <numerusform>%n sector</numerusform>
@@ -134,7 +134,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/addons.cpp" line="1063"/>
+        <location filename="../src/addons.cpp" line="1047"/>
         <source>%n entry(s) in the list were left out because they didn&apos;t check out</source>
         <translation>
             <numerusform>%n entry in the list were left out because they didn't check out</numerusform>
@@ -299,7 +299,7 @@
 <context>
     <name>RecoverDialog</name>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="192"/>
+        <location filename="../src/recoverdialog.cpp" line="193"/>
         <source>The backup copy at the end of the drive: %n partition(s)</source>
         <translation>
             <numerusform>The backup copy at the end of the drive: %n partition</numerusform>
@@ -307,7 +307,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="332"/>
+        <location filename="../src/recoverdialog.cpp" line="333"/>
         <source>Stopped: %n file system(s) found before that.</source>
         <translation>
             <numerusform>Stopped: %n file system found before that.</numerusform>
@@ -315,7 +315,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="333"/>
+        <location filename="../src/recoverdialog.cpp" line="334"/>
         <source>Found %n file system(s).</source>
         <translation>
             <numerusform>Found %n file system.</numerusform>
@@ -323,7 +323,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/recoverdialog.cpp" line="433"/>
+        <location filename="../src/recoverdialog.cpp" line="436"/>
         <source>The partition table of %1 is back: %n partition(s).</source>
         <translation>
             <numerusform>The partition table of %1 is back: %n partition.</numerusform>
@@ -345,7 +345,7 @@
 <context>
     <name>SnapshotsDialog</name>
     <message numerus="yes">
-        <location filename="../src/systemtools.cpp" line="534"/>
+        <location filename="../src/systemtools.cpp" line="537"/>
         <source>&lt;small&gt;%n snapshot(s). Sizes aren&apos;t shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</source>
         <translation>
             <numerusform>&lt;small&gt;%n snapshot. Sizes aren't shown: Btrfs only knows them with quotas switched on, which slows it down. To go back to a snapshot, use snapper or the snapshot entries in your boot menu.&lt;/small&gt;</numerusform>
@@ -396,7 +396,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/udisks.cpp" line="432"/>
+        <location filename="../src/udisks.cpp" line="436"/>
         <source>The volume group %1 is missing %n of its drives. What was on them can&apos;t be read.</source>
         <translation>
             <numerusform>The volume group %1 is missing %n of its drives. What was on them can't be read.</numerusform>

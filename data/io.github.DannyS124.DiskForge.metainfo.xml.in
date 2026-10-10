@@ -55,6 +55,15 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.5.1" date="2026-10-09">
+      <description>
+        <p>Bluespark: a rescue USB stick that starts any PC, new (UEFI, Secure Boot on) or old (BIOS), with DiskForge
+        and other repair tools on a small desktop of its own. Make a Bluespark USB puts it on a stick.</p>
+        <p>Find Lost Files gets deleted files back, and files from formatted or damaged drives: pictures,
+        documents, videos, music and archives, with previews. Also: Check a USB Stick finds fake and failing
+        sticks, Make a Windows USB, compressed images and copied files in Write Image to USB, and Quick Fixes.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-09">
       <description>
         <p>Disk health, writing images to USB, encrypted drives, wipe, check and repair, mount at startup,
