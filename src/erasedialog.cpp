@@ -56,7 +56,8 @@ SecureEraseDialog::SecureEraseDialog(UDisks *udisks, const QString &blockPath, i
         }
     }
     m_frozen->setText(redText(tr("The drive is frozen: its firmware refuses erase commands until the PC has been to sleep and woken "
-                                 "up once. Put the PC to sleep, wake it, then check again.")));
+                                 "up once. Put the PC to sleep, wake it, then check again. Some PCs freeze it again when they wake "
+                                 "up; then Wipe Disk is the way to clear it.")));
 
     auto *frozenRow = new QHBoxLayout;
     frozenRow->addStretch();

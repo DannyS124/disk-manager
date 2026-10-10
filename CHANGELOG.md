@@ -45,6 +45,8 @@ Changed:
 - Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker when Browse had the focus before
 
 Fixed:
+- DiskForge Live: Sleep Now (for a frozen drive in Secure Erase) showed "Screen Saver Error" after waking up. The stick has
+  no screen locker, and the desktop doesn't try to lock the screen before sleeping anymore
 - When a drive refuses Secure Erase, it says why in plain words and what to do (most USB adapters block it; Wipe Disk works
   through any adapter), and the Secure Erase window warns about USB before it starts
 - When a drive couldn't be unmounted before DiskForge read or wrote it (Back Up, Clone, Rescue Copy...), the window waiting
