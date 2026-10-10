@@ -5,7 +5,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 version=$1 build_id=$2 built=$3
 export DEBIAN_FRONTEND=noninteractive
 
-cat > /etc/bluespark.conf <<CONF
+cat > /etc/diskforge-live.conf <<CONF
 VERSION=$version
 BUILD_ID=$build_id
 BUILT=$built
@@ -16,23 +16,23 @@ CONF
 sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
 locale-gen >/dev/null
 echo 'LANG=en_US.UTF-8' > /etc/default/locale
-echo bluespark > /etc/hostname
+echo diskforge-live > /etc/hostname
 
 # Openbox draws the window frames: Debian's own settings, with our theme and a bigger title font.
 mkdir -p /etc/skel/.config/openbox
-sed -e 's|<name>Clearlooks</name>|<name>Bluespark</name>|' \
+sed -e 's|<name>Clearlooks</name>|<name>DiskForge-Live</name>|' \
     -e 's|<name>sans</name>|<name>DejaVu Sans</name>|g' -e 's|<size>8</size>|<size>10</size>|g' \
     /etc/xdg/openbox/rc.xml > /etc/skel/.config/openbox/rc.xml
-grep -q '<name>Bluespark</name>' /etc/skel/.config/openbox/rc.xml || { echo "Openbox's rc.xml has changed, the theme isn't set"; exit 1; }
+grep -q '<name>DiskForge-Live</name>' /etc/skel/.config/openbox/rc.xml || { echo "Openbox's rc.xml has changed, the theme isn't set"; exit 1; }
 
 # The one user, without a password: whoever is at the PC owns it. sudo and polkit
 # (files/etc) don't ask either.
-useradd --create-home --shell /bin/bash --comment "Bluespark" rescue
+useradd --create-home --shell /bin/bash --comment "DiskForge Live" rescue
 passwd --delete rescue >/dev/null
 for group in sudo netdev plugdev; do
     if getent group "$group" >/dev/null; then usermod -aG "$group" rescue; fi
 done
-chmod 0440 /etc/sudoers.d/bluespark
+chmod 0440 /etc/sudoers.d/diskforge-live
 
 # No desktop icons: the home screen (diskforge --home, started by the session) is the desktop.
 chown -R rescue:rescue /home/rescue
@@ -49,15 +49,15 @@ if [ -n "$missing" ]; then
 fi
 
 # Started on every boot
-systemctl enable bluespark-logs.service bluespark-logs.timer >/dev/null
+systemctl enable diskforge-live-logs.service diskforge-live-logs.timer >/dev/null
 # Nothing that touches the PC's own drives on its own, or keeps the stick busy
 systemctl mask fstrim.timer e2scrub_all.timer e2scrub_reap.service smartmontools.service \
     apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer >/dev/null 2>&1
 
 # Our boot animation. The initrd below gets it, so it shows from the start.
-plymouth-set-default-theme bluespark
+plymouth-set-default-theme diskforge-live
 
-# The build ID goes into the initrd too (hooks/bluespark), so this initrd only
+# The build ID goes into the initrd too (hooks/diskforge-live), so this initrd only
 # starts from its own stick.
 update-initramfs -u -k all
 

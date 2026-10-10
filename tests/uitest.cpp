@@ -1391,7 +1391,7 @@ int filesMatchingSums(const QString &root, int *listed)
     return good;
 }
 
-// Make a Bluespark USB writes the boot code for BIOS PCs into the stick's image file instead
+// Make a DiskForge Live USB writes the boot code for BIOS PCs into the stick's image file instead
 // of going through UDisks (see RescueUsbDialog::openStickForTest).
 void writeBiosBootTo(const QString &image)
 {
@@ -1418,14 +1418,14 @@ bool biosBootMatches(const QString &image, const QString &root, QString *detail)
         && uchar(start[510]) == 0x55 && uchar(start[511]) == 0xAA && start.mid(512) == core;
 }
 
-// Inside Bluespark, Make a Bluespark USB copies the stick it runs from. Here the stick
+// Inside DiskForge Live, Make a DiskForge Live USB copies the stick it runs from. Here the stick
 // made a moment ago (mounted at `sourceRoot`, build ID "test") stands in for it, with a fake
 // rescue conf: the dialog finds it by its build ID, won't copy it onto itself, and copies it
 // onto a second stick with every file checked.
 void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &sourceRoot, const QTemporaryDir &dir)
 {
     const QString realConf = rescue::rescueConfPath;
-    rescue::rescueConfPath = dir.filePath(QStringLiteral("bluespark.conf"));
+    rescue::rescueConfPath = dir.filePath(QStringLiteral("diskforge-live.conf"));
     QFile conf(rescue::rescueConfPath);
     if (!conf.open(QIODevice::WriteOnly) || conf.write("VERSION=0.0.1\nBUILD_ID=test\n") < 0) {
         report(false, QStringLiteral("write a test rescue conf"), conf.errorString());
@@ -1472,7 +1472,7 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
         auto *targets = dialog.findChild<QComboBox *>(QStringLiteral("targets"));
         auto *warning = dialog.findChild<QLabel *>(QStringLiteral("warning"));
         auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("confirm"));
-        QPushButton *make = findButton(&dialog, QStringLiteral("Make the Bluespark USB"));
+        QPushButton *make = findButton(&dialog, QStringLiteral("Make the DiskForge Live USB"));
         report(imageEdit->text() == sourceRoot && info->text().startsWith(QLatin1String("A copy of the rescue stick")),
                QStringLiteral("the dialog starts with the running stick"), info->text());
         report(targets->currentData().toString() == sourceLoop && warning->text().contains(QLatin1String("being copied"))
@@ -1485,11 +1485,11 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
             make->click();
         waitUntil([&] { return !dialog.isVisible() || boxes.size() > 0; }, 120000);
         waitUntil([&] { return !dialog.isVisible(); }, 5000);
-        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The Bluespark USB is ready")), QStringLiteral("the copy is ready"),
+        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The DiskForge Live USB is ready")), QStringLiteral("the copy is ready"),
                boxes.join(QStringLiteral(" | ")));
     }
     RescueUsbDialog::openStickForTest = nullptr;
-    const QString root = mountStick(udisks, loopPath, QStringLiteral("BLUESPARK"));
+    const QString root = mountStick(udisks, loopPath, QStringLiteral("DISKFORGE"));
     int listed = 0;
     const int good = filesMatchingSums(root, &listed);
     report(listed > 0 && good == listed && rescue::stickInfo(root).id == QLatin1String("test"),
@@ -1501,7 +1501,7 @@ void copyRunningStick(UDisks &udisks, const QString &sourceLoop, const QString &
     cleanUpLoop(udisks, loopPath);
 }
 
-// Make a Bluespark USB on a loop device of the user's own (UDisks lets you set those up and
+// Make a DiskForge Live USB on a loop device of the user's own (UDisks lets you set those up and
 // change them without a password), through the dialog like a user would.
 // DISKFORGE_TEST_RESCUE_ISO uses a real rescue image instead of a small made-up one, and with
 // it DISKFORGE_TEST_STICK keeps the stick's image file afterwards, to boot it in a VM.
@@ -1512,7 +1512,7 @@ void rescueUsb()
     if (iso.isEmpty()) {
         const QString tree = dir.filePath(QStringLiteral("tree"));
         QMap<QString, QByteArray> files;
-        files[QStringLiteral(".disk/bluespark")] = "Bluespark\nversion=0.0.1\nbuilt=2026-10-09\nid=test\n";
+        files[QStringLiteral(".disk/diskforge-live")] = "DiskForge Live\nversion=0.0.1\nbuilt=2026-10-09\nid=test\n";
         files[QStringLiteral("EFI/BOOT/BOOTX64.EFI")] = QByteArray(300000, 'x');
         files[QStringLiteral("boot/grub/i386-pc/stick-boot.img")] = QByteArray(510, 'b') + QByteArray("\x55\xaa", 2);
         files[QStringLiteral("boot/grub/i386-pc/stick-core.img")] = QByteArray(40000, 'c');
@@ -1532,7 +1532,7 @@ void rescueUsb()
         iso = dir.filePath(QStringLiteral("rescue.iso"));
         if (sh(QStringLiteral("xorriso"), {QStringLiteral("-as"), QStringLiteral("mkisofs"), QStringLiteral("-quiet"), QStringLiteral("-J"),
                                            QStringLiteral("-joliet-long"), QStringLiteral("-R"), QStringLiteral("-o"), iso, tree}) != 0) {
-            out << "SKIP  Make a Bluespark USB: xorriso isn't installed" << Qt::endl;
+            out << "SKIP  Make a DiskForge Live USB: xorriso isn't installed" << Qt::endl;
             return;
         }
     }
@@ -1545,7 +1545,7 @@ void rescueUsb()
     sh(QStringLiteral("truncate"), {QStringLiteral("-s"), big ? QStringLiteral("3G") : QStringLiteral("600M"), stickImage});
 
     const QString loopPath = userLoop(stickImage);
-    report(!loopPath.isEmpty(), QStringLiteral("Make a Bluespark USB: a loop device stands in for the stick"));
+    report(!loopPath.isEmpty(), QStringLiteral("Make a DiskForge Live USB: a loop device stands in for the stick"));
     if (loopPath.isEmpty())
         return;
 
@@ -1582,9 +1582,9 @@ void rescueUsb()
         auto *image = dialog.findChild<QLineEdit *>(QStringLiteral("image"));
         auto *confirm = dialog.findChild<QLineEdit *>(QStringLiteral("confirm"));
         auto *info = dialog.findChild<QLabel *>(QStringLiteral("imageInfo"));
-        QPushButton *make = findButton(&dialog, QStringLiteral("Make the Bluespark USB"));
+        QPushButton *make = findButton(&dialog, QStringLiteral("Make the DiskForge Live USB"));
         image->setText(iso);
-        report(info->text().contains(QLatin1String("Bluespark")), QStringLiteral("the dialog reads the image"), info->text());
+        report(info->text().contains(QLatin1String("DiskForge Live")), QStringLiteral("the dialog reads the image"), info->text());
         report(make && !make->isEnabled(), QStringLiteral("nothing happens before the device name is typed"));
         confirm->setText(shortDevice(device));
         report(make && make->isEnabled(), QStringLiteral("typing it unlocks the button"));
@@ -1592,7 +1592,7 @@ void rescueUsb()
             make->click();
         waitUntil([&] { return !dialog.isVisible() || boxes.size() > 0; }, big ? 900000 : 120000);
         waitUntil([&] { return !dialog.isVisible(); }, 5000);
-        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The Bluespark USB is ready")), QStringLiteral("it reports the stick ready"),
+        report(boxes.size() == 1 && boxes[0].startsWith(QLatin1String("The DiskForge Live USB is ready")), QStringLiteral("it reports the stick ready"),
                (boxes + steps).join(QStringLiteral(" | ")));
         readyText = boxes.value(0);
     }
@@ -1606,7 +1606,7 @@ void rescueUsb()
         stick = udisks.diskByPath(loopPath);
         part = nullptr;
         for (const Volume &v : stick ? stick->volumes : QVector<Volume>()) {
-            if (v.label == QLatin1String("BLUESPARK"))
+            if (v.label == QLatin1String("DISKFORGE"))
                 part = &v;
         }
         return part != nullptr;
@@ -1618,7 +1618,7 @@ void rescueUsb()
     report(part && part->mountPoints.isEmpty(), QStringLiteral("and it's unmounted at the end"));
     const bool madeOne = part != nullptr;
     if (madeOne) {
-        const QString root = mountStick(udisks, loopPath, QStringLiteral("BLUESPARK"));
+        const QString root = mountStick(udisks, loopPath, QStringLiteral("DISKFORGE"));
         int listed = 0;
         const int good = filesMatchingSums(root, &listed);
         report(listed > 0 && good == listed, QStringLiteral("every file on it matches sha256sum.txt"),
@@ -1633,8 +1633,8 @@ void rescueUsb()
         QCoreApplication::processEvents();
         auto *stickInfo = again.findChild<QLabel *>(QStringLiteral("stickInfo"));
         QPushButton *openLogs = findButton(&again, QStringLiteral("Open Logs"));
-        report(stickInfo && stickInfo->text().contains(QLatin1String("has Bluespark")) && openLogs && openLogs->isVisibleTo(&again),
-               QStringLiteral("opened again, it says the stick has Bluespark and offers its logs"), stickInfo ? stickInfo->text() : QString());
+        report(stickInfo && stickInfo->text().contains(QLatin1String("has DiskForge Live")) && openLogs && openLogs->isVisibleTo(&again),
+               QStringLiteral("opened again, it says the stick has DiskForge Live and offers its logs"), stickInfo ? stickInfo->text() : QString());
         again.close();
         // The made-up image's build ID is "test"; a real one has its own.
         if (rescue::stickInfo(root).id == QLatin1String("test"))
@@ -1733,7 +1733,7 @@ void stickCheck()
 // Write Image to USB's "copy the files" way, with persistence, on a loop device of the user's
 // own (no raw access needed, so no password): a Debian-live-like ISO with a long label.
 // DISKFORGE_TEST_COPY_ISO uses a real ISO instead (one with live-boot persistence, like
-// Bluespark), and DISKFORGE_TEST_STICK keeps the stick's image to boot it in a VM.
+// DiskForge Live), and DISKFORGE_TEST_STICK keeps the stick's image to boot it in a VM.
 void isoCopy()
 {
     QTemporaryDir dir;
@@ -2042,7 +2042,7 @@ void windowsUsb()
     cleanUpLoop(udisks, loopPath);
 }
 
-// The home screen (Bluespark's desktop, and Tools → Quick Fixes on a PC): which tiles are there,
+// The home screen (DiskForge Live's desktop, and Tools → Quick Fixes on a PC): which tiles are there,
 // what each one starts, the ask before restarting into the firmware, and reading Secure Boot.
 void homeScreen()
 {
@@ -2061,8 +2061,8 @@ void homeScreen()
         if (f.open(QIODevice::WriteOnly))
             f.write("[Desktop Entry]\nName=x\n[Other]\nExec=wrong\n[Desktop Entry]\nExec=" + exec + "\n");
     };
-    desktopFile("bluespark-testdisk", "qterminal -e sudo testdisk %f");
-    desktopFile("bluespark-firmware", "systemctl reboot --firmware-setup");
+    desktopFile("diskforge-live-testdisk", "qterminal -e sudo testdisk %f");
+    desktopFile("diskforge-live-firmware", "systemctl reboot --firmware-setup");
     desktopFile("qterminal", "qterminal");
     HomeWindow::applicationDirs = {apps};
     auto ids = [](const HomeWindow &home) {
@@ -2079,7 +2079,7 @@ void homeScreen()
                    && tiles.contains(QLatin1String("writeimage")) && tiles.contains(QLatin1String("recover")),
                QStringLiteral("Quick Fixes: the tools, without the stick's programs or what isn't installed"), tiles.join(QLatin1Char(' ')));
         auto *copy = fixes.findChild<QAbstractButton *>(QStringLiteral("tile-copystick"));
-        report(copy && copy->text() == QLatin1String("Make a Bluespark USB"), QStringLiteral("on a PC the stick tile makes a Bluespark USB"),
+        report(copy && copy->text() == QLatin1String("Make a DiskForge Live USB"), QStringLiteral("on a PC the stick tile makes a DiskForge Live USB"),
                copy ? copy->text() : QString());
         started.clear();
         if (auto *write = fixes.findChild<QAbstractButton *>(QStringLiteral("tile-writeimage")))
@@ -2319,7 +2319,7 @@ void enterKey()
     };
     {
         RescueUsbDialog dialog(&udisks, QString());
-        check(dialog, QStringLiteral("Make a Bluespark USB"));
+        check(dialog, QStringLiteral("Make a DiskForge Live USB"));
     }
     {
         WindowsUsbDialog dialog(&udisks, QString(), nullptr, QStringLiteral("/nonexistent/Win11.iso"));
@@ -2331,17 +2331,17 @@ void enterKey()
     }
 }
 
-// In Bluespark the few things that only change the running system are off and say why;
+// In DiskForge Live the few things that only change the running system are off and say why;
 // the USB tools and everything else stay on.
 void rescueMode()
 {
     const QString realConf = rescue::rescueConfPath;
     QTemporaryDir dir;
-    rescue::rescueConfPath = dir.filePath(QStringLiteral("bluespark.conf"));
+    rescue::rescueConfPath = dir.filePath(QStringLiteral("diskforge-live.conf"));
     UDisks udisks;
     const QStringList offInRescue = {QStringLiteral("Mount at Startup"), QStringLiteral("Disk Cleanup"), QStringLiteral("Btrfs Snapshots")};
     const QStringList alwaysOn = {QStringLiteral("Write Image to USB"), QStringLiteral("Make a Windows USB"),
-                                  QStringLiteral("Make a Bluespark USB"), QStringLiteral("Check a USB Stick"),
+                                  QStringLiteral("Make a DiskForge Live USB"), QStringLiteral("Check a USB Stick"),
                                   QStringLiteral("Open Disk Image"), QStringLiteral("Optimize")};
 
     auto check = [&](bool inRescue) {

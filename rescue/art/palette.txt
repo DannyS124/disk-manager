@@ -1,5 +1,5 @@
-Bluespark colours. Everything on the stick uses these: the boot menu, the boot animation, the
-desktop, the icons and DiskForge's Bluespark theme.
+DiskForge Live colours. Everything on the stick uses these: the boot menu, the boot animation, the
+desktop, the icons and the DiskForge Live theme inside DiskForge.
 
 neon blue   #00E5FF   highlights, the selected thing, the spark itself
 blue        #1F6FFF   buttons, panels, the anvil

@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     const QCommandLineOption openOption(QStringLiteral("open"),
                                         QStringLiteral("Open just one tool: write-image, windows-usb, rescue-usb, check-stick or lost-files."),
                                         QStringLiteral("tool"));
-    const QCommandLineOption homeOption(QStringLiteral("home"), QStringLiteral("Be Bluespark's home screen (its desktop)."));
+    const QCommandLineOption homeOption(QStringLiteral("home"), QStringLiteral("Be DiskForge Live's home screen (its desktop)."));
     parser.addOptions({dumpOption, screenshotOption, selectOption, menuOption, logOption, openOption, homeOption});
     parser.addPositionalArgument(QStringLiteral("images"), QStringLiteral("Disk images (.iso, .img) to open."), QStringLiteral("[image...]"));
     parser.process(app);
@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 
     MainWindow window(&udisks);
     window.resize(1280, 800);
-    // On a smaller screen (a small laptop, a VM, Bluespark) that would put the bottom of
+    // On a smaller screen (a small laptop, a VM, DiskForge Live) that would put the bottom of
     // the window under the taskbar, so it takes the room there is instead. Screenshots keep
     // the size they always have.
     const QScreen *screen = QGuiApplication::primaryScreen();
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
     if (parser.isSet(selectOption) && !window.selectDevice(parser.value(selectOption)))
         QTextStream(stderr) << "No partition " << parser.value(selectOption) << "\n";
     if (parser.isSet(openOption)) {
-        // Just the tool, for launchers like the ones on Bluespark's desktop: no main
+        // Just the tool, for launchers like the ones on DiskForge Live's desktop: no main
         // window behind it, and DiskForge closes with it.
         const QString tool = parser.value(openOption);
         QTimer::singleShot(0, &window, [&window, tool] {

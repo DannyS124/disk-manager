@@ -16,7 +16,7 @@
 namespace {
 
 // Built-in themes; their names are translated here, not taken from the files.
-const QStringList kBuiltIn = {QStringLiteral("classic"), QStringLiteral("deadshadow"), QStringLiteral("bluespark"), QStringLiteral("high-contrast")};
+const QStringList kBuiltIn = {QStringLiteral("classic"), QStringLiteral("deadshadow"), QStringLiteral("diskforge-live"), QStringLiteral("high-contrast")};
 
 QString builtInName(const QString &id)
 {
@@ -24,8 +24,8 @@ QString builtInName(const QString &id)
         return QCoreApplication::translate("theme", "Classic");
     if (id == QLatin1String("deadshadow"))
         return QCoreApplication::translate("theme", "Deadshadow");
-    if (id == QLatin1String("bluespark"))
-        return QCoreApplication::translate("theme", "Bluespark");
+    if (id == QLatin1String("diskforge-live"))
+        return QCoreApplication::translate("theme", "DiskForge Live");
     if (id == QLatin1String("high-contrast"))
         return QCoreApplication::translate("theme", "High Contrast");
     return id;
@@ -215,7 +215,10 @@ void Theme::use(const QString &id, const Addons &addons)
 
 void Theme::restore(const Addons &addons)
 {
-    use(appSettings().value(QStringLiteral("theme"), QStringLiteral("system")).toString(), addons);
+    QString id = appSettings().value(QStringLiteral("theme"), QStringLiteral("system")).toString();
+    if (id == QLatin1String("bluespark")) // its name before DiskForge Live
+        id = QStringLiteral("diskforge-live");
+    use(id, addons);
 }
 
 AddonTheme Theme::checked(const AddonTheme &theme, QStringList *replaced)

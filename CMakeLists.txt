@@ -132,7 +132,7 @@ target_compile_options(diskforge-ui PRIVATE -Wall -Wextra)
 function(diskforge_add_data target)
     qt_add_resources(${target} "${target}_data" PREFIX "/" FILES data/help.html data/${APP_ID}.svg LICENSE)
     qt_add_resources(${target} "${target}_themes" PREFIX "/themes" BASE data/themes
-        FILES data/themes/classic.json data/themes/deadshadow.json data/themes/bluespark.json data/themes/high-contrast.json)
+        FILES data/themes/classic.json data/themes/deadshadow.json data/themes/diskforge-live.json data/themes/high-contrast.json)
 endfunction()
 
 qt_add_executable(diskforge src/main.cpp)

@@ -14,9 +14,9 @@ class QGridLayout;
 class QLabel;
 class UDisks;
 
-// Bluespark's home screen: big tiles for what people start the stick for, a row of everyday
+// DiskForge Live's home screen: big tiles for what people start the stick for, a row of everyday
 // programs, and a strip that says what state the PC is in (Secure Boot, network, drives). In
-// Bluespark it is the desktop itself (diskforge --home). On a normal PC the same tiles open as
+// DiskForge Live it is the desktop itself (diskforge --home). On a normal PC the same tiles open as
 // a window, Tools → Quick Fixes, without the ones that only make sense on the stick.
 //
 // Every tile starts its tool as its own process (diskforge --open <tool>, or the program's

@@ -284,13 +284,13 @@ void MainWindow::createActions()
     });
 
     // Find Lost Files: from the selected drive or partition, or picked in the window.
-    m_findFiles = new QAction(themeIcon("bluespark-recover", "edit-find"), tr("Find &Lost Files…"), this);
+    m_findFiles = new QAction(themeIcon("diskforge-live-recover", "edit-find"), tr("Find &Lost Files…"), this);
     connect(m_findFiles, &QAction::triggered, this, [this] {
         const Volume *v = selectedVolume();
         const Disk *d = selectedDisk();
         LostFilesDialog(m_udisks, v ? v->objectPath : d ? d->blockPath : QString(), toolParent()).exec();
     });
-    m_findFilesImage = new QAction(themeIcon("bluespark-recover", "edit-find"), tr("Find Lost Files in a Disk &Image…"), this);
+    m_findFilesImage = new QAction(themeIcon("diskforge-live-recover", "edit-find"), tr("Find Lost &Files in a Disk Image…"), this);
     connect(m_findFilesImage, &QAction::triggered, this, [this] {
         const QString file = QFileDialog::getOpenFileName(this, tr("Find Lost Files in a Disk Image"), QDir::homePath(),
                                                           tr("Disk images (*.img *.iso *.raw *.dd *.bin);;All files (*)"));
@@ -422,7 +422,7 @@ void MainWindow::createActions()
         WriteImageDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
     });
 
-    m_rescueUsb = new QAction(themeIcon("tools-media-optical-burn", "media-flash"), tr("Make a &Bluespark USB…"), this);
+    m_rescueUsb = new QAction(themeIcon("tools-media-optical-burn", "media-flash"), tr("Make a DiskForge &Live USB…"), this);
     connect(m_rescueUsb, &QAction::triggered, this, [this] {
         const Disk *d = selectedDisk();
         RescueUsbDialog(m_udisks, d ? d->blockPath : QString(), toolParent()).exec();
@@ -1168,7 +1168,7 @@ void MainWindow::updateActions()
         m_health->setToolTip(tr("This drive doesn't report health data"));
     if (v && v->encrypted && !m_startup->isEnabled() && why.isEmpty())
         m_startup->setToolTip(tr("Encrypted drives can't mount at startup yet"));
-    // In Bluespark these would only change the system in memory, which starts fresh.
+    // In DiskForge Live these would only change the system in memory, which starts fresh.
     if (rescue::runningInRescue()) {
         for (QAction *a : {m_startup, m_cleanup, m_snapshots}) {
             a->setEnabled(false);

@@ -39,7 +39,7 @@ cmd="${1:-}"
 v="${2:-}"
 [[ -n "$v" ]] || die "usage: release.sh --stage|--publish|--pull|--aur <version>"
 stage="$root/packaging/staging/$v"
-rescue_iso="bluespark-$v.iso"
+rescue_iso="diskforge-live-$v.iso"
 tarball="diskforge-$v.tar.gz"
 pkg="diskforge-$v-1-$(uname -m).pkg.tar.zst"
 tmp=$(mktemp -d)
@@ -141,12 +141,12 @@ case "$cmd" in
         [[ -e "$tmp/root/$f" ]] || die "package is missing $f"
     done
 
-    # Bluespark, from the same source, so the stick always has the same DiskForge.
-    echo "==> building Bluespark $v (podman, takes a while)"
-    command -v podman >/dev/null || die "podman is needed to build Bluespark"
-    rescue/build.sh >"$logs/rescue.log" 2>&1 || { tail -20 "$logs/rescue.log"; die "Bluespark didn't build (full log: $logs/rescue.log)"; }
-    iso=$(ls -t rescue/out/bluespark-"$v"-*.iso 2>/dev/null | head -1)
-    [[ -n "$iso" ]] || die "the Bluespark build made no ISO for $v"
+    # DiskForge Live, from the same source, so the stick always has the same DiskForge.
+    echo "==> building DiskForge Live $v (podman, takes a while)"
+    command -v podman >/dev/null || die "podman is needed to build DiskForge Live"
+    rescue/build.sh >"$logs/rescue.log" 2>&1 || { tail -20 "$logs/rescue.log"; die "DiskForge Live didn't build (full log: $logs/rescue.log)"; }
+    iso=$(ls -t rescue/out/diskforge-live-"$v"-*.iso 2>/dev/null | head -1)
+    [[ -n "$iso" ]] || die "the DiskForge Live build made no ISO for $v"
     cp "$iso" "$stage/$rescue_iso"
     (cd "$stage" && sha256sum "$rescue_iso" > "$rescue_iso.sha256")
 
@@ -166,8 +166,8 @@ put it back with Recover Partitions; Partition Type and Flags; Inspect Partition
 Disk Health: the reasons, the firmware row, the Btrfs part; the warning bar and Dismiss.
 View > Theme (each one), a hard drive's Properties > Power, Rescue Copy's "Go easy" options.
 USB sticks: Check a USB Stick, Write Image to USB with a compressed image and with "copy the
-files" (and persistence), Make a Windows USB, and Make a Bluespark USB with
-packaging/staging/$v/$rescue_iso. Start a PC (or a VM) from the Bluespark stick, UEFI and an old
+files" (and persistence), Make a Windows USB, and Make a DiskForge Live USB with
+packaging/staging/$v/$rescue_iso. Start a PC (or a VM) from the DiskForge Live stick, UEFI and an old
 BIOS one if you have it, and look at its logs. Find Lost Files on a stick with a few deleted pictures,
 saving them onto another drive.
 

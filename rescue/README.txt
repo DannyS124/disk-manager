@@ -1,4 +1,4 @@
-Bluespark
+DiskForge Live
 =========
 
 A USB stick that starts any PC into its own small Linux desktop with DiskForge and some
@@ -12,7 +12,7 @@ Starting a PC from the stick
 2. Press the boot menu key right away. It's usually F12, F11, F10, F9, F8 or Esc,
    depending on the maker (Dell F12, HP F9, Lenovo F12, ASUS F8 or Esc, Acer F12,
    MSI F11). Pick the USB stick, the "UEFI" entry if there are two.
-3. The Bluespark menu shows up. Enter starts it. The desktop opens with DiskForge
+3. The DiskForge Live menu shows up. Enter starts it. The desktop opens with DiskForge
    after a minute or so.
 
 Secure Boot can stay on. The stick starts the same way Debian does, through boot files
@@ -20,7 +20,7 @@ signed for Secure Boot.
 
 What's in the menu
 ------------------
-Start Bluespark                       the normal way
+Start DiskForge Live                       the normal way
 Safe graphics                         if the screen stays black or looks broken
 Text mode                             no desktop, just a command line
 Copy to memory                        takes longer to start, then the stick can come out
@@ -34,7 +34,7 @@ Tools and troubleshooting:
 
 The home screen
 ---------------
-Bluespark opens on its home screen: big tiles for the jobs people bring the stick for, the
+DiskForge Live opens on its home screen: big tiles for the jobs people bring the stick for, the
 everyday programs under them, and at the top whether Secure Boot is on, whether there's
 internet, and how many drives it found.
 
@@ -51,7 +51,7 @@ Programs                Files, Web Browser, Terminal, Task Manager, Text Editor,
                         (see below), Read Me, and Firmware Settings (restarts into the
                         PC's setup, after asking)
 
-Everything is also in the start menu: the Bluespark button on the taskbar.
+Everything is also in the start menu: the DiskForge Live button on the taskbar.
 
 Mount at Startup, Disk Cleanup, snapshots and the TRIM and scrub schedules are off in here:
 this system starts fresh from the stick every time, so they'd change nothing.
@@ -77,7 +77,7 @@ starts ends up in that file.
 
 Making the stick
 ----------------
-DiskForge does it: File > Make a Bluespark USB, then pick this ISO and the stick (inside
+DiskForge does it: File > Make a DiskForge Live USB, then pick this ISO and the stick (inside
 the rescue system it copies the stick it's running from). That stick starts UEFI PCs (Secure
 Boot on or off) and old BIOS PCs, and keeps its logs. It also works to write the ISO with
 any image writer (DiskForge's Write Image to USB, Rufus, balenaEtcher, dd); that starts

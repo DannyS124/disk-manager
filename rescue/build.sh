@@ -1,17 +1,17 @@
 #!/bin/bash
-# Builds the Bluespark ISO. Needs podman (no root) and about 10 GB free.
+# Builds the DiskForge Live ISO. Needs podman (no root) and about 10 GB free.
 # Everything happens in a Debian container; nothing gets installed on this PC.
 #
 #   rescue/build.sh            build DiskForge's .deb, then the ISO, into rescue/out/
 #   rescue/build.sh --no-app   reuse the .deb from the last build (faster when only the
 #                              rescue files changed)
 #
-# Downloaded packages are kept in ~/.cache/bluespark, so the next build is quicker.
+# Downloaded packages are kept in ~/.cache/diskforge-live, so the next build is quicker.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$here")
 version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' "$root/CMakeLists.txt" | head -1)
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/bluespark
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/diskforge-live
 out=$here/out
 mkdir -p "$cache" "$out"
 
@@ -21,11 +21,11 @@ if [ "${1:-}" != --no-app ] || ! ls "$root"/packaging/deb/out/diskforge_"$versio
 fi
 
 echo "==> Getting the builder ready"
-podman build -q -t bluespark-builder -f "$here/Containerfile" "$here" >/dev/null
+podman build -q -t diskforge-live-builder -f "$here/Containerfile" "$here" >/dev/null
 
 echo "==> Building the rescue image (the first time downloads about 1.5 GB)"
 # --privileged: mmdebstrap needs to mount /proc and /sys inside the new system. It's still
 # rootless podman, so "root" in there is just this user.
 podman run --rm --privileged \
     -v "$root:/src:ro" -v "$out:/out:Z" -v "$cache:/cache:Z" \
-    bluespark-builder bash /src/rescue/make-image.sh "$version"
+    diskforge-live-builder bash /src/rescue/make-image.sh "$version"

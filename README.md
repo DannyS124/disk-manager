@@ -30,13 +30,13 @@ a while and wanted something simple for managing drives without going to the ter
 - Check a USB stick for bad spots and for being fake (smaller than it says)
 - Find Lost Files: get deleted files back, or files off a drive that was formatted or won't open (pictures, documents,
   videos, music, archives), with previews before you save them
-- Make a Bluespark USB: Bluespark is a rescue stick that starts any PC, new or old (UEFI or BIOS, Secure Boot is fine),
-  with DiskForge on it, to fix its drives, get files back and test the memory. See [docs/BLUESPARK.md](docs/BLUESPARK.md)
+- Make a DiskForge Live USB: DiskForge Live is a rescue stick that starts any PC, new or old (UEFI or BIOS, Secure Boot is fine),
+  with DiskForge on it, to fix its drives, get files back and test the memory. See [docs/DISKFORGE-LIVE.md](docs/DISKFORGE-LIVE.md)
 - Open .iso and .img files like a drive
 - Benchmark drive speed
 - Add-ons: anyone can add their own actions (see [docs/ADDONS.md](docs/ADDONS.md)), and there's a list to install them from.
   There's an Add-on Maker too, so you don't have to write JSON
-- Themes (Classic, Deadshadow, High Contrast, Bluespark, or make your own)
+- Themes (Classic, Deadshadow, High Contrast, DiskForge Live, or make your own)
 
 It doesn't run as root. Changes go through udisks2, so you get the normal password prompt, and the
 drive your system is on is locked so you can't format it by accident.

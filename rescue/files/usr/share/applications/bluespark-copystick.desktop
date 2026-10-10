@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Copy This Rescue Stick
-Comment=Make another Bluespark stick from this one
-Exec=diskforge --open rescue-usb
-Icon=bluespark-copystick
-Categories=System;

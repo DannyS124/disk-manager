@@ -247,7 +247,7 @@ int main(int argc, char *argv[])
             RecoverDialog recoverDialog(&udisks, fake, gpt::Report());
             save(recoverDialog, out.filePath(QStringLiteral("recover.png")));
         }
-        for (const char *id : {"classic", "deadshadow", "bluespark", "high-contrast"}) {
+        for (const char *id : {"classic", "deadshadow", "diskforge-live", "high-contrast"}) {
             Theme::instance().use(QLatin1String(id), addons);
             save(window, out.filePath(QStringLiteral("main-%1.png").arg(QLatin1String(id))));
         }
@@ -598,19 +598,19 @@ void previewCopyTools(UDisks &udisks, const QDir &out)
     save(rescue, out.filePath(QStringLiteral("rescue.png")));
 }
 
-// Bluespark's home screen, with Bluespark's own icons (from rescue/icons, the logo added the way
+// DiskForge Live's home screen, with DiskForge Live's own icons (from rescue/icons, the logo added the way
 // make-image.sh does it) and its programs, then the same tiles as the Quick Fixes window.
 void previewHome(UDisks &udisks, const QDir &out)
 {
     QTemporaryDir dir;
-    const QString theme = dir.filePath(QStringLiteral("icons/Bluespark"));
+    const QString theme = dir.filePath(QStringLiteral("icons/DiskForge-Live"));
     QDir().mkpath(dir.filePath(QStringLiteral("icons")));
-    QProcess::execute(QStringLiteral("cp"), {QStringLiteral("-a"), QStringLiteral(SOURCE_DIR "/rescue/icons/Bluespark"), dir.filePath(QStringLiteral("icons"))});
-    QFile::copy(QStringLiteral(SOURCE_DIR "/rescue/art/bluespark-icon.svg"), theme + QStringLiteral("/scalable/apps/bluespark.svg"));
+    QProcess::execute(QStringLiteral("cp"), {QStringLiteral("-a"), QStringLiteral(SOURCE_DIR "/rescue/icons/DiskForge-Live"), dir.filePath(QStringLiteral("icons"))});
+    QFile::copy(QStringLiteral(SOURCE_DIR "/rescue/art/diskforge-live-icon.svg"), theme + QStringLiteral("/scalable/apps/diskforge-live.svg"));
     const QStringList searchPaths = QIcon::themeSearchPaths();
     const QString themeName = QIcon::themeName();
     QIcon::setThemeSearchPaths(QStringList{dir.filePath(QStringLiteral("icons"))} + searchPaths);
-    QIcon::setThemeName(QStringLiteral("Bluespark"));
+    QIcon::setThemeName(QStringLiteral("DiskForge-Live"));
 
     // The stick's launchers, plus stand-ins for the programs Debian brings.
     const QString apps = dir.filePath(QStringLiteral("applications"));

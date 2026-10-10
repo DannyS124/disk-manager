@@ -12,7 +12,7 @@ chroot=$work/chroot
 iso=$work/iso
 built=$(date -u +%Y-%m-%d)
 build_id=$(cat /proc/sys/kernel/random/uuid)
-name=bluespark-$version-$(date -u +%Y%m%d)
+name=diskforge-live-$version-$(date -u +%Y%m%d)
 deb=/src/packaging/deb/out/diskforge_${version}_amd64.deb
 [ -f "$deb" ] || { echo "No DiskForge package at $deb"; exit 1; }
 
@@ -26,19 +26,19 @@ mkdir -p "$work/art"
 rsvg-convert -w 1920 -h 1080 "$rescue/art/boot.svg" -o "$work/art/background.png"
 rsvg-convert -w 1920 -h 1080 "$rescue/art/desktop.svg" -o "$work/art/wallpaper.png"
 # The boot animation (Plymouth): its script, and its pictures from the SVGs.
-plymouth=$work/plymouth/bluespark
+plymouth=$work/plymouth/diskforge-live
 mkdir -p "$plymouth"
-cp "$rescue/plymouth/bluespark.plymouth" "$rescue/plymouth/bluespark.script" "$plymouth/"
-rsvg-convert -w 160 -h 160 "$rescue/art/bluespark-icon.svg" -o "$plymouth/logo.png"
+cp "$rescue/plymouth/diskforge-live.plymouth" "$rescue/plymouth/diskforge-live.script" "$plymouth/"
+rsvg-convert -w 160 -h 160 "$rescue/art/diskforge-live-icon.svg" -o "$plymouth/logo.png"
 for picture in glow name track fill; do
     rsvg-convert "$rescue/plymouth/$picture.svg" -o "$plymouth/$picture.png"
 done
 # Our icons, with the logo as the start button and the app icon.
 mkdir -p "$work/icons"
-cp -a "$rescue/icons/Bluespark" "$work/icons/"
-cp "$rescue/art/bluespark-icon.svg" "$work/icons/Bluespark/scalable/apps/bluespark.svg"
-ln -sf bluespark.svg "$work/icons/Bluespark/scalable/apps/start-here-lxqt.svg"
-ln -sf bluespark.svg "$work/icons/Bluespark/scalable/apps/start-here.svg"
+cp -a "$rescue/icons/DiskForge-Live" "$work/icons/"
+cp "$rescue/art/diskforge-live-icon.svg" "$work/icons/DiskForge-Live/scalable/apps/diskforge-live.svg"
+ln -sf diskforge-live.svg "$work/icons/DiskForge-Live/scalable/apps/start-here-lxqt.svg"
+ln -sf diskforge-live.svg "$work/icons/DiskForge-Live/scalable/apps/start-here.svg"
 
 echo "--> The live system"
 # Downloaded packages live in /cache between builds. The hooks run in order: our files, then
@@ -56,8 +56,8 @@ mmdebstrap --mode=root --variant=important \
     --customize-hook="sync-in $work/plymouth /usr/share/plymouth/themes" \
     --customize-hook='mkdir -p "$1/usr/local/share/icons"' \
     --customize-hook="sync-in $work/icons /usr/local/share/icons" \
-    --customize-hook='mkdir -p "$1/usr/local/share/bluespark"' \
-    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt $rescue/art/bluespark-icon.svg $rescue/art/bluespark-wordmark.svg /usr/local/share/bluespark" \
+    --customize-hook='mkdir -p "$1/usr/local/share/diskforge-live"' \
+    --customize-hook="copy-in $work/art/wallpaper.png $rescue/README.txt $rescue/art/diskforge-live-icon.svg $rescue/art/diskforge-live-wordmark.svg /usr/local/share/diskforge-live" \
     --customize-hook="copy-in $deb /tmp" \
     --customize-hook="chroot \"\$1\" apt-get install -y -q /tmp/$(basename "$deb")" \
     --customize-hook='sync-out /var/cache/apt/archives /cache' \
@@ -84,11 +84,11 @@ mksquashfs "$chroot" "$iso/live/filesystem.squashfs" -noappend -no-progress -qui
 
 echo "--> Boot files"
 # How the stick is recognized: GRUB looks for the build's own file, live-boot compares
-# live-uuid with the copy in its initrd, DiskForge reads .disk/bluespark.
-echo "Bluespark $version ($built)" > "$iso/.disk/info"
+# live-uuid with the copy in its initrd, DiskForge reads .disk/diskforge-live.
+echo "DiskForge Live $version ($built)" > "$iso/.disk/info"
 echo "$build_id" > "$iso/.disk/live-uuid-amd64"
-printf 'Bluespark\nversion=%s\nbuilt=%s\nid=%s\n' "$version" "$built" "$build_id" > "$iso/.disk/bluespark"
-: > "$iso/.disk/bluespark-$build_id"
+printf 'DiskForge Live\nversion=%s\nbuilt=%s\nid=%s\n' "$version" "$built" "$build_id" > "$iso/.disk/diskforge-live"
+: > "$iso/.disk/diskforge-live-$build_id"
 cp "$rescue/README.txt" "$iso/README.txt"
 
 # UEFI: shim (signed by Microsoft) starts GRUB (signed by Debian), which starts the kernel
@@ -112,7 +112,7 @@ cat /usr/lib/grub/i386-pc/cdboot.img "$work/core.img" > "$iso/boot/grub/i386-pc/
 # sector at sector 1, so nothing needs patching there; like grub-bios-setup does for a hard
 # disk, the boot drive check is turned off, for BIOSes that hand over the wrong drive number.
 cat > "$work/stick.cfg" <<CFG
-search --no-floppy --set=root --file /.disk/bluespark-$build_id
+search --no-floppy --set=root --file /.disk/diskforge-live-$build_id
 set prefix=(\$root)/boot/grub
 CFG
 grub-mkimage -O i386-pc -p /boot/grub -c "$work/stick.cfg" -o "$iso/boot/grub/i386-pc/stick-core.img" \
@@ -160,7 +160,7 @@ echo "--> The ISO"
 # Hybrid: boots as a CD or written straight to a USB stick, on UEFI and BIOS.
 xorriso -as mkisofs -quiet \
     -iso-level 3 -full-iso9660-filenames -joliet -joliet-long -rational-rock \
-    -volid BLUESPARK -appid "Bluespark $version" -publisher Bluespark \
+    -volid DISKFORGE_LIVE -appid "DiskForge Live $version" -publisher "DiskForge Live" \
     -eltorito-boot boot/grub/i386-pc/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table \
     --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
     -eltorito-catalog boot/grub/boot.cat \

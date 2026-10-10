@@ -2,22 +2,22 @@
 
 ## 0.5.1
 New:
-- Bluespark: a USB stick that starts any PC into a small desktop with DiskForge, PhotoRec, TestDisk, a file manager, a
+- DiskForge Live: a USB stick that starts any PC into a small desktop with DiskForge, PhotoRec, TestDisk, a file manager, a
   web browser and a terminal, plus a memory test in the boot menu. It starts with Secure Boot on (through Debian's signed boot
   files) and keeps logs of every start on the stick. It has only what a rescue stick needs, about 900 MB. It's built from
-  `rescue/`, see [docs/BLUESPARK.md](docs/BLUESPARK.md)
-- Bluespark has its own look: its logo, boot menu, boot animation, icons, taskbar and window theme, in neon blue, blue, baby
+  `rescue/`, see [docs/DISKFORGE-LIVE.md](docs/DISKFORGE-LIVE.md)
+- DiskForge Live has its own look: its logo, boot menu, boot animation, icons, taskbar and window theme, in neon blue, blue, baby
   blue, red and green. It opens on a home screen with big tiles for what people start it for and a strip saying whether
   Secure Boot is on, whether there's internet and how many drives it found
-- Make a Bluespark USB (File menu, or right-click a USB stick): puts the Bluespark image on a stick as plain files on FAT32 and checks
+- Make a DiskForge Live USB (File menu, or right-click a USB stick): puts the DiskForge Live image on a stick as plain files on FAT32 and checks
   every one of them. The stick starts UEFI PCs (Secure Boot on or off) and old BIOS PCs. For a stick that's been used, Open
   Logs shows what it saved
-- Find Lost Files (Action menu, File menu for disk images, or Get Files Back on Bluespark's home screen): looks through a drive
+- Find Lost Files (Action menu, File menu for disk images, or Get Files Back on DiskForge Live's home screen): looks through a drive
   for files that were deleted or are on a drive that was formatted or won't open, by what's inside them: pictures, documents,
   PDFs, videos, music, archives (31 kinds). Pictures show as thumbnails and in a preview, each file says whether it looks
   whole, and the ones you tick are saved onto another drive. It only ever reads the drive it looks through
 - Tools > Quick Fixes: the home screen's tiles, on a PC
-- A Bluespark theme (View > Theme)
+- A DiskForge Live theme (View > Theme)
 - `--log <file>` (or `DISKFORGE_LOG=<file>`): DiskForge writes down what it does, for bug reports
 - A .deb for Debian and Ubuntu (`packaging/deb/build.sh` builds it in a Debian container)
 - Check a USB Stick (Action menu, or right-click a stick): finds bad spots and fake sticks, the ones that say they're bigger
@@ -31,8 +31,8 @@ New:
 - Make a Windows USB (File menu): a Windows 10 or 11 install stick from Microsoft's ISO. It's FAT32, so it starts with Secure
   Boot on; install.wim is split with wimlib when it's too big. The Windows 11 options: no TPM 2.0, Secure Boot or 4 GB RAM
   check, no Microsoft account, a local account, skip the privacy questions, region like this PC, no automatic BitLocker
-- Bluespark has all of it, on its home screen and in its start menu. There, the few things that only change the running system
-  (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a Bluespark USB copies the stick it's
+- DiskForge Live has all of it, on its home screen and in its start menu. There, the few things that only change the running system
+  (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a DiskForge Live USB copies the stick it's
   running from
 - `--open <tool>` opens just one tool, for desktop launchers (write-image, windows-usb, rescue-usb, check-stick, lost-files)
 
@@ -40,7 +40,7 @@ Changed:
 - New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
   stick doesn't need it
 - On a live system, the system's own image isn't listed as a drive anymore
-- Staging a release also builds Bluespark from the same source, and publishing attaches the ISO
+- Staging a release also builds DiskForge Live from the same source, and publishing attaches the ISO
 - On a screen smaller than the window (small laptops, VMs) it opens maximized, so the bottom isn't under the taskbar
 - Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker when Browse had the focus before
 
