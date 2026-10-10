@@ -36,7 +36,7 @@ void UsbPrep::start()
 {
     m_volumes = QStringList(m_partitions.size(), QString());
     m_mounts = QStringList(m_partitions.size(), QString());
-    listen();
+    followResults();
     makeTable();
 }
 
@@ -156,7 +156,7 @@ void UsbPrep::mountNext(int index)
 
 void UsbPrep::finish()
 {
-    listen();
+    followResults();
     emit phase(tr("Finishing up…"));
     unmountNext(0);
 }
@@ -166,7 +166,7 @@ void UsbPrep::unmountNext(int index)
     while (index < m_partitions.size() && (m_volumes[index].isEmpty() || mountPointOf(m_volumes[index]).isEmpty()))
         ++index;
     if (index >= m_partitions.size()) {
-        stopListening();
+        stopFollowing();
         emit done(true, QString());
         return;
     }

@@ -25,9 +25,9 @@ signals:
     void failed(const QString &message, bool shownAlready);
 
 protected:
-    // Starts listening for UDisks results (once; calling it again does nothing).
-    void listen();
-    void stopListening();
+    // Starts following UDisks results (once; calling it again does nothing).
+    void followResults();
+    void stopFollowing();
     // The next UDisks result goes to `next`. A failure ends it all, unless `failureIsFine`
     // (then `next` runs anyway and checks for itself).
     void expect(const std::function<void()> &next, bool failureIsFine = false);
@@ -42,7 +42,7 @@ protected:
 private:
     std::function<void()> m_next;
     bool m_failureIsFine = false;
-    bool m_listening = false;
+    bool m_following = false;
     QMetaObject::Connection m_opConn;
     std::shared_ptr<bool> m_waiting;
 };

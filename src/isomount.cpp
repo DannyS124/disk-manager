@@ -33,7 +33,7 @@ const Volume *IsoMount::volume() const
 void IsoMount::open()
 {
     m_opening = true;
-    listen();
+    followResults();
     emit phase(tr("Opening %1…").arg(QFileInfo(m_iso).fileName()));
     m_openedConn = connect(m_udisks, &UDisks::imageOpened, this, [this](const QString &loop) {
         disconnect(m_openedConn);
@@ -66,7 +66,7 @@ void IsoMount::open()
 
 void IsoMount::opened()
 {
-    stopListening();
+    stopFollowing();
     m_opening = false;
     if (m_closeWhenOpen)
         return close();
@@ -85,10 +85,10 @@ void IsoMount::close()
         emit closed();
         return;
     }
-    listen();
+    followResults();
     // Closing it is tidying up: whatever happens, it's done.
     expect([this] {
-        stopListening();
+        stopFollowing();
         emit closed();
     }, true);
     m_udisks->detachImage(*d);

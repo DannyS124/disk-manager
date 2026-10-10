@@ -16,13 +16,13 @@ UDisksSteps::UDisksSteps(UDisks *udisks, QObject *parent)
 {
 }
 
-void UDisksSteps::listen()
+void UDisksSteps::followResults()
 {
-    if (m_listening)
+    if (m_following)
         return;
-    m_listening = true;
+    m_following = true;
     m_opConn = connect(m_udisks, &UDisks::operationFinished, this, [this](bool ok, const QString &message) {
-        if (!m_listening || !m_next)
+        if (!m_following || !m_next)
             return;
         const std::function<void()> next = std::exchange(m_next, nullptr);
         if (!ok && !m_failureIsFine)
@@ -31,18 +31,18 @@ void UDisksSteps::listen()
     });
 }
 
-void UDisksSteps::stopListening()
+void UDisksSteps::stopFollowing()
 {
     disconnect(m_opConn);
     m_next = nullptr;
     if (m_waiting)
         *m_waiting = false;
-    m_listening = false;
+    m_following = false;
 }
 
 void UDisksSteps::fail(const QString &message, bool shownAlready)
 {
-    stopListening();
+    stopFollowing();
     qCInfo(lcOps).noquote() << metaObject()->className() << "failed:" << message;
     emit failed(message, shownAlready);
 }
