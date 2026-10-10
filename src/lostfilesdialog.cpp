@@ -525,6 +525,11 @@ LostFilesDialog::LostFilesDialog(UDisks *udisks, const QString &preferredPath, Q
     });
     connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this, &LostFilesDialog::showPreview);
     connect(m_model, &LostFilesModel::tickedChanged, this, &LostFilesDialog::updateTicked);
+    // The loader is made new for each scan, so it's looked up when a thumbnail is wanted.
+    connect(m_model, &LostFilesModel::wantThumbnail, this, [this](int index) {
+        if (m_thumbs)
+            m_thumbs->want(index, m_model->file(index), kThumbnail);
+    });
     connect(tickAll, &QPushButton::clicked, this, [this] { m_model->tickShown(true); });
     connect(untick, &QPushButton::clicked, this, [this] { m_model->tickShown(false); });
     connect(m_save, &QPushButton::clicked, this, &LostFilesDialog::saveTicked);
@@ -693,10 +698,6 @@ void LostFilesDialog::scanSource(std::shared_ptr<lost::Source> source, const QSt
                 m_previewImage->setText(tr("This picture can't be shown (it may be damaged)."));
         }
     });
-    connect(m_model, &LostFilesModel::wantThumbnail, this, [this](int index) {
-        if (m_thumbs)
-            m_thumbs->want(index, m_model->file(index), kThumbnail);
-    }, Qt::UniqueConnection);
     m_thumbThread = startOnThread(this, m_thumbs);
 
     m_scan = new lost::DeepScan(m_source);
