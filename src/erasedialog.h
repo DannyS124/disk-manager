@@ -43,6 +43,7 @@ private:
     QRadioButton *m_first;
     QRadioButton *m_second;
     QLabel *m_frozen;
+    QLabel *m_howTo;
     QPushButton *m_sleep;
     QPushButton *m_checkAgain;
     QLabel *m_warning;

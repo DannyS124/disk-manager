@@ -60,6 +60,7 @@ SecureEraseDialog::SecureEraseDialog(UDisks *udisks, const QString &blockPath, i
     , m_first(new QRadioButton)
     , m_second(new QRadioButton)
     , m_frozen(new QLabel)
+    , m_howTo(new QLabel)
     , m_sleep(new QPushButton(tr("Sleep Now")))
     , m_checkAgain(new QPushButton(tr("Check Again")))
     , m_warning(new QLabel)
@@ -102,6 +103,10 @@ SecureEraseDialog::SecureEraseDialog(UDisks *udisks, const QString &blockPath, i
                                  "power taken away and given back. Unplug and Replug walks you through doing that by hand. Sleep "
                                  "Now does it too, on PCs that wake up fine from sleep.")));
     m_replug->setObjectName(QStringLiteral("replug"));
+    m_howTo->setText(QStringLiteral("<a href=\"https://github.com/DannyS124/diskforge/blob/main/docs/SECURE-ERASE.md\">%1</a>")
+                         .arg(tr("How this works, step by step with pictures").toHtmlEscaped()));
+    m_howTo->setOpenExternalLinks(true);
+    m_howTo->setObjectName(QStringLiteral("howTo"));
 
     auto *frozenRow = new QHBoxLayout;
     frozenRow->addStretch();
@@ -142,6 +147,7 @@ SecureEraseDialog::SecureEraseDialog(UDisks *udisks, const QString &blockPath, i
     layout->addWidget(m_frozen);
     layout->addLayout(frozenRow);
     layout->addWidget(m_replugBox);
+    layout->addWidget(m_howTo);
     layout->addWidget(m_warning);
     layout->addWidget(m_confirm);
     layout->addWidget(dialogButtons(this, tr("Erase"), &m_erase));
@@ -339,6 +345,7 @@ void SecureEraseDialog::updateState()
     m_sleep->setVisible(frozen && !replugging);
     m_checkAgain->setVisible(frozen && !replugging);
     m_replugBox->setVisible(replugging);
+    m_howTo->setVisible(frozen || replugging);
     const bool showCommand = m_step == Replug::Replug && !rescue::canRescanDrives() && m_replugWaited.elapsed() >= 20000;
     m_replugCommand->setVisible(showCommand);
     m_replugCopy->setVisible(showCommand);
