@@ -1,110 +1,89 @@
-# DiskForge
+<p align="center">
+  <img src="data/io.github.DannyS124.DiskForge.svg" width="96" alt="DiskForge">
+</p>
+<h1 align="center">DiskForge</h1>
+<p align="center">A disk manager for Linux that looks and works like Windows Disk Management,<br>plus a rescue USB stick that can start any PC and fix its drives.</p>
 
-A disk manager for Linux that looks and works like Windows Disk Management. I've been on Arch for a while and
-wanted something simple for managing drives without going to the terminal, so I made this. It also comes as
-DiskForge Live, a rescue USB stick that can start any PC and fix its drives.
+I've been on Arch for a while and wanted something simple for managing drives without going to the terminal, so I
+made this. It does the everyday stuff, but also the things you need when a drive is dying, a stick is fake or files
+are gone. It never runs as root: changes go through udisks2 with the normal password prompt, and the drive your
+system runs from is locked so you can't format it by accident.
 
 ![DiskForge](docs/screenshot.png)
 
-## What you can do with it
+## What it does
 
-**Everyday drive stuff.** Mount, unmount and safely remove drives. Format them (ext4, btrfs, NTFS, FAT32, exFAT),
-with encryption if you want it. Create, delete, resize and rename partitions, set their type and flags, make a new partition table (GPT or
-MBR), make a drive mount at startup, and open .iso and .img files like a drive.
+### <img src="docs/icons/drives.svg" width="28" height="28" align="top" alt="">&nbsp; Drives and partitions
 
-**Keeping drives healthy.** Disk Health warns you before a drive dies and says why in plain words. You can scan for
-bad sectors (with a map of the drive) and repair them, check for firmware updates, run Btrfs scrubs, see your Btrfs
-snapshots, TRIM your SSDs and benchmark a drive.
+- <img src="docs/icons/format.svg" width="22" height="22" align="top" alt="">&nbsp; **Format**: exFAT, FAT32, NTFS, ext4, Btrfs and XFS, with encryption (LUKS) if you want it
+- <img src="docs/icons/resize.svg" width="22" height="22" align="top" alt="">&nbsp; **Partitions**: create, delete, resize and rename them, set their type and flags, and make new GPT or MBR tables
+- <img src="docs/icons/mount.svg" width="22" height="22" align="top" alt="">&nbsp; **Mounting**: mount, unmount and safely remove drives, or make one mount every time the PC starts
+- <img src="docs/icons/lock.svg" width="22" height="22" align="top" alt="">&nbsp; **Encryption**: unlock and lock encrypted partitions, and change their passphrase
+- <img src="docs/icons/disc.svg" width="22" height="22" align="top" alt="">&nbsp; **Disk images**: open .iso and .img files like a drive
 
-**When something's gone wrong.** Find Lost Files gets deleted files back, or files off a drive that was formatted or
-won't open, with previews before you save them. Recover Partitions puts back partitions that disappeared. Rescue
-Copy gets what it can off a dying drive. Check and Repair fixes file system errors, and Inspect Partition Table shows
-the partition table as it really is on the disk.
-
-**USB sticks.** Write an ISO or disk image to a stick (compressed ones too, and Ubuntu/Debian live sticks that keep
-your changes). Make a Windows 10 or 11 install stick with the Windows 11 options (no TPM check, no Microsoft
-account). Check a stick for bad spots and for being fake. Make a DiskForge Live stick.
-
-**Backups and cleanup.** Back up and restore drives or partitions, clone a drive onto another one, see what's using
-your space, clean out old packages, logs and caches, and wipe or Secure Erase a drive before you sell it. Wipes and
-checks have a Stop button.
-
-**Extras.** Add-ons for your own actions, with a list to install them from and an Add-on Maker so you don't have to
-write JSON (see [docs/ADDONS.md](docs/ADDONS.md)). Also themes, RAID and LVM, and power settings for hard drives.
-
-It doesn't run as root. Changes go through udisks2, so you get the normal password prompt, and the drive your
-system runs from is locked so you can't format it by accident.
-
-## What it supports
-
-### File systems
+What each file system supports:
 
 | | Format | Check and repair | Resize |
-|---|---|---|---|
-| ext4 | yes | yes | grow and shrink (grows even while mounted) |
-| Btrfs | yes | yes | grow and shrink, while mounted |
-| NTFS | yes | basic fixes (for real damage, run chkdsk in Windows) | grow and shrink, unmounted |
-| FAT32 | yes | yes | grow and shrink, unmounted |
-| exFAT | yes | yes | no |
-| XFS | yes | yes | grow only |
+|---|:---:|:---:|---|
+| ext4 | ✓ | ✓ | grow and shrink (grows even while mounted) |
+| Btrfs | ✓ | ✓ | grow and shrink, while mounted |
+| NTFS | ✓ | basic fixes (use chkdsk in Windows for real damage) | grow and shrink, unmounted |
+| FAT32 | ✓ | ✓ | grow and shrink, unmounted |
+| exFAT | ✓ | ✓ | ✗ |
+| XFS | ✓ | ✓ | grow only |
 
-Any of them can be encrypted (LUKS) when you format or create a partition, and DiskForge can unlock, lock and change
-the passphrase of encrypted partitions. Partition tables can be GPT or MBR, and you can set a partition's type and
-flags (GPT attributes, the MBR boot flag).
+### <img src="docs/icons/health.svg" width="28" height="28" align="top" alt="">&nbsp; Drive health
 
-### Repair and rescue
+- <img src="docs/icons/health.svg" width="22" height="22" align="top" alt="">&nbsp; **Disk Health**: reads the drive's own health data (SATA and NVMe) and gives a plain verdict with every reason behind it, going by the numbers Backblaze's drive stats tie to failures. A bar at the top warns you when a drive starts going
+- <img src="docs/icons/badsectors.svg" width="22" height="22" align="top" alt="">&nbsp; **Scan for Bad Sectors**: reads every sector and draws a map (fine, slow, unreadable). Repair rewrites the unreadable blocks so the drive swaps in spare ones, and keeps everything around them
+- <img src="docs/icons/firmware.svg" width="22" height="22" align="top" alt="">&nbsp; **Firmware and self-tests**: runs the drive's own self-tests and checks for firmware updates through fwupd
+- <img src="docs/icons/benchmark.svg" width="22" height="22" align="top" alt="">&nbsp; **Benchmark**: read speed on any drive, plus an optional write test with a temporary file
+- <img src="docs/icons/power.svg" width="22" height="22" align="top" alt="">&nbsp; **Power settings**: for hard drives: when to spin down, power saving, the write cache, and Sleep Now
 
-| Tool | What it does |
-|---|---|
-| Disk Health | Reads the drive's own health data (SATA and NVMe), gives a plain verdict with every reason behind it, and goes by the numbers Backblaze's drive stats tie to failures. Runs the drive's self-tests, checks for firmware updates (fwupd), and shows Btrfs error counts |
-| Scan for Bad Sectors | Reads every sector and draws a map: fine, slow or unreadable. Repair rewrites the unreadable blocks so the drive swaps them for spare ones (what was in those few sectors is lost, everything around them stays) |
-| Check and Repair | Runs the file system's own checker, for the file systems in the table above |
-| Recover Partitions | Puts a lost partition table back from GPT's backup copy, from a layout DiskForge saw on that drive before (it keeps the last 10), or by scanning the drive for file systems. It only writes the table and remembers the old one, so you can undo it |
-| Inspect Partition Table | Shows the MBR, both GPT copies with their checksums, and any sector in hex. It only reads, so it works on the system drive too |
-| Rescue Copy | Copies a failing drive to an image file or another drive, easy parts first, then retries the hard spots. It can stop and carry on later, its map file works with GNU ddrescue, and it can go easy on the drive (pause when it's too hot, rest after a run of errors, cap the speed) |
-| Find Lost Files | Looks through a drive or disk image for files by what's inside them, so it works after a delete, a format or a broken file system. It only reads the drive it looks through, and saves to another one |
-| Wipe Disk | Overwrites every byte with zeros. Can be stopped |
-| Secure Erase | Tells the drive to erase itself: normal or enhanced erase on SATA, user data or crypto erase on NVMe. Walks you through unfreezing a frozen drive ([guide](docs/SECURE-ERASE.md)) |
+### <img src="docs/icons/partitions.svg" width="28" height="28" align="top" alt="">&nbsp; Repair and rescue
 
-### Files Find Lost Files can recover
+- <img src="docs/icons/findfiles.svg" width="22" height="22" align="top" alt="">&nbsp; **Find Lost Files**: gets deleted files back, or files off a drive that was formatted or won't open, by what's inside them. Thumbnails and a preview, each file says if it looks complete, and it only ever reads the drive it looks through
+- <img src="docs/icons/partitions.svg" width="22" height="22" align="top" alt="">&nbsp; **Recover Partitions**: puts a lost partition table back from GPT's backup copy, from a layout DiskForge saw before (it keeps the last 10), or by scanning the drive. It remembers the old table, so you can undo it
+- <img src="docs/icons/rescuecopy.svg" width="22" height="22" align="top" alt="">&nbsp; **Rescue Copy**: copies a failing drive to an image file or another drive, easy parts first. It can stop and carry on later, its map file works with GNU ddrescue, and it can go easy on a hot or struggling drive
+- <img src="docs/icons/repair.svg" width="22" height="22" align="top" alt="">&nbsp; **Check and Repair**: runs the file system's own checker (see the table above)
+- <img src="docs/icons/inspect.svg" width="22" height="22" align="top" alt="">&nbsp; **Inspect Partition Table**: shows the MBR, both GPT copies with their checksums, and any sector in hex. Read-only, so it works on the system drive too
+
+Files Find Lost Files can recover:
 
 | Kind | Types |
 |---|---|
 | Pictures | JPEG, PNG, GIF, BMP, WebP, HEIC, AVIF, Canon raw (CR3) |
-| Documents | PDF, Word (docx), Excel (xlsx), PowerPoint (pptx), OpenDocument text, spreadsheets and presentations, EPUB e-books |
+| Documents | PDF, Word, Excel, PowerPoint, OpenDocument text, spreadsheets and presentations, EPUB |
 | Video | MP4, MOV, 3GP, AVI, Ogg video |
 | Music | MP3, WAV, M4A, Ogg, Opus |
 | Archives | ZIP, 7-Zip, JAR, APK |
 | Other | SQLite databases |
 
-Pictures get thumbnails and a preview, and every file says whether it looks complete or damaged. Names and folders
-can't be recovered this way, so files come back with made-up names, sorted by kind.
+Names and folders can't come back this way, so recovered files get made-up names, sorted by kind.
 
-### USB sticks
+### <img src="docs/icons/writeimage.svg" width="28" height="28" align="top" alt="">&nbsp; USB sticks
 
-| Tool | What it does |
-|---|---|
-| Write Image to USB | Writes .iso and .img files, also compressed (.xz, .gz, .bz2, .lzma, .zst, or a .zip with the image inside), and checks the result. Takes an MD5, SHA-1, SHA-256 or SHA-512 checksum, or a checksum file like SHA256SUMS. It can also copy a Linux ISO's files instead, so the stick stays usable for files, with persistence for Ubuntu and Debian live sticks |
-| Make a Windows USB | A Windows 10 or 11 install stick from Microsoft's ISO, on FAT32 so it starts with Secure Boot on (install.wim gets split when it's too big). Windows 11 options: skip the TPM, Secure Boot and RAM check, no Microsoft account, a local account, skip the privacy questions, no automatic BitLocker |
-| Check a USB Stick | Finds bad spots and fake sticks that claim more space than they have. Quick takes minutes, Full checks every byte. It says how much a fake stick really holds and can make it safe to use |
-| Make a DiskForge Live USB | Puts DiskForge Live on a stick as normal files, checks every one, and makes it start UEFI and BIOS PCs |
+- <img src="docs/icons/writeimage.svg" width="22" height="22" align="top" alt="">&nbsp; **Write Image to USB**: .iso and .img files, also compressed (.xz, .gz, .bz2, .lzma, .zst, .zip), checked after writing against an MD5, SHA-1, SHA-256 or SHA-512 checksum or a SHA256SUMS file. It can also copy a Linux ISO's files so the stick stays usable, with persistence for Ubuntu and Debian live sticks
+- <img src="docs/icons/windows.svg" width="22" height="22" align="top" alt="">&nbsp; **Make a Windows USB**: a Windows 10 or 11 install stick that starts with Secure Boot on. Windows 11 options: skip the TPM, Secure Boot and RAM check, no Microsoft account, a local account, skip the privacy questions, no automatic BitLocker
+- <img src="docs/icons/checkstick.svg" width="22" height="22" align="top" alt="">&nbsp; **Check a USB Stick**: finds bad spots and fake sticks that claim more space than they have, says how much a fake one really holds, and can make it safe to use
+- <img src="docs/icons/livestick.svg" width="22" height="22" align="top" alt="">&nbsp; **Make a DiskForge Live USB**: puts the rescue system on a stick as normal files and makes it start UEFI and old BIOS PCs (more below)
 
-### Everything else
+### <img src="docs/icons/backup.svg" width="28" height="28" align="top" alt="">&nbsp; Backups, cleanup and erasing
 
-| Tool | What it does |
-|---|---|
-| Back Up and Restore | Saves a drive or partition to a compressed .img.zst file with a checksum, and checks the whole backup before restoring |
-| Clone Drive | Copies a drive onto another one, skips empty space, can grow the last partition onto a bigger drive, and keeps the same IDs or gives new ones |
-| Disk Usage | A map of what's using the space on a drive, click into folders |
-| Disk Cleanup | Old package files, the cache of packages you've uninstalled, old system logs, your cache folder and the trash |
-| Optimize Drives | TRIM now, or every week |
-| Btrfs | Snapshot list (snapper), error counts, and a scrub now or every month |
-| Mount at Startup | Adds the drive to /etc/fstab so it mounts when the PC starts, and won't hold up the start if it's missing |
-| RAID and LVM | Software RAID arrays with their status (checking, rebuilding, degraded) and a check button; LVM volume groups and their volumes |
-| Power settings | For hard drives: when to spin down, power saving, the write cache, and Sleep Now |
-| Benchmark | Read speed (safe on any drive), plus an optional write test with a temporary file |
-| Add-ons | Your own actions in the menus, from a JSON file or the Add-on Maker. Look-only add-ons run in a read-only sandbox, and the online list is signed ([docs/ADDONS.md](docs/ADDONS.md)) |
-| Themes | System, Classic, Deadshadow, High Contrast and DiskForge Live, or make your own with the Theme Maker |
+- <img src="docs/icons/backup.svg" width="22" height="22" align="top" alt="">&nbsp; **Back Up and Restore**: a drive or partition to a compressed .img.zst file with a checksum, checked before anything is restored
+- <img src="docs/icons/clone.svg" width="22" height="22" align="top" alt="">&nbsp; **Clone Drive**: copies a drive onto another one, skips empty space, can grow the last partition onto a bigger drive, and keeps the same IDs or gives new ones
+- <img src="docs/icons/usage.svg" width="22" height="22" align="top" alt="">&nbsp; **Disk Usage**: a map of what's using the space on a drive
+- <img src="docs/icons/cleanup.svg" width="22" height="22" align="top" alt="">&nbsp; **Disk Cleanup**: old package files, the cache of packages you've uninstalled, old system logs, your cache folder and the trash
+- <img src="docs/icons/optimize.svg" width="22" height="22" align="top" alt="">&nbsp; **Optimize Drives**: TRIM your SSDs now, or every week
+- <img src="docs/icons/snapshots.svg" width="22" height="22" align="top" alt="">&nbsp; **Btrfs**: your snapshots (snapper), error counts, and a scrub now or every month
+- <img src="docs/icons/wipe.svg" width="22" height="22" align="top" alt="">&nbsp; **Wipe Disk**: overwrites every byte with zeros, and can be stopped
+- <img src="docs/icons/secure.svg" width="22" height="22" align="top" alt="">&nbsp; **Secure Erase**: tells the drive to erase itself (normal or enhanced on SATA, user data or crypto erase on NVMe), and walks you through unfreezing a frozen drive. [Guide with pictures](docs/SECURE-ERASE.md)
+
+### <img src="docs/icons/addons.svg" width="28" height="28" align="top" alt="">&nbsp; Extras
+
+- <img src="docs/icons/addons.svg" width="22" height="22" align="top" alt="">&nbsp; **Add-ons**: your own actions in the menus, from a JSON file or the Add-on Maker, plus a signed online list to install them from. Look-only ones run in a read-only sandbox ([docs/ADDONS.md](docs/ADDONS.md))
+- <img src="docs/icons/themes.svg" width="22" height="22" align="top" alt="">&nbsp; **Themes**: System, Classic, Deadshadow, High Contrast and DiskForge Live, or make your own
+- <img src="docs/icons/raid.svg" width="22" height="22" align="top" alt="">&nbsp; **RAID and LVM**: software RAID arrays with their status and a check button, and LVM volume groups
 
 ## Getting it
 
@@ -137,7 +116,7 @@ the ones it can use (Arch names):
 | Make a Windows USB (most Windows 11 ISOs) | `wimlib` |
 | Look-only add-ons | `bubblewrap` |
 
-## DiskForge Live
+## <img src="rescue/art/diskforge-live-icon.svg" width="32" height="32" align="top" alt="">&nbsp; DiskForge Live
 
 ![DiskForge Live's home screen](docs/diskforge-live.png)
 
