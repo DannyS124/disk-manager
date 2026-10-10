@@ -52,6 +52,10 @@ QString red(const QString &text)
 } // namespace
 
 QString redText(const QString &text) { return red(text); }
+QString warningText(const QString &text)
+{
+    return QStringLiteral("<span style=\"color:%1\"><b>%2</b></span>").arg(Theme::instance().html(Theme::Role::Warning), text.toHtmlEscaped());
+}
 QLabel *wrappingLabel(const QString &html) { return warningLabel(html); }
 QDialogButtonBox *dialogButtons(QDialog *dialog, const QString &actionText, QPushButton **action)
 {

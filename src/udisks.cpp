@@ -591,7 +591,7 @@ bool UDisks::refuseSystem(const Disk *disk, const QString &failure)
 
 void UDisks::callThen(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
                       const QString &failure, const std::function<void(const QDBusMessage &)> &next,
-                      const std::function<void()> &failed)
+                      const std::function<void()> &failed, const Explain &explain)
 {
     QDBusMessage message = QDBusMessage::createMethodCall(kService, path, interface, method);
     message.setArguments(args);
@@ -601,7 +601,7 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
 
     ++m_pending;
     auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, method, path, failure, next, failed](QDBusPendingCallWatcher *w) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, method, path, failure, next, failed, explain](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         --m_pending;
         if (w->isError())
@@ -619,7 +619,10 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
             if (failed)
                 failed();
         } else if (w->isError()) {
-            emit operationFinished(false, failure + QStringLiteral(": ") + w->error().message());
+            QString text = failure + QStringLiteral(": ") + w->error().message();
+            if (const QString more = explain ? explain(w->error().message()) : QString(); !more.isEmpty())
+                text += QStringLiteral("\n\n") + more;
+            emit operationFinished(false, text);
             if (failed)
                 failed();
         } else {
@@ -629,11 +632,11 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
 }
 
 void UDisks::call(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
-                  const SuccessText &success, const QString &failure)
+                  const SuccessText &success, const QString &failure, const Explain &explain)
 {
     callThen(path, interface, method, args, failure, [this, success](const QDBusMessage &reply) {
         emit operationFinished(true, success(reply));
-    });
+    }, {}, explain);
 }
 
 void UDisks::unmountThen(const QVector<Volume> &volumes, const QString &failure, const std::function<void()> &then,

@@ -35,6 +35,16 @@ Job job(const char *operation, bool cancelable = true, double progress = 0.34)
 
 void jobsTests()
 {
+    // The error from the photo: a Seagate laptop drive in a USB adapter refusing ERASE PREPARE.
+    const QString refused = QStringLiteral("Error sending ATA command SECURITY ERASE PREPARE: ATA command failed: error=0x04 count=0x00 status=0x51");
+    const QString overUsb = UDisks::secureEraseRefused(refused, true), overSata = UDisks::secureEraseRefused(refused, false);
+    report(overUsb.contains(QLatin1String("USB adapters")) && overUsb.contains(QLatin1String("Wipe Disk")) && overUsb.contains(QLatin1String("xxxx")),
+           QStringLiteral("a refused Secure Erase over USB says why, what works instead, and about the password"), overUsb.left(80));
+    report(overSata.contains(QLatin1String("shut the PC down fully")) && !overSata.contains(QLatin1String("USB")),
+           QStringLiteral("and on SATA, to turn the drive off and on"), overSata.left(80));
+    report(UDisks::secureEraseRefused(QStringLiteral("Drive is frozen, cannot perform a secure erase"), false).isEmpty()
+               && UDisks::secureEraseRefused(QStringLiteral("Not authorized to perform operation"), true).isEmpty(),
+           QStringLiteral("other errors get nothing added"));
     const Job wipe = job("format-erase");
     report(jobShown(wipe) && jobCantStop(wipe).isEmpty() && jobVerb(wipe) == QLatin1String("Wiping"), QStringLiteral("a wipe can be stopped"));
     report(jobCantStop(job("filesystem-check")).isEmpty(), QStringLiteral("a check can be stopped (it only reads)"));

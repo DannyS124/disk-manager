@@ -113,6 +113,10 @@ void SecureEraseDialog::updateState()
         QString text = redText(tr("Everything on %1 will be erased, for good.").arg(diskTitle(*d)));
         if (!diskWarning(*d).isEmpty())
             text += QStringLiteral("<br>") + redText(diskWarning(*d));
+        if (m_ata && d->bus == QLatin1String("usb"))
+            text += QStringLiteral("<br>") + warningText(tr("It's connected through USB: most USB adapters don't pass Secure Erase through "
+                                                          "to the drive, so it usually fails. A SATA port inside a PC works, and Wipe "
+                                                          "Disk works through any adapter."));
         // UDisks sets the ATA password "xxxx" for the erase; an interrupted erase leaves it set.
         text += QStringLiteral("<br>")
               + (m_ata ? tr("Once it starts it can't be stopped: the drive does the erasing itself. Keep the PC on and the drive "

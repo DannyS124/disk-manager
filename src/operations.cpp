@@ -569,17 +569,34 @@ void UDisks::secureErase(const Disk &disk, EraseMethod method)
         return;
     }
     const QString blockPath = d->blockPath, drivePath = d->drivePath;
-    unmountThen(d->volumes, failure, [this, method, ata, blockPath, drivePath, name, failure] {
+    const bool usb = d->bus == QLatin1String("usb");
+    unmountThen(d->volumes, failure, [this, method, ata, blockPath, drivePath, name, failure, usb] {
         auto done = [name](const QDBusMessage &) { return tr("%1 has been erased. Use New Partition Table to use it again.").arg(name); };
         if (ata)
             call(drivePath, kAta, QStringLiteral("SecurityEraseUnit"),
-                 {options({{QStringLiteral("enhanced"), method == EraseMethod::AtaEnhanced}})}, done, failure);
+                 {options({{QStringLiteral("enhanced"), method == EraseMethod::AtaEnhanced}})}, done, failure,
+                 [usb](const QString &error) { return secureEraseRefused(error, usb); });
         else
             call(blockPath, kNvmeNamespace, QStringLiteral("FormatNamespace"),
                  {options({{QStringLiteral("secure_erase"),
                             method == EraseMethod::NvmeCrypto ? QStringLiteral("crypto_erase") : QStringLiteral("user_data")}})},
                  done, failure);
     }, true);
+}
+
+QString UDisks::secureEraseRefused(const QString &error, bool usb)
+{
+    // "error=0x04" is the drive's own answer: it aborted the command. UDisks sets its password
+    // first and takes it off again when a later step fails.
+    if (!error.contains(QLatin1String("SECURITY")) || !error.contains(QLatin1String("error=0x04")))
+        return {};
+    const QString why = usb ? tr("The drive refused it. It's connected through USB, and most USB adapters don't pass Secure Erase "
+                                 "through to the drive. Connect it to a SATA port inside a PC and try again, or use Wipe Disk, "
+                                 "which works through any adapter.")
+                            : tr("The drive refused it. Turn the drive off and on once (shut the PC down fully, a restart isn't "
+                                 "enough) and try again. If it keeps refusing, use Wipe Disk instead.");
+    return why + QStringLiteral(" ")
+         + tr("If the drive shows up locked after it's been off, it kept the temporary password xxxx: Help has how to unlock it.");
 }
 
 void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool direct)

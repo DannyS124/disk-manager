@@ -19,6 +19,8 @@ class QSpinBox;
 
 // Shared pieces for the dialogs here and in tools.cpp.
 QString redText(const QString &text);
+// The same in the theme's warning colour, for "this may not work" rather than "this erases".
+QString warningText(const QString &text);
 QLabel *wrappingLabel(const QString &html);
 // Cancel stays the default; *action gets the button that accepts the dialog.
 QDialogButtonBox *dialogButtons(QDialog *dialog, const QString &actionText, QPushButton **action);

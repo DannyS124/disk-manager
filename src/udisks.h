@@ -280,6 +280,8 @@ public:
     // format with secure erase (user data or crypto). Reaches spare areas a wipe can't.
     enum class EraseMethod { AtaNormal, AtaEnhanced, NvmeUserData, NvmeCrypto };
     void secureErase(const Disk &disk, EraseMethod method);
+    // What it means when an ATA drive refuses Secure Erase (UDisks' error text), in plain words.
+    static QString secureEraseRefused(const QString &error, bool usb);
     // SMART
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"
@@ -323,13 +325,15 @@ private slots:
 
 private:
     using SuccessText = std::function<QString(const QDBusMessage &reply)>;
+    // What a failure means in plain words, added under UDisks' own message (empty: nothing to add).
+    using Explain = std::function<QString(const QString &error)>;
     void call(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
-              const SuccessText &success, const QString &failure);
+              const SuccessText &success, const QString &failure, const Explain &explain = {});
     // call() that chains into `next` instead of reporting. On failure it reports, then runs
     // `failed` if there is one.
     void callThen(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
                   const QString &failure, const std::function<void(const QDBusMessage &reply)> &next,
-                  const std::function<void()> &failed = {});
+                  const std::function<void()> &failed = {}, const Explain &explain = {});
 
     bool refuseSystem(const Disk *disk, const QString &failure);
     // Unmounts (and with lockEncrypted, locks) the given volumes one at a time, then runs `then`,
