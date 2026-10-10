@@ -590,7 +590,8 @@ bool UDisks::refuseSystem(const Disk *disk, const QString &failure)
 }
 
 void UDisks::callThen(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
-                      const QString &failure, const std::function<void(const QDBusMessage &)> &next)
+                      const QString &failure, const std::function<void(const QDBusMessage &)> &next,
+                      const std::function<void()> &failed)
 {
     QDBusMessage message = QDBusMessage::createMethodCall(kService, path, interface, method);
     message.setArguments(args);
@@ -600,20 +601,27 @@ void UDisks::callThen(const QString &path, const QString &interface, const QStri
 
     ++m_pending;
     auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(message, kNoTimeout), this);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, method, path, failure, next](QDBusPendingCallWatcher *w) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, method, path, failure, next, failed](QDBusPendingCallWatcher *w) {
         w->deleteLater();
         --m_pending;
         if (w->isError())
             qCInfo(lcOps).noquote() << method << path << "failed:" << w->error().name() << w->error().message();
         else
             qCInfo(lcOps).noquote() << method << path << "done";
-        if (w->isError() && w->error().name() == QLatin1String("org.freedesktop.UDisks2.Error.Cancelled")) {
+        if (w->isError() && method == QLatin1String("Unmount") && w->error().name() == QLatin1String("org.freedesktop.UDisks2.Error.NotMounted")) {
+            // Already unmounted (what's known here can lag a moment behind): that's what was wanted.
+            next(w->reply());
+        } else if (w->isError() && w->error().name() == QLatin1String("org.freedesktop.UDisks2.Error.Cancelled")) {
             // Stopped on purpose (Stop, or another program): not an error.
             m_stopped = true;
             emit operationFinished(false, m_stopMessages.isEmpty() ? tr("Stopped.") : m_stopMessages.takeFirst());
             m_stopped = false;
+            if (failed)
+                failed();
         } else if (w->isError()) {
             emit operationFinished(false, failure + QStringLiteral(": ") + w->error().message());
+            if (failed)
+                failed();
         } else {
             next(w->reply());
         }
@@ -629,7 +637,7 @@ void UDisks::call(const QString &path, const QString &interface, const QString &
 }
 
 void UDisks::unmountThen(const QVector<Volume> &volumes, const QString &failure, const std::function<void()> &then,
-                         bool lockEncrypted)
+                         bool lockEncrypted, const std::function<void()> &failed)
 {
     // "tear-down" doesn't unmount the device itself, so do it first, one step at a time.
     struct Step { QString path, interface, method; };
@@ -642,14 +650,14 @@ void UDisks::unmountThen(const QVector<Volume> &volumes, const QString &failure,
     }
     auto run = std::make_shared<std::function<void(int)>>();
     std::weak_ptr<std::function<void(int)>> weak = run;
-    *run = [this, steps, failure, then, weak](int i) {
+    *run = [this, steps, failure, then, failed, weak](int i) {
         if (i == steps.size()) {
             then();
             return;
         }
         auto self = weak.lock();
         callThen(steps[i].path, steps[i].interface, steps[i].method, {options()}, failure,
-                 [self, i](const QDBusMessage &) { (*self)(i + 1); });
+                 [self, i](const QDBusMessage &) { (*self)(i + 1); }, failed);
     };
     (*run)(0);
 }

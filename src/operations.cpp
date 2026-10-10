@@ -662,10 +662,11 @@ void UDisks::openBlock(const QString &objectPath, OpenMode mode)
     };
     // Reading for a benchmark or a rescue works while mounted; everything else gets
     // unmounted (and locked) first so the data doesn't change underneath.
+    // A failed unmount was reported already; whoever asked still hears it didn't open.
     if (mode == OpenMode::Benchmark)
         open();
     else
-        unmountThen(affected, failure, open, true);
+        unmountThen(affected, failure, open, true, [this, objectPath] { emit deviceOpened(objectPath, -1); });
 }
 
 void UDisks::rescan(const QString &objectPath)

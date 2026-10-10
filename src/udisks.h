@@ -325,14 +325,17 @@ private:
     using SuccessText = std::function<QString(const QDBusMessage &reply)>;
     void call(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
               const SuccessText &success, const QString &failure);
-    // call() that chains into `next` instead of reporting
+    // call() that chains into `next` instead of reporting. On failure it reports, then runs
+    // `failed` if there is one.
     void callThen(const QString &path, const QString &interface, const QString &method, const QVariantList &args,
-                  const QString &failure, const std::function<void(const QDBusMessage &reply)> &next);
+                  const QString &failure, const std::function<void(const QDBusMessage &reply)> &next,
+                  const std::function<void()> &failed = {});
 
     bool refuseSystem(const Disk *disk, const QString &failure);
-    // Unmounts (and with lockEncrypted, locks) the given volumes one at a time, then runs `then`.
+    // Unmounts (and with lockEncrypted, locks) the given volumes one at a time, then runs `then`,
+    // or `failed` when one of them can't be.
     void unmountThen(const QVector<Volume> &volumes, const QString &failure, const std::function<void()> &then,
-                     bool lockEncrypted = false);
+                     bool lockEncrypted = false, const std::function<void()> &failed = {});
     QVariantMap options(QVariantMap extra = {}) const;
     void detectFilesystems();
     Health readHealth(const QString &drivePath, const QVariantMap &drive, const QVariantMap &ata, const QVariantMap &nvme);
