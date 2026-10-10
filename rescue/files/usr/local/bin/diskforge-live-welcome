@@ -14,7 +14,7 @@ Some things that work from here (sudo doesn't ask for a password):
   sudo ddrescue -h            copy a failing drive
   lsblk                       list the drives
   nmtui                       connect to Wi-Fi
-  diskforge-live-logs       save the logs to the stick
+  diskforge-live-logs         save the logs to the stick
   startx                      try the desktop anyway
   reboot, poweroff
 

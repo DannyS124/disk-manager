@@ -2,55 +2,30 @@
 
 ## 0.5.1
 New:
-- DiskForge Live: a USB stick that starts any PC into a small desktop with DiskForge, PhotoRec, TestDisk, a file manager, a
-  web browser and a terminal, plus a memory test in the boot menu. It starts with Secure Boot on (through Debian's signed boot
-  files) and keeps logs of every start on the stick. It has only what a rescue stick needs, about 900 MB. It's built from
-  `rescue/`, see [docs/DISKFORGE-LIVE.md](docs/DISKFORGE-LIVE.md)
-- DiskForge Live has its own look: its logo, boot menu, boot animation, icons, taskbar and window theme, in neon blue, blue, baby
-  blue, red and green. It opens on a home screen with big tiles for what people start it for and a strip saying whether
-  Secure Boot is on, whether there's internet and how many drives it found
-- Make a DiskForge Live USB (File menu, or right-click a USB stick): puts the DiskForge Live image on a stick as plain files on FAT32 and checks
-  every one of them. The stick starts UEFI PCs (Secure Boot on or off) and old BIOS PCs. For a stick that's been used, Open
-  Logs shows what it saved
-- Find Lost Files (Action menu, File menu for disk images, or Get Files Back on DiskForge Live's home screen): looks through a drive
-  for files that were deleted or are on a drive that was formatted or won't open, by what's inside them: pictures, documents,
-  PDFs, videos, music, archives (31 kinds). Pictures show as thumbnails and in a preview, each file says whether it looks
-  whole, and the ones you tick are saved onto another drive. It only ever reads the drive it looks through
-- Tools > Quick Fixes: the home screen's tiles, on a PC
+- DiskForge Live: a rescue stick that starts any PC, new (UEFI, Secure Boot on is fine) or old (BIOS), into a small desktop with DiskForge, TestDisk, PhotoRec, a browser and a terminal, plus memtest86+ in the boot menu. It keeps a log of every start on the stick. Built from `rescue/`, see [docs/DISKFORGE-LIVE.md](docs/DISKFORGE-LIVE.md)
+- DiskForge Live has its own look (logo, boot menu, boot animation, icons, desktop theme) and opens on a home screen with big tiles for the usual jobs
+- Make a DiskForge Live USB (File menu, or right-click a stick): puts DiskForge Live on a stick as normal files on FAT32 and checks every one, so the stick still works for files. Open Logs shows what a used stick saved
+- Find Lost Files (Action menu, or File menu for disk images): gets deleted files back, or files off a drive that was formatted or won't open, by what's inside them (pictures, documents, PDFs, videos, music, archives). Thumbnails and a preview, each file says if it looks whole, and you save the ones you tick to another drive. It only reads the drive it looks through
+- Check a USB Stick (Action menu, or right-click a stick): finds bad spots and fake sticks that say they're bigger than they are. It says how much a fake one really holds and can make it safe to use. Quick takes minutes, Full checks every byte
+- Make a Windows USB (File menu): a Windows 10 or 11 install stick from Microsoft's ISO that starts with Secure Boot on. install.wim gets split with wimlib when it's too big. Windows 11 options: skip the TPM/Secure Boot/RAM check, no Microsoft account, local account, skip the privacy questions, no automatic BitLocker
+- Write Image to USB takes compressed images (.xz, .gz, .bz2, .lzma, .zst, or a .zip) and any checksum (MD5, SHA-1, SHA-256, SHA-512, or a SHA256SUMS file)
+- Write Image to USB can copy a Linux ISO's files instead, so the stick stays usable for files (UEFI only). Ubuntu and Debian live sticks can keep changes between starts
+- Tools > Quick Fixes: the DiskForge Live home screen on a normal PC
 - A DiskForge Live theme (View > Theme)
-- `--log <file>` (or `DISKFORGE_LOG=<file>`): DiskForge writes down what it does, for bug reports
-- A .deb for Debian and Ubuntu (`packaging/deb/build.sh` builds it in a Debian container)
-- Check a USB Stick (Action menu, or right-click a stick): finds bad spots and fake sticks, the ones that say they're bigger
-  than they are and quietly lose what goes past their real size. It says how much a fake one really holds and can make it
-  safe to use (one partition that ends there). Quick takes minutes, Full checks every byte
-- Write Image to USB takes compressed images (.xz, .gz, .bz2, .lzma, .zst, or a .zip with the image inside) and unpacks them
-  on the way. The checksum can be MD5, SHA-1, SHA-256 or SHA-512, or come from a checksum file like SHA256SUMS, and
-  Checksums... works out all four
-- Write Image to USB can copy a Linux ISO's files instead of writing it as it is, so the stick stays usable for files (UEFI
-  PCs only). Ubuntu and Debian live sticks can keep changes between starts (persistence)
-- Make a Windows USB (File menu): a Windows 10 or 11 install stick from Microsoft's ISO. It's FAT32, so it starts with Secure
-  Boot on; install.wim is split with wimlib when it's too big. The Windows 11 options: no TPM 2.0, Secure Boot or 4 GB RAM
-  check, no Microsoft account, a local account, skip the privacy questions, region like this PC, no automatic BitLocker
-- DiskForge Live has all of it, on its home screen and in its start menu. There, the few things that only change the running system
-  (Mount at Startup, Disk Cleanup, snapshots, schedules) are off and say why, and Make a DiskForge Live USB copies the stick it's
-  running from
-- `--open <tool>` opens just one tool, for desktop launchers (write-image, windows-usb, rescue-usb, check-stick, lost-files)
+- `--open <tool>` opens just one tool, for launchers (write-image, windows-usb, rescue-usb, check-stick, lost-files)
+- `--log <file>` writes down what DiskForge does, for bug reports
+- A .deb for Debian and Ubuntu (`packaging/deb/build.sh`)
 
 Changed:
-- New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted. A plain USB
-  stick doesn't need it
+- Secure Erase says in plain words why a drive refused it and what to do instead (most USB adapters block it, Wipe Disk works through any of them), and warns about USB before it starts
+- New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted
 - On a live system, the system's own image isn't listed as a drive anymore
-- Staging a release also builds DiskForge Live from the same source, and publishing attaches the ISO
-- On a screen smaller than the window (small laptops, VMs) it opens maximized, so the bottom isn't under the taskbar
-- Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker when Browse had the focus before
+- On a screen smaller than the window (small laptops, VMs) it opens maximized
+- Staging a release also builds DiskForge Live, and publishing attaches the ISO
 
 Fixed:
-- DiskForge Live: Sleep Now (for a frozen drive in Secure Erase) showed "Screen Saver Error" after waking up. The stick has
-  no screen locker, and the desktop doesn't try to lock the screen before sleeping anymore
-- When a drive refuses Secure Erase, it says why in plain words and what to do (most USB adapters block it; Wipe Disk works
-  through any adapter), and the Secure Erase window warns about USB before it starts
-- When a drive couldn't be unmounted before DiskForge read or wrote it (Back Up, Clone, Rescue Copy...), the window waiting
-  for it waited forever. Now it says the drive couldn't be opened
+- A window that needed a drive unmounted first (Back Up, Clone, Rescue Copy...) waited forever when the unmount failed. Now it says the drive couldn't be opened
+- Pressing Enter in Write Image to USB, Back Up or Restore no longer opens the file picker
 
 ## 0.5.0
 Everything new since 0.4.3.

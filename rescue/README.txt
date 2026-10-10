@@ -1,5 +1,5 @@
 DiskForge Live
-=========
+==============
 
 A USB stick that starts any PC into its own small Linux desktop with DiskForge and some
 other repair tools. Nothing on the PC changes unless you tell it to, so it's safe to use
@@ -20,7 +20,7 @@ signed for Secure Boot.
 
 What's in the menu
 ------------------
-Start DiskForge Live                       the normal way
+Start DiskForge Live                  the normal way
 Safe graphics                         if the screen stays black or looks broken
 Text mode                             no desktop, just a command line
 Copy to memory                        takes longer to start, then the stick can come out
@@ -34,13 +34,14 @@ Tools and troubleshooting:
 
 The home screen
 ---------------
-DiskForge Live opens on its home screen: big tiles for the jobs people bring the stick for, the
-everyday programs under them, and at the top whether Secure Boot is on, whether there's
-internet, and how many drives it found.
+It opens on a home screen: big tiles for the jobs people bring the stick for, the everyday
+programs under them, and at the top whether Secure Boot is on, whether there's internet,
+and how many drives it found.
 
 Drives and Partitions   DiskForge: partitions, health, wipe, back up, clone, rescue a
                         failing drive, recover lost partitions
-Get Files Back          PhotoRec: gets deleted files back, even from a formatted drive
+Get Files Back          Find Lost Files: deleted files, or files off a formatted or
+                        damaged drive, with previews (PhotoRec is in the start menu too)
 Find Lost Partitions    TestDisk: lost partitions and broken boot sectors
 Write an Image to USB   an ISO or a disk image onto a USB stick (compressed ones too)
 Make a Windows USB      a stick that installs Windows 10 or 11

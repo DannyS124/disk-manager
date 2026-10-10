@@ -1,11 +1,11 @@
-DiskForge Live colours. Everything on the stick uses these: the boot menu, the boot animation, the
+DiskForge Live colors. Everything on the stick uses these: the boot menu, the boot animation, the
 desktop, the icons and the DiskForge Live theme inside DiskForge.
 
-neon blue   #00E5FF   highlights, the selected thing, the spark itself
+neon blue   #00E5FF   highlights, the selected thing, the spark itself, "Forge" in the name
 blue        #1F6FFF   buttons, panels, the anvil
-baby blue   #9AD8FF   secondary text, line icons, "Blue" in the name
+baby blue   #9AD8FF   secondary text, line icons, "Disk" in the name
 red         #FF3355   anything that erases or is broken
-green       #2BEE8A   healthy, done, safe
+green       #2BEE8A   healthy, done, safe, "Live" in the name
 
 navy        #060A16   background
 surface     #0D1426   panels and cards on top of it

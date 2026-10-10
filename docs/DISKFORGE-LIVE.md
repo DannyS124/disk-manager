@@ -1,52 +1,47 @@
 # DiskForge Live
 
-DiskForge Live is a USB stick that starts any PC into a small Linux desktop with DiskForge on it, plus a few other
-repair tools. It used to be called DiskForge Rescue; sticks made back then still work with DiskForge. It's for when the PC's own system won't start, when a drive is dying and you don't want to boot from
-it, or when it's a Windows PC and you'd rather not install anything on it.
+A USB stick that starts any PC into a small desktop with DiskForge on it, plus a few other repair tools. I made it
+for when the PC's own system won't start, when a drive is dying and you don't want to boot from it, or when it's
+someone's Windows PC and you'd rather not install anything on it.
 
-It opens on its home screen: big tiles for DiskForge, PhotoRec (Get Files Back), TestDisk (Find Lost
-Partitions) and the USB stick tools (Write an Image, Make a Windows USB, Check a USB Stick, Copy This Stick),
-the everyday programs under them (files, web browser, terminal, task manager, text editor), and a strip
-saying whether Secure Boot is on, whether there's internet and how many drives it found. The boot menu also
-has memtest86+ for testing the memory.
+It opens on a home screen with big tiles for the usual jobs: drives and partitions, getting deleted files back,
+TestDisk for lost partitions, and the USB stick tools. The everyday programs are under them (files, browser,
+terminal, task manager, text editor), and a strip at the top says if Secure Boot is on, if there's internet and
+how many drives it found. PhotoRec is in the start menu, and the boot menu has memtest86+.
 
-Everything you see is DiskForge Live's own: the logo, the colours (`rescue/art/palette.txt`), the boot menu, the
-boot animation, the icons, the taskbar and window theme, and the home screen. The home screen is DiskForge
-itself (`diskforge --home`), so it's always in step with the app; on a PC the same tiles are in Tools →
-Quick Fixes.
+The logo, colors, boot menu, boot animation, icons and themes were all made for it (`rescue/art/`,
+`rescue/icons/`). The home screen is DiskForge itself (`diskforge --home`), and on a normal PC the same tiles
+are in Tools → Quick Fixes.
 
-It's the same DiskForge as on a PC, built from the same source for every release, with everything it can use
-installed. The only things turned off are the few that change the running system itself (Mount at Startup,
-Disk Cleanup, Btrfs snapshots, the weekly and monthly schedules): the rescue system starts fresh from the
-stick every time, so they'd change nothing. They say so when you point at them.
+It's the same DiskForge as the normal one, built from the same source for every release. The only things turned
+off are the ones that change the running system (Mount at Startup, Disk Cleanup, Btrfs snapshots, the
+schedules), since the stick starts fresh every time. They say so when you point at them.
 
-Nothing on the PC changes unless you tell it to. It doesn't mount the PC's drives by itself, doesn't use its
-swap, doesn't TRIM anything, and closing a laptop's lid doesn't put it to sleep in the middle of a copy.
+It doesn't touch the PC unless you tell it to: it doesn't mount the PC's drives on its own, doesn't use its swap,
+doesn't TRIM anything, and closing a laptop lid won't put it to sleep in the middle of a copy.
 
 ## Making the stick
-In DiskForge: File → Make a DiskForge Live USB, pick the ISO and the stick. That makes one FAT32 partition and copies
-the ISO's files onto it, checking each one. The stick stays readable everywhere (Windows too), there's room
-left over for files, and the rescue system writes its logs there.
+In DiskForge: File → Make a DiskForge Live USB, then pick the ISO and the stick. It makes one FAT32 partition and
+copies the ISO's files onto it, checking each one, so the stick still works as a normal stick everywhere (Windows
+too) and the live system can save its logs on it.
 
-It starts UEFI PCs (Secure Boot on or off) and old BIOS PCs. For BIOS PCs, DiskForge puts GRUB's boot code in
-front of the partition (the way `grub-install` does), from `boot/grub/i386-pc/stick-boot.img` and
-`stick-core.img` in the ISO. That's a direct write to the stick, so on a normal PC it asks for the admin
-password; untick "Also start old PCs without UEFI" to skip it.
+It starts UEFI PCs (Secure Boot on or off) and old BIOS ones. For BIOS, DiskForge puts GRUB's boot code in front
+of the partition like `grub-install` does (`boot/grub/i386-pc/stick-boot.img` and `stick-core.img` from the ISO).
+That's a raw write to the stick, so on a normal PC it asks for your password. Untick "Also start old PCs without
+UEFI" if you don't need it.
 
-Inside the rescue system, Copy This Stick on the home screen (or Make a DiskForge Live USB) copies the stick it's
-running from onto another one, checked against its sha256sum.txt. After "Copy to memory" the stick isn't
-mounted anymore: mount it in DiskForge and the dialog finds it.
+From inside DiskForge Live, Copy This Stick copies the stick it's running from onto another one. After "Copy to
+memory" the stick isn't mounted anymore; mount it in DiskForge and the dialog finds it.
 
-The ISO itself is a hybrid image: it starts UEFI and BIOS PCs from a CD, and written onto a stick as-is (Write
-Image to USB, Rufus, balenaEtcher, dd). Written like that it's read-only, so it can't keep logs.
+You can also write the ISO straight to a stick (Write Image to USB, Rufus, Etcher, dd). That starts UEFI and BIOS
+PCs too, but it's read-only, so no logs.
 
 ## Secure Boot
-It starts with Secure Boot on. The first steps are Debian's signed boot files, exactly as Debian ships them:
-shim (signed by Microsoft), then GRUB and the Linux kernel (signed by Debian). Everything after that is ours.
+It starts with Secure Boot on. The first steps are Debian's signed files as Debian ships them: shim (signed by
+Microsoft), then GRUB and the kernel (signed by Debian). Everything after that is ours.
 
-Two things don't work with Secure Boot on:
-- **memtest86+** isn't signed, so the menu says to turn Secure Boot off for it.
-- **The menu's picture:** Debian's GRUB won't load fonts with Secure Boot on, so the menu is plain text.
+Two things don't work with Secure Boot on. memtest86+ isn't signed, so the menu tells you to turn Secure Boot off
+for it. And Debian's signed GRUB won't load fonts, so the menu is plain text instead of the picture.
 
 ## Logs
 Every start leaves a folder in `logs/` on the stick, named by date, time and the PC's model:
@@ -98,7 +93,7 @@ What's where:
 | `rescue/packages.txt` | everything that goes in, with notes |
 | `rescue/files/` | copied over the new system as-is (configs, the log saver, launchers, the taskbar and window themes) |
 | `rescue/boot/` | the boot menu, its theme and its selection bar |
-| `rescue/art/` | the logo, the colours, the boot menu and desktop pictures |
+| `rescue/art/` | the logo, the colors, the boot menu and desktop pictures |
 | `rescue/icons/` | DiskForge Live's icon theme, drawn for the stick (Breeze Dark fills in the rest) |
 | `rescue/plymouth/` | the boot animation |
 | `rescue/README.txt` | the README on the stick |
