@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QProcess>
 
 #include <cerrno>
 #include <cstring>
@@ -48,6 +49,41 @@ QString rescue::rescueConfPath = QStringLiteral("/etc/diskforge-live.conf");
 bool rescue::runningInRescue()
 {
     return QFileInfo::exists(rescueConfPath);
+}
+
+QString rescue::bootOptionsPath = QStringLiteral("/proc/cmdline");
+QString rescue::rescanHelperPath = QStringLiteral("/usr/local/bin/diskforge-live-rescan");
+
+bool rescue::canRescanDrives()
+{
+    return runningInRescue() && QFileInfo(rescanHelperPath).isExecutable();
+}
+
+void rescue::rescanDrives(const QStringList &args, QObject *context, const std::function<void(bool)> &done)
+{
+    auto *process = new QProcess(context);
+    auto finish = [process, done](bool ok) {
+        process->deleteLater();
+        if (done)
+            done(ok);
+    };
+    QObject::connect(process, &QProcess::finished, context, [finish](int code, QProcess::ExitStatus status) {
+        finish(status == QProcess::NormalExit && code == 0);
+    });
+    QObject::connect(process, &QProcess::errorOccurred, context, [finish](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            finish(false);
+    });
+    qCInfo(lcOps).noquote() << "diskforge-live-rescan" << args.join(QLatin1Char(' '));
+    process->start(QStringLiteral("sudo"), QStringList{QStringLiteral("-n"), rescanHelperPath} + args);
+}
+
+bool rescue::runningFromStick()
+{
+    if (!runningInRescue())
+        return false;
+    QFile cmdline(bootOptionsPath);
+    return !cmdline.open(QIODevice::ReadOnly) || !cmdline.readAll().split(' ').contains("toram");
 }
 
 QString rescue::notInRescueReason()

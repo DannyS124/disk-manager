@@ -459,7 +459,8 @@ void MainWindow::createActions()
         SecureEraseDialog dialog(m_udisks, path, selectedDiskNumber(), this);
         if (dialog.exec() != QDialog::Accepted)
             return;
-        const Disk *fresh = m_udisks->diskByPath(path);
+        // Unplug and Replug can bring the drive back under another name.
+        const Disk *fresh = m_udisks->diskByPath(dialog.blockPath());
         if (!fresh)
             return gone();
         statusBar()->showMessage(tr("Erasing %1… the drive is doing it, so there's no progress until it's done.").arg(shortDevice(fresh->device)));

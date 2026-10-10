@@ -10,6 +10,7 @@
 #include <QObject>
 
 #include <atomic>
+#include <functional>
 
 // DiskForge Live images (the ISO rescue/build.sh makes) and the USB sticks made from them.
 namespace rescue {
@@ -43,11 +44,22 @@ Image inspect(const QString &isoPath);
 // except what changes the running system itself (mounting at startup, cleaning it up, its
 // snapshots and schedules): that system starts fresh from the stick every time.
 bool runningInRescue();
+// Running from the stick itself, not copied to memory ("Copy to memory" in the boot menu). Then
+// the system needs the stick the whole time, which matters when the PC sleeps.
+bool runningFromStick();
 QString notInRescueReason(); // why those are off, for their tooltips
 // The running rescue system's build ID (matches Info::id on its stick), or empty.
 QString runningBuildId();
-// For the tests: where runningInRescue() looks.
+// For the tests: where runningInRescue() and runningFromStick() look.
 extern QString rescueConfPath;
+extern QString bootOptionsPath;
+
+// On DiskForge Live: diskforge-live-rescan, through sudo. "scan" asks the disk controllers to
+// look for drives again (for a drive plugged in while the PC is on), "detach sdX" lets go of a
+// drive before it's unplugged. Not on a PC: there DiskForge doesn't run anything as root.
+bool canRescanDrives();
+void rescanDrives(const QStringList &args, QObject *context, const std::function<void(bool ok)> &done = {});
+extern QString rescanHelperPath;
 
 // A mounted stick (or any folder) with DiskForge Live on it: its info, and how many boots
 // have left logs there.

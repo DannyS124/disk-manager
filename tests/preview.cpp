@@ -497,6 +497,12 @@ void previewTools(UDisks &udisks, const QDir &out)
         if (d.ataEraseMinutes > 0 || d.ataEnhancedEraseMinutes > 0) {
             SecureEraseDialog erase(&udisks, d.blockPath, 1);
             save(erase, out.filePath(QStringLiteral("secure-erase-ata.png")));
+            // Unplug and Replug's steps, shown without touching the drive.
+            for (int step : {1, 2, 3}) {
+                SecureEraseDialog replug(&udisks, d.blockPath, 1);
+                replug.showReplugStepForPreview(step);
+                save(replug, out.filePath(QStringLiteral("secure-erase-replug-%1.png").arg(step)));
+            }
         } else if (d.nvmeNamespace) {
             SecureEraseDialog erase(&udisks, d.blockPath, 0);
             save(erase, out.filePath(QStringLiteral("secure-erase-nvme.png")));

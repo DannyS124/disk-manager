@@ -282,6 +282,12 @@ public:
     void secureErase(const Disk &disk, EraseMethod method);
     // What it means when an ATA drive refuses Secure Erase (UDisks' error text), in plain words.
     static QString secureEraseRefused(const QString &error, bool usb);
+    // Gets a drive ready to have its power pulled: unmounts (and locks) what's on it, then spins
+    // it down. `done` says whether it's ready; a failed unmount was reported already.
+    void prepareUnplug(const Disk &disk, const std::function<void(bool ready)> &done);
+    // The drive among `disks` with this serial number (without one: this model and size), or -1.
+    // A drive that's unplugged and plugged back in can come back under another name.
+    static int findDrive(const QVector<Disk> &disks, const QString &serial, const QString &model, quint64 size);
     // SMART
     void smartUpdate(const Disk &disk);
     void smartSelftest(const Disk &disk, const QString &type); // "short" or "extended"

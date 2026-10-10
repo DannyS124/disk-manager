@@ -35,6 +35,19 @@ Job job(const char *operation, bool cancelable = true, double progress = 0.34)
 
 void jobsTests()
 {
+    // Unplug and Replug finds the drive again by its serial number, whatever name it comes back under.
+    QVector<Disk> disks(3);
+    disks[0].device = QStringLiteral("/dev/sda"), disks[0].serial = QStringLiteral("5VC1ABCD"), disks[0].model = QStringLiteral("ST9250315AS");
+    disks[1].device = QStringLiteral("/dev/loop0"), disks[1].isLoop = true, disks[1].serial = QStringLiteral("5VC1WXYZ");
+    disks[2].device = QStringLiteral("/dev/sde"), disks[2].serial = QStringLiteral("5VC1WXYZ"), disks[2].model = QStringLiteral("ST9250315AS"),
+    disks[2].size = 250059350016;
+    QVector<Disk> noSerial = disks;
+    noSerial[2].serial.clear();
+    report(UDisks::findDrive(disks, QStringLiteral("5VC1WXYZ"), QStringLiteral("ST9250315AS"), 250059350016) == 2
+               && UDisks::findDrive(disks, QStringLiteral("NOPE"), QStringLiteral("ST9250315AS"), 250059350016) == -1
+               && UDisks::findDrive(noSerial, QString(), QStringLiteral("ST9250315AS"), 250059350016) == 2
+               && UDisks::findDrive(noSerial, QString(), QStringLiteral("ST9250315AS"), 1) == -1,
+           QStringLiteral("a replugged drive is found again by serial (or model and size), never a disk image"));
     // The error from the photo: a Seagate laptop drive in a USB adapter refusing ERASE PREPARE.
     const QString refused = QStringLiteral("Error sending ATA command SECURITY ERASE PREPARE: ATA command failed: error=0x04 count=0x00 status=0x51");
     const QString overUsb = UDisks::secureEraseRefused(refused, true), overSata = UDisks::secureEraseRefused(refused, false);

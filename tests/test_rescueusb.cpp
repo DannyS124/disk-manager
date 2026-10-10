@@ -431,10 +431,28 @@ void biosBootTests(const QString &dir)
            QStringList{tooBig, noTable, badBoot, gpt}.join(QStringLiteral(" | ")));
 }
 
+// Sleep Now warns when the live system still runs from its stick, not after "Copy to memory".
+void fromStickTests(const QString &dir)
+{
+    const QString realConf = rescue::rescueConfPath, realOptions = rescue::bootOptionsPath;
+    rescue::rescueConfPath = dir + QStringLiteral("/live.conf");
+    rescue::bootOptionsPath = dir + QStringLiteral("/cmdline");
+    writeFile(rescue::bootOptionsPath, "BOOT_IMAGE=/live/vmlinuz boot=live quiet splash\n");
+    const bool notLive = !rescue::runningFromStick();
+    writeFile(rescue::rescueConfPath, "VERSION=0.5.1\n");
+    const bool fromStick = rescue::runningFromStick();
+    writeFile(rescue::bootOptionsPath, "BOOT_IMAGE=/live/vmlinuz boot=live toram quiet splash\n");
+    const bool inMemory = !rescue::runningFromStick();
+    report(notLive && fromStick && inMemory, QStringLiteral("running from the stick: yes when live, no after Copy to memory, no on a PC"));
+    rescue::rescueConfPath = realConf;
+    rescue::bootOptionsPath = realOptions;
+}
+
 void rescueUsbTests()
 {
     QTemporaryDir dir;
     folderTests(dir.path());
+    fromStickTests(dir.path());
     parserTests();
     biosBootTests(dir.path());
     if (QStandardPaths::findExecutable(QStringLiteral("xorriso")).isEmpty()) {

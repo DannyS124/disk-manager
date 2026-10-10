@@ -18,6 +18,7 @@ New:
 
 Changed:
 - Secure Erase says in plain words why a drive refused it and what to do instead (most USB adapters block it, Wipe Disk works through any of them), and warns about USB before it starts
+- Secure Erase on a frozen drive: Unplug and Replug walks you through pulling the drive's power and plugging it back in, finds the drive again (even under a new name) and checks it's not frozen anymore. On DiskForge Live it also asks old controllers to look for the drive, which they don't do by themselves
 - New Partition Table only asks for the admin password when something on the drive is in /etc/fstab or encrypted
 - On a live system, the system's own image isn't listed as a drive anymore
 - On a screen smaller than the window (small laptops, VMs) it opens maximized

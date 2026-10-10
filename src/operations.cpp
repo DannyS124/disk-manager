@@ -599,6 +599,39 @@ QString UDisks::secureEraseRefused(const QString &error, bool usb)
          + tr("If the drive shows up locked after it's been off, it kept the temporary password xxxx: Help has how to unlock it.");
 }
 
+void UDisks::prepareUnplug(const Disk &disk, const std::function<void(bool)> &done)
+{
+    const QString failure = tr("Couldn't get %1 ready to unplug").arg(shortDevice(disk.device));
+    if (refuseSystem(&disk, failure))
+        return done(false);
+    const QString drivePath = disk.drivePath;
+    unmountThen(disk.volumes, failure, [this, drivePath, done] {
+        // Spun down, its heads are parked before the power goes. Old controllers can refuse that;
+        // the drive then parks them itself when the power goes, so it's no reason to stop.
+        QDBusMessage standby = QDBusMessage::createMethodCall(kService, drivePath, kAta, QStringLiteral("PmStandby"));
+        standby << options();
+        standby.setInteractiveAuthorizationAllowed(m_interactive);
+        auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::systemBus().asyncCall(standby, 30000), this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this, [done](QDBusPendingCallWatcher *w) {
+            w->deleteLater();
+            qCInfo(lcOps).noquote() << "PmStandby before unplugging" << (w->isError() ? "refused: " + w->error().message() : QStringLiteral("done"));
+            done(true);
+        });
+    }, true, [done] { done(false); });
+}
+
+int UDisks::findDrive(const QVector<Disk> &disks, const QString &serial, const QString &model, quint64 size)
+{
+    for (int i = 0; i < disks.size(); ++i) {
+        const Disk &d = disks[i];
+        if (d.isLoop)
+            continue;
+        if (!serial.isEmpty() ? d.serial == serial : (!model.isEmpty() && d.model == model && d.size == size))
+            return i;
+    }
+    return -1;
+}
+
 void UDisks::openDevice(const Disk &disk, bool writable, bool forBenchmark, bool direct)
 {
     OpenMode mode = OpenMode::Read;
