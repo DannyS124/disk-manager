@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="210" viewBox="0 0 720 210" font-family="DejaVu Sans, Arial, sans-serif">
+  <rect width="720" height="210" rx="14" fill="#ffffff"/>
+  <!-- data plug -->
+  <g transform="translate(20 20)">
+    <text x="0" y="16" font-size="14" font-weight="bold" fill="#0b1530">Data cable</text>
+    <rect x="0" y="66" width="120" height="16" rx="3" fill="#cc1f43"/>
+    <rect x="120" y="56" width="56" height="36" rx="4" fill="#1d2433"/>
+    <rect x="130" y="64" width="40" height="8" rx="2" fill="#9aa6ba"/>
+    <text x="0" y="128" font-size="12" fill="#4b5c7e">Thin flat cable, often red,</text>
+    <text x="0" y="146" font-size="12" fill="#4b5c7e">blue or black. Goes to the</text>
+    <text x="0" y="164" font-size="12" fill="#4b5c7e">motherboard. Keep it in.</text>
+  </g>
+  <!-- power plug -->
+  <g transform="translate(260 20)">
+    <text x="0" y="16" font-size="14" font-weight="bold" fill="#0b1530">Power cable</text>
+    <rect x="0" y="52" width="110" height="5" fill="#f2c230"/>
+    <rect x="0" y="60" width="110" height="5" fill="#20242c"/>
+    <rect x="0" y="68" width="110" height="5" fill="#e23b3b"/>
+    <rect x="0" y="76" width="110" height="5" fill="#20242c"/>
+    <rect x="0" y="84" width="110" height="5" fill="#f08a2c"/>
+    <rect x="110" y="44" width="70" height="54" rx="4" fill="#1d2433"/>
+    <rect x="120" y="54" width="50" height="8" rx="2" fill="#9aa6ba"/>
+    <text x="0" y="128" font-size="12" fill="#4b5c7e">Wider plug, yellow, black and</text>
+    <text x="0" y="146" font-size="12" fill="#4b5c7e">red wires (some are flat black).</text>
+    <text x="0" y="164" font-size="12" fill="#4b5c7e">Comes from the power supply.</text>
+  </g>
+  <!-- molex adapter -->
+  <g transform="translate(500 20)">
+    <text x="0" y="16" font-size="14" font-weight="bold" fill="#cc1f43">Molex adapter: don't</text>
+    <rect x="0" y="46" width="62" height="48" rx="8" fill="#ece6d8" stroke="#b8ad95" stroke-width="2"/>
+    <circle cx="18" cy="62" r="5" fill="#8f856d"/><circle cx="44" cy="62" r="5" fill="#8f856d"/>
+    <circle cx="18" cy="80" r="5" fill="#8f856d"/><circle cx="44" cy="80" r="5" fill="#8f856d"/>
+    <rect x="62" y="60" width="62" height="4" fill="#f2c230"/><rect x="62" y="67" width="62" height="4" fill="#20242c"/>
+    <rect x="62" y="74" width="62" height="4" fill="#e23b3b"/>
+    <rect x="124" y="52" width="56" height="36" rx="4" fill="#1d2433"/>
+    <line x1="-4" y1="34" x2="188" y2="108" stroke="#cc1f43" stroke-width="6" stroke-linecap="round"/>
+    <line x1="188" y1="34" x2="-4" y2="108" stroke="#cc1f43" stroke-width="6" stroke-linecap="round"/>
+    <text x="0" y="128" font-size="12" fill="#4b5c7e">A fat white 4-pin plug turned</text>
+    <text x="0" y="146" font-size="12" fill="#4b5c7e">into SATA. Cheap ones can melt,</text>
+    <text x="0" y="164" font-size="12" fill="#4b5c7e">so don't hot-plug with one.</text>
+  </g>
+</svg>

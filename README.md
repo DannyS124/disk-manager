@@ -23,7 +23,7 @@ a while and wanted something simple for managing drives without going to the ter
 - Rescue Copy: get what you can off a dying drive, like ddrescue
 - Disk Usage: see what's eating your space
 - Disk Cleanup: old packages, logs, caches and the trash
-- Optimize Drives (TRIM), Btrfs snapshot list, Secure Erase for SSDs
+- Optimize Drives (TRIM), Btrfs snapshot list, Secure Erase for SSDs (with pictures: [docs/SECURE-ERASE.md](docs/SECURE-ERASE.md))
 - Write an ISO or a disk image to a USB stick, compressed ones too, as it is or with its files copied (with persistence
   for Ubuntu and Debian live sticks)
 - Make a Windows 10 or 11 install stick, with the Windows 11 options (no TPM check, no Microsoft account...)

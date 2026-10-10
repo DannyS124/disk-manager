@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220" viewBox="0 0 640 220" font-family="DejaVu Sans, Arial, sans-serif">
+  <rect width="640" height="220" rx="14" fill="#ffffff"/>
+  <rect x="40" y="70" width="560" height="64" rx="6" fill="#9aa6ba" stroke="#6c7890" stroke-width="2"/>
+  <rect x="40" y="122" width="560" height="12" fill="#13623f"/>
+  <g transform="translate(150 88)">
+    <path d="M0 0 H88 V26 H14 V16 H0 Z" fill="#1d2433"/>
+    <g fill="#c8962c">
+      <rect x="18" y="8" width="6" height="12"/><rect x="28" y="8" width="6" height="12"/><rect x="38" y="8" width="6" height="12"/>
+      <rect x="48" y="8" width="6" height="12"/><rect x="58" y="8" width="6" height="12"/><rect x="68" y="8" width="6" height="12"/>
+    </g>
+  </g>
+  <g transform="translate(270 88)">
+    <path d="M0 0 H200 V26 H14 V16 H0 Z" fill="#1d2433"/>
+    <g fill="#c8962c">
+      <rect x="18" y="8" width="7" height="12"/><rect x="30" y="8" width="7" height="12"/><rect x="42" y="8" width="7" height="12"/>
+      <rect x="54" y="8" width="7" height="12"/><rect x="66" y="8" width="7" height="12"/><rect x="78" y="8" width="7" height="12"/>
+      <rect x="90" y="8" width="7" height="12"/><rect x="102" y="8" width="7" height="12"/><rect x="114" y="8" width="7" height="12"/>
+      <rect x="126" y="8" width="7" height="12"/><rect x="138" y="8" width="7" height="12"/><rect x="150" y="8" width="7" height="12"/>
+      <rect x="162" y="8" width="7" height="12"/><rect x="174" y="8" width="7" height="12"/><rect x="186" y="8" width="7" height="12"/>
+    </g>
+  </g>
+  <line x1="194" y1="86" x2="194" y2="46" stroke="#2a6aa3" stroke-width="2"/>
+  <text x="120" y="26" font-size="14" font-weight="bold" fill="#2a6aa3">Data (small, 7 pins)</text>
+  <text x="120" y="42" font-size="12" fill="#4b5c7e">leave this one plugged in</text>
+  <line x1="370" y1="86" x2="370" y2="46" stroke="#007f9c" stroke-width="2"/>
+  <text x="330" y="26" font-size="14" font-weight="bold" fill="#007f9c">Power (wide, 15 pins)</text>
+  <text x="330" y="42" font-size="12" fill="#4b5c7e">this is the one you unplug</text>
+  <text x="40" y="170" font-size="12" fill="#4b5c7e">Both are L-shaped, so a plug only fits one way round. Never force it.</text>
+  <text x="40" y="192" font-size="12" fill="#4b5c7e">Which side each one is on depends on how you hold the drive. Go by size.</text>
+</svg>
