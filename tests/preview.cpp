@@ -75,6 +75,12 @@ void save(QWidget &widget, const QString &path)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    // Without a desktop there's no icon theme; DISKFORGE_PREVIEW_ICONS=breeze-dark (say) picks one,
+    // for screenshots that look like the app does on a desktop.
+    if (qEnvironmentVariableIsSet("DISKFORGE_PREVIEW_ICONS")) {
+        QIcon::setThemeSearchPaths(QIcon::themeSearchPaths() << QStringLiteral("/usr/share/icons") << QStringLiteral("/usr/local/share/icons"));
+        QIcon::setThemeName(qEnvironmentVariable("DISKFORGE_PREVIEW_ICONS"));
+    }
     installTranslations();
     QApplication::setApplicationVersion(QStringLiteral(APP_VERSION));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/data/" APP_ID ".svg")));
